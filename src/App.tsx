@@ -47,32 +47,37 @@ const examplePanels: Panel[] = [
 // Example creases - note that front and back creases at the same position have opposite directions
 // Crease between panels 0-1: front forward, back backward
 // Crease between panels 1-2: front backward, back forward
+// unfold_sequence: 0 = unfolds first, 1 = unfolds second (for accordion, inner folds unfold first)
 const exampleCreases: Crease[] = [
   // Front side creases
   {
     id: 'crease-front-0',
     side: 'front',
     between_panel: 0,
-    fold_direction: 'forward', // front crease 0
+    fold_direction: 'forward',
+    unfold_sequence: 1, // Unfolds second (outer crease)
   },
   {
     id: 'crease-front-1',
     side: 'front',
     between_panel: 1,
-    fold_direction: 'backward', // front crease 1
+    fold_direction: 'backward',
+    unfold_sequence: 0, // Unfolds first (inner crease)
   },
-  // Back side creases (opposite directions)
+  // Back side creases (opposite directions, same unfold sequence)
   {
     id: 'crease-back-0',
     side: 'back',
     between_panel: 0,
-    fold_direction: 'backward', // back crease 0 (opposite of front)
+    fold_direction: 'backward',
+    unfold_sequence: 1, // Same sequence as front crease 0
   },
   {
     id: 'crease-back-1',
     side: 'back',
     between_panel: 1,
-    fold_direction: 'forward', // back crease 1 (opposite of front)
+    fold_direction: 'forward',
+    unfold_sequence: 0, // Same sequence as front crease 1
   },
 ];
 

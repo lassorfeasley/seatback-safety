@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef, useCallback } from 'react';
+import React, { useState, useMemo, useRef, useCallback, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { RotateCw, RotateCcw, Maximize2, Minimize2 } from 'lucide-react';
@@ -16,13 +16,22 @@ interface Spread {
   backPanel: Panel | undefined;
 }
 
+// Animation timing constants
+const FOLD_DURATION_PER_CREASE = 400; // ms per crease animation
+const FOLD_STAGGER_DELAY = 100; // ms overlap between sequential folds
+
 export const CardVisualizer: React.FC<CardVisualizerProps> = ({ panels, creases }) => {
   const [rotation, setRotation] = useState({ x: 0, y: 0 });
-  const [foldAmount, setFoldAmount] = useState(0); // 0 = flat, 1 = fully folded
   const [isDragging, setIsDragging] = useState(false);
   const dragStart = useRef({ x: 0, y: 0 });
   const rotationStart = useRef({ x: 0, y: 0 });
   const containerRef = useRef<HTMLDivElement>(null);
+  
+  // Target state: 0 = all unfolded, 1 = all folded
+  const [targetFoldState, setTargetFoldState] = useState<0 | 1>(0);
+  
+  // Animation refs
+  const animationTimeouts = useRef<NodeJS.Timeout[]>([]);
 
   // Sort panels by side and index
   const frontPanels = useMemo(
@@ -66,6 +75,35 @@ export const CardVisualizer: React.FC<CardVisualizerProps> = ({ panels, creases 
     [creases]
   );
 
+  // Sort creases by unfold_sequence for animation ordering
+  const creasesByUnfoldOrder = useMemo(() => {
+    return [...frontCreases].sort((a, b) => 
+      (a.unfold_sequence ?? a.between_panel) - (b.unfold_sequence ?? b.between_panel)
+    );
+  }, [frontCreases]);
+
+  // Per-crease fold amounts (keyed by between_panel index)
+  const [creaseFolds, setCreaseFolds] = useState<Record<number, number>>({});
+
+  // Initialize and update crease folds when frontCreases change
+  useEffect(() => {
+    setCreaseFolds((prev) => {
+      const updated: Record<number, number> = {};
+      frontCreases.forEach((c) => {
+        // Preserve existing value or default to 0
+        updated[c.between_panel] = prev[c.between_panel] ?? 0;
+      });
+      return updated;
+    });
+  }, [frontCreases]);
+
+  // Clear any pending animations on unmount
+  useEffect(() => {
+    return () => {
+      animationTimeouts.current.forEach(clearTimeout);
+    };
+  }, []);
+
   // Flip to back (180° on Y axis)
   const handleFlip = () => {
     setRotation((prev) => ({
@@ -79,14 +117,60 @@ export const CardVisualizer: React.FC<CardVisualizerProps> = ({ panels, creases 
     setRotation({ x: 0, y: 0 });
   };
 
-  // Fold/unfold
-  const handleFold = () => {
-    setFoldAmount(1);
-  };
+  // Sequential fold animation
+  const handleFold = useCallback(() => {
+    // Clear any existing animations
+    animationTimeouts.current.forEach(clearTimeout);
+    animationTimeouts.current = [];
+    
+    setTargetFoldState(1);
+    
+    // Fold in REVERSE unfold order (outer creases first for folding)
+    const foldOrder = [...creasesByUnfoldOrder].reverse();
+    
+    foldOrder.forEach((crease, orderIndex) => {
+      const delay = orderIndex * (FOLD_DURATION_PER_CREASE - FOLD_STAGGER_DELAY);
+      
+      const timeout = setTimeout(() => {
+        setCreaseFolds((prev) => ({
+          ...prev,
+          [crease.between_panel]: 1,
+        }));
+      }, delay);
+      
+      animationTimeouts.current.push(timeout);
+    });
+  }, [creasesByUnfoldOrder]);
 
-  const handleUnfold = () => {
-    setFoldAmount(0);
-  };
+  // Sequential unfold animation
+  const handleUnfold = useCallback(() => {
+    // Clear any existing animations
+    animationTimeouts.current.forEach(clearTimeout);
+    animationTimeouts.current = [];
+    
+    setTargetFoldState(0);
+    
+    // Unfold in unfold_sequence order (inner creases first)
+    creasesByUnfoldOrder.forEach((crease, orderIndex) => {
+      const delay = orderIndex * (FOLD_DURATION_PER_CREASE - FOLD_STAGGER_DELAY);
+      
+      const timeout = setTimeout(() => {
+        setCreaseFolds((prev) => ({
+          ...prev,
+          [crease.between_panel]: 0,
+        }));
+      }, delay);
+      
+      animationTimeouts.current.push(timeout);
+    });
+  }, [creasesByUnfoldOrder]);
+
+  // Calculate overall fold progress for UI display
+  const overallFoldProgress = useMemo(() => {
+    const values = Object.values(creaseFolds);
+    if (values.length === 0) return 0;
+    return values.reduce((sum, v) => sum + v, 0) / values.length;
+  }, [creaseFolds]);
 
   // Mouse/touch drag handlers for rotation
   const handleDragStart = useCallback((clientX: number, clientY: number) => {
@@ -154,27 +238,29 @@ export const CardVisualizer: React.FC<CardVisualizerProps> = ({ panels, creases 
 
   // Calculate centering offset as the card folds
   // When panels fold, they collapse toward the left, so we need to shift right to compensate
-  // Estimate: each folded panel reduces visible width, shift by half that reduction
   const panelCount = spreads.length;
   const estimatedPanelWidth = 150; // Approximate panel width in pixels
   
   // When folded, panels stack - visible width is roughly 1 panel
   // The reduction in width creates an offset that needs compensation
-  const widthReduction = (panelCount - 1) * estimatedPanelWidth * foldAmount;
+  const widthReduction = (panelCount - 1) * estimatedPanelWidth * overallFoldProgress;
   const centeringOffset = widthReduction / 2;
 
-  // Get fold angle for a specific crease
-  const getCreaseFoldAngle = (creaseIndex: number): number => {
+  // Get fold angle for a specific crease (using per-crease fold amount)
+  const getCreaseFoldAngle = useCallback((creaseIndex: number): number => {
     const crease = frontCreases.find((c) => c.between_panel === creaseIndex);
     if (!crease) return 0;
     
+    // Get the fold amount for this specific crease
+    const creaseFoldAmount = creaseFolds[creaseIndex] ?? 0;
+    
     const maxAngle = 180;
-    const angle = foldAmount * maxAngle;
+    const angle = creaseFoldAmount * maxAngle;
     
     // Forward = folds toward viewer = negative rotation
     // Backward = folds away from viewer = positive rotation
     return crease.fold_direction === 'forward' ? -angle : angle;
-  };
+  }, [frontCreases, creaseFolds]);
 
   // Calculate cumulative transform data for each spread
   // This computes the actual world-space position/rotation of each panel
@@ -203,8 +289,9 @@ export const CardVisualizer: React.FC<CardVisualizerProps> = ({ panels, creases 
         
         // Get the fold angle at the crease BEFORE this spread (crease i-1)
         const crease = frontCreases.find((c) => c.between_panel === i - 1);
+        const creaseFoldAmount = creaseFolds[i - 1] ?? 0;
         const foldAngle = crease 
-          ? (crease.fold_direction === 'forward' ? -1 : 1) * foldAmount * 180
+          ? (crease.fold_direction === 'forward' ? -1 : 1) * creaseFoldAmount * 180
           : 0;
         
         // Cumulative rotation
@@ -218,13 +305,12 @@ export const CardVisualizer: React.FC<CardVisualizerProps> = ({ panels, creases 
         // When flat, each panel is offset by its width
         const flatXOffset = i * panelWidth;
         const foldedXOffset = 0; // All panels stack at origin when folded
-        const xOffset = flatXOffset + (foldedXOffset - flatXOffset) * foldAmount;
+        const xOffset = flatXOffset + (foldedXOffset - flatXOffset) * creaseFoldAmount;
         
         // Z offset for stacking - increases with depth
         // Forward folds go toward viewer (+Z), backward folds go away (-Z)
-        // But we need to account for the cumulative state
         const zSign = crease?.fold_direction === 'forward' ? 1 : -1;
-        const zOffset = prevTransform.zOffset + (zSign * foldAmount * 2);
+        const zOffset = prevTransform.zOffset + (zSign * creaseFoldAmount * 2);
         
         transforms.push({
           xOffset,
@@ -236,10 +322,10 @@ export const CardVisualizer: React.FC<CardVisualizerProps> = ({ panels, creases 
     }
     
     return transforms;
-  }, [spreads.length, frontCreases, foldAmount, estimatedPanelWidth]);
+  }, [spreads.length, frontCreases, creaseFolds, estimatedPanelWidth]);
 
   // Render spreads with nested structure for proper hinge behavior
-  const renderFoldableSpreads = () => {
+  const renderFoldableSpreads = useCallback(() => {
     if (spreads.length === 0) return null;
 
     // Paper thickness - represents the physical thickness of each folded panel
@@ -257,9 +343,10 @@ export const CardVisualizer: React.FC<CardVisualizerProps> = ({ panels, creases 
       // Get fold angle for the crease AFTER this spread
       const foldAngle = getCreaseFoldAngle(index);
       
-      // Get fold direction to determine stacking
+      // Get fold direction and amount to determine stacking
       const crease = frontCreases.find((c) => c.between_panel === index);
       const isForwardFold = crease?.fold_direction === 'forward';
+      const creaseFoldAmount = creaseFolds[index] ?? 0;
 
       return (
         <div
@@ -302,16 +389,16 @@ export const CardVisualizer: React.FC<CardVisualizerProps> = ({ panels, creases 
           {!isLastSpread && (
             <div
               className={cn(
-                "[transform-style:preserve-3d]",
-                "transition-transform duration-500 ease-in-out"
+                "[transform-style:preserve-3d]"
               )}
               style={{
-                // The hinge is at the LEFT edge, but we offset it slightly in Z
-                // to prevent panels from occupying the exact same space when folded
+                // The hinge is at the LEFT edge, offset slightly in Z for stacking
                 transformOrigin: 'left center',
+                // Smooth transition for each crease independently
+                transition: `transform ${FOLD_DURATION_PER_CREASE}ms ease-in-out`,
                 // Forward fold: push the hinge point forward so folded panel ends up in front
                 // Backward fold: push the hinge point backward so folded panel ends up behind
-                transform: `translateZ(${isForwardFold ? PAPER_THICKNESS : -PAPER_THICKNESS}px) rotateY(${foldAngle}deg)`,
+                transform: `translateZ(${isForwardFold ? PAPER_THICKNESS * creaseFoldAmount : -PAPER_THICKNESS * creaseFoldAmount}px) rotateY(${foldAngle}deg)`,
               }}
             >
               {renderSpread(index + 1)}
@@ -322,7 +409,7 @@ export const CardVisualizer: React.FC<CardVisualizerProps> = ({ panels, creases 
     };
 
     return renderSpread(0);
-  };
+  }, [spreads, frontCreases, creaseFolds, getCreaseFoldAngle]);
 
   return (
     <Card className="w-full mt-8">
@@ -349,7 +436,7 @@ export const CardVisualizer: React.FC<CardVisualizerProps> = ({ panels, creases 
               Flip
             </Button>
             <Button
-              variant={foldAmount === 0 ? "default" : "outline"}
+              variant={targetFoldState === 0 ? "default" : "outline"}
               size="sm"
               onClick={handleUnfold}
               className="gap-2"
@@ -358,7 +445,7 @@ export const CardVisualizer: React.FC<CardVisualizerProps> = ({ panels, creases 
               Unfold
             </Button>
             <Button
-              variant={foldAmount === 1 ? "default" : "outline"}
+              variant={targetFoldState === 1 ? "default" : "outline"}
               size="sm"
               onClick={handleFold}
               className="gap-2"
@@ -379,8 +466,17 @@ export const CardVisualizer: React.FC<CardVisualizerProps> = ({ panels, creases 
               min="0"
               max="1"
               step="0.01"
-              value={foldAmount}
-              onChange={(e) => setFoldAmount(parseFloat(e.target.value))}
+              value={overallFoldProgress}
+              onChange={(e) => {
+                // Manual slider control - set all creases to the same value
+                const value = parseFloat(e.target.value);
+                const newFolds: Record<number, number> = {};
+                frontCreases.forEach((c) => {
+                  newFolds[c.between_panel] = value;
+                });
+                setCreaseFolds(newFolds);
+                setTargetFoldState(value > 0.5 ? 1 : 0);
+              }}
               className="flex-1 h-2 bg-muted rounded-lg appearance-none cursor-pointer"
             />
             <span className="text-xs text-muted-foreground">Folded</span>

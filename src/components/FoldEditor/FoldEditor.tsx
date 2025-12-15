@@ -36,6 +36,7 @@ export const FoldEditor: React.FC<FoldEditorProps> = ({
   }
 
   // Normalize creases to ensure opposite directions for front/back at same position
+  // and include unfold_sequence
   const normalizeCreasesToOppositeDirections = useCallback((
     currentPanels: Panel[],
     currentCreases: Crease[]
@@ -68,6 +69,10 @@ export const FoldEditor: React.FC<FoldEditorProps> = ({
       // Back must be opposite of front
       const backDirection: FoldDirection = frontDirection === 'forward' ? 'backward' : 'forward';
 
+      // Determine unfold sequence (use existing or default to crease index)
+      // Front and back creases at the same position share the same sequence
+      const unfoldSequence: number = frontCrease?.unfold_sequence ?? backCrease?.unfold_sequence ?? creaseIndex;
+
       // Add front crease if panels exist
       if (creaseIndex < frontPanels.length - 1) {
         normalized.push({
@@ -75,6 +80,7 @@ export const FoldEditor: React.FC<FoldEditorProps> = ({
           side: 'front',
           between_panel: creaseIndex,
           fold_direction: frontDirection,
+          unfold_sequence: unfoldSequence,
         });
       }
 
@@ -85,6 +91,7 @@ export const FoldEditor: React.FC<FoldEditorProps> = ({
           side: 'back',
           between_panel: creaseIndex,
           fold_direction: backDirection,
+          unfold_sequence: unfoldSequence,
         });
       }
     }
@@ -351,6 +358,7 @@ export const FoldEditor: React.FC<FoldEditorProps> = ({
             side: side,
             between_panel: betweenPanel,
             fold_direction: direction,
+            unfold_sequence: betweenPanel, // Default to position
           });
         }
 
@@ -367,10 +375,46 @@ export const FoldEditor: React.FC<FoldEditorProps> = ({
             side: oppositeSide,
             between_panel: betweenPanel,
             fold_direction: oppositeDirection,
+            unfold_sequence: betweenPanel, // Default to position
           });
         }
 
         return updated;
+      });
+      setHasChanges(true);
+    },
+    []
+  );
+
+  // Handle changing the unfold sequence for a crease
+  // Both front and back creases at the same position share the same sequence
+  // When changing to a sequence that's already taken, swap with that crease
+  const handleSequenceChange = useCallback(
+    (betweenPanel: number, newSequence: number, _side: Side) => {
+      setCreases((prev) => {
+        // Find the current sequence of the crease being changed
+        const currentCrease = prev.find(
+          (c) => c.side === 'front' && c.between_panel === betweenPanel
+        );
+        const oldSequence = currentCrease?.unfold_sequence ?? betweenPanel;
+
+        // Find the crease that currently has the target sequence (if any)
+        const swapCrease = prev.find(
+          (c) => c.side === 'front' && c.unfold_sequence === newSequence && c.between_panel !== betweenPanel
+        );
+
+        // Swap sequences: the target crease gets our old sequence
+        return prev.map((c) => {
+          // Update the crease being changed (both front and back)
+          if (c.between_panel === betweenPanel) {
+            return { ...c, unfold_sequence: newSequence };
+          }
+          // Swap with the crease that had the target sequence (both front and back)
+          if (swapCrease && c.between_panel === swapCrease.between_panel) {
+            return { ...c, unfold_sequence: oldSequence };
+          }
+          return c;
+        });
       });
       setHasChanges(true);
     },
@@ -421,12 +465,14 @@ export const FoldEditor: React.FC<FoldEditorProps> = ({
           side: 'front',
           between_panel: newCreaseIndex,
           fold_direction: 'forward',
+          unfold_sequence: newCreaseIndex, // Default sequence based on position
         },
         {
           id: undefined,
           side: 'back',
           between_panel: newCreaseIndex,
           fold_direction: 'backward',
+          unfold_sequence: newCreaseIndex, // Same sequence as front
         },
       ]);
     }
@@ -477,16 +523,24 @@ export const FoldEditor: React.FC<FoldEditorProps> = ({
             side="front"
             panels={frontPanels}
             creases={getCreasesForSide('front')}
+            totalCreases={spreadCount - 1}
             onCreaseChange={(betweenPanel, direction) =>
               handleCreaseChange(betweenPanel, direction, 'front')
+            }
+            onSequenceChange={(betweenPanel, sequence) =>
+              handleSequenceChange(betweenPanel, sequence, 'front')
             }
           />
           <PanelRow
             side="back"
             panels={backPanels}
             creases={getCreasesForSide('back')}
+            totalCreases={spreadCount - 1}
             onCreaseChange={(betweenPanel, direction) =>
               handleCreaseChange(betweenPanel, direction, 'back')
+            }
+            onSequenceChange={(betweenPanel, sequence) =>
+              handleSequenceChange(betweenPanel, sequence, 'back')
             }
           />
           <DragOverlay>

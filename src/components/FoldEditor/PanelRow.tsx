@@ -11,14 +11,18 @@ interface PanelRowProps {
   side: Side;
   panels: Panel[];
   creases: Crease[];
+  totalCreases: number; // Total number of creases for sequence numbering
   onCreaseChange: (betweenPanel: number, direction: FoldDirection, side: Side) => void;
+  onSequenceChange: (betweenPanel: number, sequence: number, side: Side) => void;
 }
 
 export const PanelRow: React.FC<PanelRowProps> = ({
   side,
   panels,
   creases,
+  totalCreases,
   onCreaseChange,
+  onSequenceChange,
 }) => {
   const { setNodeRef: setDroppableRef, isOver } = useDroppable({
     id: `droppable-${side}`,
@@ -69,8 +73,13 @@ export const PanelRow: React.FC<PanelRowProps> = ({
                     <CreaseToggle
                       creaseIndex={panelIndex}
                       foldDirection={crease?.fold_direction || 'forward'}
+                      unfoldSequence={crease?.unfold_sequence ?? panelIndex}
+                      maxSequence={totalCreases - 1}
                       onChange={(direction) =>
                         onCreaseChange(panelIndex, direction, side)
+                      }
+                      onSequenceChange={(sequence) =>
+                        onSequenceChange(panelIndex, sequence, side)
                       }
                     />
                   )}

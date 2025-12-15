@@ -13,6 +13,7 @@ export interface Crease {
   side: Side; // which side this crease belongs to
   between_panel: number; // panel_index where crease exists (between N and N+1)
   fold_direction: FoldDirection;
+  unfold_sequence: number; // order in which this crease unfolds (0 = first, 1 = second, etc.)
 }
 
 export interface FoldEditorData {
