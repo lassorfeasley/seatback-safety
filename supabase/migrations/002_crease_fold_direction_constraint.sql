@@ -80,3 +80,4 @@ $$;
 COMMENT ON FUNCTION validate_crease_directions IS 
   'Validates that all front/back crease pairs for a card have opposite fold directions. Returns a row for each crease position showing whether it is valid.';
 
+

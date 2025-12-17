@@ -28,7 +28,8 @@ export const CardVisualizer: React.FC<CardVisualizerProps> = ({ panels, creases 
   const containerRef = useRef<HTMLDivElement>(null);
   
   // Target state: 0 = all unfolded, 1 = all folded
-  const [targetFoldState, setTargetFoldState] = useState<0 | 1>(0);
+  // Start folded so front panel 0 is visible as the "cover"
+  const [targetFoldState, setTargetFoldState] = useState<0 | 1>(1);
   
   // Animation refs
   const animationTimeouts = useRef<NodeJS.Timeout[]>([]);
@@ -86,12 +87,13 @@ export const CardVisualizer: React.FC<CardVisualizerProps> = ({ panels, creases 
   const [creaseFolds, setCreaseFolds] = useState<Record<number, number>>({});
 
   // Initialize and update crease folds when frontCreases change
+  // Default to folded (1) so front panel 0 is visible as the "cover"
   useEffect(() => {
     setCreaseFolds((prev) => {
       const updated: Record<number, number> = {};
       frontCreases.forEach((c) => {
-        // Preserve existing value or default to 0
-        updated[c.between_panel] = prev[c.between_panel] ?? 0;
+        // Preserve existing value or default to 1 (folded)
+        updated[c.between_panel] = prev[c.between_panel] ?? 1;
       });
       return updated;
     });
@@ -468,14 +470,36 @@ export const CardVisualizer: React.FC<CardVisualizerProps> = ({ panels, creases 
               step="0.01"
               value={overallFoldProgress}
               onChange={(e) => {
-                // Manual slider control - set all creases to the same value
-                const value = parseFloat(e.target.value);
+                // Sequential slider control - unfolds/folds in unfold_sequence order
+                const sliderValue = parseFloat(e.target.value);
+                const n = creasesByUnfoldOrder.length;
+                
+                if (n === 0) return;
+                
                 const newFolds: Record<number, number> = {};
-                frontCreases.forEach((c) => {
-                  newFolds[c.between_panel] = value;
+                
+                creasesByUnfoldOrder.forEach((crease, orderIndex) => {
+                  // Each crease gets a segment of the slider range
+                  // Crease at orderIndex i unfolds during slider range [(n-i-1)/n, (n-i)/n]
+                  // This means lower unfold_sequence unfolds first (as slider goes 1→0)
+                  const rangeStart = (n - orderIndex - 1) / n; // Fully unfolded threshold
+                  const rangeEnd = (n - orderIndex) / n; // Fully folded threshold
+                  
+                  if (sliderValue >= rangeEnd) {
+                    // Slider is above this crease's range - fully folded
+                    newFolds[crease.between_panel] = 1;
+                  } else if (sliderValue <= rangeStart) {
+                    // Slider is below this crease's range - fully unfolded
+                    newFolds[crease.between_panel] = 0;
+                  } else {
+                    // Slider is within this crease's range - interpolate
+                    const foldAmount = (sliderValue - rangeStart) / (rangeEnd - rangeStart);
+                    newFolds[crease.between_panel] = foldAmount;
+                  }
                 });
+                
                 setCreaseFolds(newFolds);
-                setTargetFoldState(value > 0.5 ? 1 : 0);
+                setTargetFoldState(sliderValue > 0.5 ? 1 : 0);
               }}
               className="flex-1 h-2 bg-muted rounded-lg appearance-none cursor-pointer"
             />

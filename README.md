@@ -31,3 +31,4 @@ The component expects data matching your database schema:
 - `card_panels`: panels with `side` (front/back) and `panel_index` (0-based)
 - `card_creases`: creases with `between_panel` (panel_index) and `fold_direction` (forward/backward)
 
+

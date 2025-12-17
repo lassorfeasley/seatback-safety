@@ -14,7 +14,7 @@ import {
 import { arrayMove } from '@dnd-kit/sortable';
 import { PanelRow } from './PanelRow';
 import { PanelCard } from './PanelCard';
-import { CardVisualizer } from './CardVisualizer';
+import { CardVisualizer3D } from './CardVisualizer3D';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Plus, Minus } from 'lucide-react';
@@ -603,7 +603,7 @@ export const FoldEditor: React.FC<FoldEditorProps> = ({
     </Card>
 
     {/* Card Visualizer */}
-    <CardVisualizer panels={panels} creases={creases} />
+    <CardVisualizer3D panels={panels} creases={creases} />
     </>
   );
 };
