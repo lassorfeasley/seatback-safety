@@ -56,9 +56,16 @@ const SpreadGroup: React.FC<SpreadGroupProps> = ({
   const creaseFoldAmount = creaseFolds[currentIndex] ?? 0;
   
   // Calculate fold angle based on direction
-  const maxAngle = Math.PI;
+  // When fully unfolded (creaseFoldAmount=0), maintain a 30° angle to show the card's volume
+  // When fully folded (creaseFoldAmount=1), angle is 180° (π radians)
+  const minAngle = 60 * Math.PI / 180; // 30 degrees - angle when unfolded
+  const maxAngle = Math.PI; // 180 degrees - fully folded
+  const angleRange = maxAngle - minAngle;
+  
+  // Apply angle: when unfolded (0) -> minAngle, when folded (1) -> maxAngle
+  // If no crease exists (last spread), angle is 0 (no rotation needed)
   const foldAngle = crease
-    ? (crease.fold_direction === 'forward' ? -1 : 1) * creaseFoldAmount * maxAngle
+    ? (crease.fold_direction === 'forward' ? -1 : 1) * (minAngle + creaseFoldAmount * angleRange)
     : 0;
 
   // Calculate the z-offset this crease contributes to subsequent spreads

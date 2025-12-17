@@ -111,7 +111,20 @@ export const FoldEditor: React.FC<FoldEditorProps> = ({
     initialCover || { spreadIndex: 0, side: 'front' }
   );
   const [activeId, setActiveId] = useState<string | null>(null);
-  const [hasChanges, setHasChanges] = useState(false);
+  
+  // Auto-save whenever data changes
+  const isInitialMount = React.useRef(true);
+  React.useEffect(() => {
+    // Skip the initial mount to avoid saving on load
+    if (isInitialMount.current) {
+      isInitialMount.current = false;
+      return;
+    }
+    
+    if (onSave) {
+      onSave({ panels, creases, cover });
+    }
+  }, [panels, creases, cover, onSave]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -216,7 +229,6 @@ export const FoldEditor: React.FC<FoldEditorProps> = ({
         // Reindex all panels
         const reindexedPanels = reindexPanels(updatedPanels);
         setPanels(reindexedPanels);
-        setHasChanges(true);
 
         // Remap creases based on new adjacency
         const remappedCreases = remapCreases(reindexedPanels, creases);
@@ -228,7 +240,6 @@ export const FoldEditor: React.FC<FoldEditorProps> = ({
         );
         const reindexedPanels = reindexPanels(updatedPanels);
         setPanels(reindexedPanels);
-        setHasChanges(true);
         const remappedCreases = remapCreases(reindexedPanels, creases);
         setCreases(remappedCreases);
       }
@@ -256,7 +267,6 @@ export const FoldEditor: React.FC<FoldEditorProps> = ({
         // Reindex all panels
         const reindexedPanels = reindexPanels(updatedPanels);
         setPanels(reindexedPanels);
-        setHasChanges(true);
 
         // Remap creases based on new adjacency
         const remappedCreases = remapCreases(reindexedPanels, creases);
@@ -286,7 +296,6 @@ export const FoldEditor: React.FC<FoldEditorProps> = ({
           // Reindex all panels to ensure continuous indices per side
           const reindexedPanels = reindexPanels(updatedPanels);
           setPanels(reindexedPanels);
-          setHasChanges(true);
 
           // Remap creases
           const remappedCreases = remapCreases(reindexedPanels, creases);
@@ -385,7 +394,6 @@ export const FoldEditor: React.FC<FoldEditorProps> = ({
 
         return updated;
       });
-      setHasChanges(true);
     },
     []
   );
@@ -420,7 +428,6 @@ export const FoldEditor: React.FC<FoldEditorProps> = ({
           return c;
         });
       });
-      setHasChanges(true);
     },
     []
   );
@@ -428,19 +435,7 @@ export const FoldEditor: React.FC<FoldEditorProps> = ({
   // Handle changing the cover designation
   const handleCoverChange = useCallback((spreadIndex: number, side: Side) => {
     setCover({ spreadIndex, side });
-    setHasChanges(true);
   }, []);
-
-  const handleSave = useCallback(() => {
-    if (onSave) {
-      onSave({
-        panels,
-        creases,
-        cover,
-      });
-      setHasChanges(false);
-    }
-  }, [panels, creases, cover, onSave]);
 
   // Calculate current number of spreads (front panels = back panels = spreads)
   const spreadCount = frontPanels.length;
@@ -488,7 +483,6 @@ export const FoldEditor: React.FC<FoldEditorProps> = ({
       ]);
     }
 
-    setHasChanges(true);
   }, [spreadCount]);
 
   // Remove the last spread (last panel from front and back)
@@ -510,7 +504,6 @@ export const FoldEditor: React.FC<FoldEditorProps> = ({
       );
     }
 
-    setHasChanges(true);
   }, [spreadCount]);
 
   return (
@@ -620,26 +613,6 @@ export const FoldEditor: React.FC<FoldEditorProps> = ({
           </span>
         </div>
 
-        <div className="mt-4 flex justify-end gap-2">
-          <Button
-            variant="outline"
-            onClick={() => {
-              setPanels(initialPanels);
-              setCreases(normalizedInitialCreases);
-              setCover(initialCover || { spreadIndex: 0, side: 'front' });
-              setHasChanges(false);
-            }}
-            disabled={!hasChanges}
-          >
-            Reset
-          </Button>
-          <Button
-            onClick={handleSave}
-            disabled={!hasChanges || !onSave}
-          >
-            Save Changes
-          </Button>
-        </div>
       </CardContent>
     </Card>
 
