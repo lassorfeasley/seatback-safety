@@ -1,4 +1,6 @@
+import { useState } from 'react';
 import { FoldEditor } from './components/FoldEditor';
+import { PanelCropper } from './components/PanelCropper';
 import type { Panel, Crease } from './components/FoldEditor';
 
 // Continental DC9-10 Safety Card
@@ -81,7 +83,11 @@ const exampleCreases: Crease[] = [
   },
 ];
 
+type TabType = 'cropper' | 'fold-editor';
+
 function App() {
+  const [activeTab, setActiveTab] = useState<TabType>('cropper');
+
   const handleSave = async (data: { panels: Panel[]; creases: Crease[] }) => {
     console.log('Saving data:', data);
     // Here you would call your Supabase mutation
@@ -91,16 +97,55 @@ function App() {
   };
 
   return (
-    <div className="min-h-screen bg-background p-8">
-      <div className="max-w-6xl mx-auto">
-        <h1 className="text-3xl font-bold mb-2">Safety Card Fold Editor</h1>
-        <p className="text-muted-foreground mb-6">Continental DC9-10</p>
-        <FoldEditor
-          cardId="example-card-1"
-          initialPanels={examplePanels}
-          initialCreases={exampleCreases}
-          onSave={handleSave}
-        />
+    <div className="min-h-screen bg-background">
+      {/* Tab Navigation */}
+      <div className="border-b bg-card">
+        <div className="max-w-7xl mx-auto px-4">
+          <nav className="flex gap-4" aria-label="Tabs">
+            <button
+              onClick={() => setActiveTab('cropper')}
+              className={`
+                py-4 px-2 border-b-2 font-medium text-sm transition-colors
+                ${activeTab === 'cropper'
+                  ? 'border-primary text-primary'
+                  : 'border-transparent text-muted-foreground hover:text-foreground hover:border-muted-foreground'
+                }
+              `}
+            >
+              Panel Cropper
+            </button>
+            <button
+              onClick={() => setActiveTab('fold-editor')}
+              className={`
+                py-4 px-2 border-b-2 font-medium text-sm transition-colors
+                ${activeTab === 'fold-editor'
+                  ? 'border-primary text-primary'
+                  : 'border-transparent text-muted-foreground hover:text-foreground hover:border-muted-foreground'
+                }
+              `}
+            >
+              Fold Editor
+            </button>
+          </nav>
+        </div>
+      </div>
+
+      {/* Tab Content */}
+      <div className="max-w-7xl mx-auto">
+        {activeTab === 'cropper' && <PanelCropper />}
+
+        {activeTab === 'fold-editor' && (
+          <div className="p-8">
+            <h1 className="text-3xl font-bold mb-2">Safety Card Fold Editor</h1>
+            <p className="text-muted-foreground mb-6">Continental DC9-10</p>
+            <FoldEditor
+              cardId="example-card-1"
+              initialPanels={examplePanels}
+              initialCreases={exampleCreases}
+              onSave={handleSave}
+            />
+          </div>
+        )}
       </div>
     </div>
   );
