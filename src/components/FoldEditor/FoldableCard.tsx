@@ -58,7 +58,7 @@ const SpreadGroup: React.FC<SpreadGroupProps> = ({
   // Calculate fold angle based on direction
   // When fully unfolded (creaseFoldAmount=0), maintain a 30° angle to show the card's volume
   // When fully folded (creaseFoldAmount=1), angle is 180° (π radians)
-  const minAngle = 60 * Math.PI / 180; // 30 degrees - angle when unfolded
+  const minAngle = 30 * Math.PI / 180; // 30 degrees - angle when unfolded
   const maxAngle = Math.PI; // 180 degrees - fully folded
   const angleRange = maxAngle - minAngle;
   

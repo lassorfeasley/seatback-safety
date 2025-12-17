@@ -249,7 +249,7 @@ export const CardVisualizer3D: React.FC<CardVisualizer3DProps> = ({ panels, crea
       <CardContent>
         <div className="rounded-lg overflow-hidden bg-gradient-to-b from-slate-100 to-slate-200 dark:from-slate-800 dark:to-slate-900" style={{ height: '400px' }}>
           <Canvas
-            camera={{ position: [0, 20, 400], fov: 0 }}
+            camera={{ position: [0, 20, 200], fov: 50 }}
             shadows
             dpr={[1.5, 2]}
             gl={{ 
