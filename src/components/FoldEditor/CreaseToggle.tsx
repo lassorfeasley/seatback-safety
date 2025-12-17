@@ -41,11 +41,14 @@ export const CreaseToggle: React.FC<CreaseToggleProps> = ({
     }
   };
 
+  // Crease label: C1, C2, etc. (1-indexed)
+  const creaseLabel = `C${creaseIndex + 1}`;
+
   return (
     <div className="flex flex-col items-center gap-1">
-      {/* Crease position label */}
-      <span className="text-[10px] text-muted-foreground font-mono">
-        pos #{creaseIndex}
+      {/* Crease label */}
+      <span className="text-xs text-muted-foreground font-mono font-semibold">
+        {creaseLabel}
       </span>
       
       {/* Direction toggle button */}
@@ -61,7 +64,7 @@ export const CreaseToggle: React.FC<CreaseToggleProps> = ({
             ? "bg-blue-50 hover:bg-blue-100 border-blue-200" 
             : "bg-orange-50 hover:bg-orange-100 border-orange-200"
         )}
-        aria-label={`Crease ${creaseIndex} - Fold ${foldDirection}, click to toggle`}
+        aria-label={`Crease ${creaseLabel} - Fold ${foldDirection}, click to toggle`}
       >
         {foldDirection === 'forward' ? (
           <ArrowRight className="h-3 w-3" />

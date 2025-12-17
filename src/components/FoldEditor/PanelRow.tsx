@@ -29,19 +29,33 @@ export const PanelRow: React.FC<PanelRowProps> = ({
   });
 
   // Sort panels by panel_index
-  const sortedPanels = [...panels].sort((a, b) => a.panel_index - b.panel_index);
+  // For back side, reverse the display order so it matches physical position when card is flipped
+  const sortedPanels = [...panels].sort((a, b) => {
+    if (side === 'back') {
+      return b.panel_index - a.panel_index; // Reverse order for back
+    }
+    return a.panel_index - b.panel_index;
+  });
 
   // Get creases for this row (only between panels on the same side)
-  const getCreaseBetween = (index: number): Crease | undefined => {
+  // For back side, creases are displayed between reversed panels
+  const getCreaseBetween = (panelIndex: number): Crease | undefined => {
+    if (side === 'back') {
+      // For reversed back panels, crease between display positions corresponds to
+      // the crease at (panelIndex - 1) since we're going in reverse
+      return creases.find((c) => c.between_panel === panelIndex - 1);
+    }
     // Crease exists between panel_index N and N+1
-    // So if we have panels at index 0, 1, 2, creases are at between_panel 0, 1
-    return creases.find((c) => c.between_panel === index);
+    return creases.find((c) => c.between_panel === panelIndex);
   };
+
+  // Get display label for the side
+  const sideLabel = side === 'front' ? 'Front Side' : 'Back Side';
 
   return (
     <div className="mb-6">
-      <h3 className="mb-3 text-lg font-semibold capitalize">
-        {side}
+      <h3 className="mb-3 text-lg font-semibold">
+        {sideLabel}
       </h3>
       <Card
         ref={setDroppableRef}
@@ -65,21 +79,27 @@ export const PanelRow: React.FC<PanelRowProps> = ({
             sortedPanels.map((panel, idx) => {
               const panelIndex = panel.panel_index;
               const crease = getCreaseBetween(panelIndex);
+              
+              // For back side, the crease index shown is based on the physical position
+              // which is reversed relative to the panel_index
+              const creaseDisplayIndex = side === 'back' 
+                ? panelIndex - 1  // Crease to the left of this panel in original indexing
+                : panelIndex;     // Crease to the right of this panel
 
               return (
                 <React.Fragment key={panel.id}>
                   <PanelCard panel={panel} />
-                  {idx < sortedPanels.length - 1 && (
+                  {idx < sortedPanels.length - 1 && crease && (
                     <CreaseToggle
-                      creaseIndex={panelIndex}
-                      foldDirection={crease?.fold_direction || 'forward'}
-                      unfoldSequence={crease?.unfold_sequence ?? panelIndex}
+                      creaseIndex={creaseDisplayIndex}
+                      foldDirection={crease.fold_direction || 'forward'}
+                      unfoldSequence={crease.unfold_sequence ?? creaseDisplayIndex}
                       maxSequence={totalCreases - 1}
                       onChange={(direction) =>
-                        onCreaseChange(panelIndex, direction, side)
+                        onCreaseChange(crease.between_panel, direction, side)
                       }
                       onSequenceChange={(sequence) =>
-                        onSequenceChange(panelIndex, sequence, side)
+                        onSequenceChange(crease.between_panel, sequence, side)
                       }
                     />
                   )}

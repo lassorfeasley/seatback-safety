@@ -18,12 +18,13 @@ import { CardVisualizer3D } from './CardVisualizer3D';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Plus, Minus } from 'lucide-react';
-import type { Panel, Crease, Side, FoldDirection, FoldEditorProps } from './types';
+import type { Panel, Crease, Side, FoldDirection, FoldEditorProps, CoverDesignation } from './types';
 
 export const FoldEditor: React.FC<FoldEditorProps> = ({
   cardId,
   initialPanels,
   initialCreases,
+  initialCover,
   onSave,
 }) => {
   // Validate initial data has equal front/back panels
@@ -106,6 +107,9 @@ export const FoldEditor: React.FC<FoldEditorProps> = ({
 
   const [panels, setPanels] = useState<Panel[]>(initialPanels);
   const [creases, setCreases] = useState<Crease[]>(normalizedInitialCreases);
+  const [cover, setCover] = useState<CoverDesignation>(
+    initialCover || { spreadIndex: 0, side: 'front' }
+  );
   const [activeId, setActiveId] = useState<string | null>(null);
   const [hasChanges, setHasChanges] = useState(false);
 
@@ -421,15 +425,22 @@ export const FoldEditor: React.FC<FoldEditorProps> = ({
     []
   );
 
+  // Handle changing the cover designation
+  const handleCoverChange = useCallback((spreadIndex: number, side: Side) => {
+    setCover({ spreadIndex, side });
+    setHasChanges(true);
+  }, []);
+
   const handleSave = useCallback(() => {
     if (onSave) {
       onSave({
         panels,
         creases,
+        cover,
       });
       setHasChanges(false);
     }
-  }, [panels, creases, onSave]);
+  }, [panels, creases, cover, onSave]);
 
   // Calculate current number of spreads (front panels = back panels = spreads)
   const spreadCount = frontPanels.length;
@@ -580,12 +591,42 @@ export const FoldEditor: React.FC<FoldEditorProps> = ({
           </span>
         </div>
 
+        {/* Cover designation */}
+        <div className="mt-4 flex items-center gap-4 border-t pt-4">
+          <span className="text-sm font-medium">Cover:</span>
+          <div className="flex items-center gap-2">
+            <select
+              value={cover.spreadIndex}
+              onChange={(e) => handleCoverChange(parseInt(e.target.value, 10), cover.side)}
+              className="rounded-md border border-input bg-background px-3 py-1.5 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+            >
+              {Array.from({ length: spreadCount }, (_, i) => (
+                <option key={i} value={i}>
+                  Spread {i + 1}
+                </option>
+              ))}
+            </select>
+            <select
+              value={cover.side}
+              onChange={(e) => handleCoverChange(cover.spreadIndex, e.target.value as Side)}
+              className="rounded-md border border-input bg-background px-3 py-1.5 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+            >
+              <option value="front">Front (F-S{cover.spreadIndex + 1})</option>
+              <option value="back">Back (B-S{cover.spreadIndex + 1})</option>
+            </select>
+          </div>
+          <span className="text-xs text-muted-foreground">
+            The cover faces outward when the card is fully folded
+          </span>
+        </div>
+
         <div className="mt-4 flex justify-end gap-2">
           <Button
             variant="outline"
             onClick={() => {
               setPanels(initialPanels);
               setCreases(normalizedInitialCreases);
+              setCover(initialCover || { spreadIndex: 0, side: 'front' });
               setHasChanges(false);
             }}
             disabled={!hasChanges}
@@ -603,7 +644,7 @@ export const FoldEditor: React.FC<FoldEditorProps> = ({
     </Card>
 
     {/* Card Visualizer */}
-    <CardVisualizer3D panels={panels} creases={creases} />
+    <CardVisualizer3D panels={panels} creases={creases} cover={cover} />
     </>
   );
 };

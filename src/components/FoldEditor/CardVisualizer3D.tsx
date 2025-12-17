@@ -5,18 +5,19 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { RotateCw, RotateCcw, Maximize2, Minimize2 } from 'lucide-react';
 import { FoldableCard } from './FoldableCard';
-import type { Panel, Crease } from './types';
+import type { Panel, Crease, CoverDesignation } from './types';
 
 interface CardVisualizer3DProps {
   panels: Panel[];
   creases: Crease[];
+  cover?: CoverDesignation;
 }
 
-// Animation timing constants
-const FOLD_DURATION_PER_CREASE = 400; // ms per crease animation
-const FOLD_STAGGER_DELAY = 100; // ms overlap between sequential folds
+// Animation timing constants for button-triggered fold/unfold
+const FOLD_DURATION_PER_CREASE = 1200; // ms delay between each crease starting
+const FOLD_STAGGER_DELAY = 200; // ms overlap between sequential folds
 
-export const CardVisualizer3D: React.FC<CardVisualizer3DProps> = ({ panels, creases }) => {
+export const CardVisualizer3D: React.FC<CardVisualizer3DProps> = ({ panels, creases, cover }) => {
   // Target state: 0 = all unfolded, 1 = all folded
   // Start folded so front panel 0 is visible as the "cover"
   const [targetFoldState, setTargetFoldState] = useState<0 | 1>(1);
@@ -63,12 +64,27 @@ export const CardVisualizer3D: React.FC<CardVisualizer3DProps> = ({ panels, crea
     };
   }, []);
 
-  // Reset camera view
+  // Reset to initial state: folded card with default camera view
   const handleReset = useCallback(() => {
+    // Reset camera
     if (controlsRef.current) {
       controlsRef.current.reset();
     }
-  }, []);
+    
+    // Reset to folded state (initial state on load)
+    // Clear any pending animations
+    animationTimeouts.current.forEach(clearTimeout);
+    animationTimeouts.current = [];
+    
+    setTargetFoldState(1);
+    
+    // Fold all creases smoothly
+    const newFolds: Record<number, number> = {};
+    frontCreases.forEach((c) => {
+      newFolds[c.between_panel] = 1;
+    });
+    setCreaseFolds(newFolds);
+  }, [frontCreases]);
 
   // Flip to back view (180° on Y axis)
   const handleFlip = useCallback(() => {
@@ -233,12 +249,13 @@ export const CardVisualizer3D: React.FC<CardVisualizer3DProps> = ({ panels, crea
       <CardContent>
         <div className="rounded-lg overflow-hidden bg-gradient-to-b from-slate-100 to-slate-200 dark:from-slate-800 dark:to-slate-900" style={{ height: '400px' }}>
           <Canvas
-            camera={{ position: [0, 50, 400], fov: 50 }}
+            camera={{ position: [0, 20, 300], fov: 25 }}
             shadows
-            dpr={[1, 2]}
+            dpr={[1.5, 2]}
             gl={{ 
               logarithmicDepthBuffer: true,
               antialias: true,
+              powerPreference: 'high-performance',
             }}
           >
             {/* Soft ambient lighting */}
@@ -273,14 +290,18 @@ export const CardVisualizer3D: React.FC<CardVisualizer3DProps> = ({ panels, crea
             {/* Environment for subtle reflections */}
             <Environment preset="studio" />
 
-            {/* The foldable card */}
-            <FoldableCard
-              panels={panels}
-              creases={creases}
-              creaseFolds={creaseFolds}
-              panelWidth={180}
-              panelHeight={120}
-            />
+            {/* The foldable card - uses internal centering that animates with fold state */}
+            {/* Scale down for better framing in the viewport */}
+            <group scale={0.3}>
+              <FoldableCard
+                panels={panels}
+                creases={creases}
+                creaseFolds={creaseFolds}
+                cover={cover}
+                panelWidth={180}
+                panelHeight={120}
+              />
+            </group>
 
             {/* Soft contact shadow on ground */}
             <ContactShadows
@@ -292,16 +313,15 @@ export const CardVisualizer3D: React.FC<CardVisualizer3DProps> = ({ panels, crea
               color="#1a1a2e"
             />
 
-            {/* Orbit controls for rotation/zoom */}
+            {/* Orbit controls for rotation only (zoom disabled) */}
             <OrbitControls
               ref={controlsRef}
               enablePan={false}
-              minDistance={150}
-              maxDistance={600}
-              target={[0, 0, 0]}
+              enableZoom={false}
               autoRotate={false}
               enableDamping
               dampingFactor={0.05}
+              makeDefault
             />
           </Canvas>
         </div>

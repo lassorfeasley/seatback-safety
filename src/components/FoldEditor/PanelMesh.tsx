@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo } from 'react';
 import { useTexture } from '@react-three/drei';
-import { SRGBColorSpace, FrontSide, LinearFilter } from 'three';
+import { useThree } from '@react-three/fiber';
+import { SRGBColorSpace, FrontSide, LinearMipmapLinearFilter, LinearFilter } from 'three';
 import type { Panel } from './types';
 
 interface PanelMeshProps {
@@ -52,14 +53,19 @@ const TexturedFace: React.FC<{
   renderOrder?: number;
 }> = ({ url, targetWidth, fallbackHeight, position, rotation, renderOrder = 0 }) => {
   const texture = useTexture(url);
+  const { gl } = useThree();
   
-  // Configure texture for correct color and quality
+  // Configure texture for correct color and high quality
   useEffect(() => {
     texture.colorSpace = SRGBColorSpace;
-    texture.minFilter = LinearFilter;
+    // Use mipmapping for smooth scaling at different distances
+    texture.minFilter = LinearMipmapLinearFilter;
     texture.magFilter = LinearFilter;
+    // Enable anisotropic filtering for crisper textures at angles
+    texture.anisotropy = gl.capabilities.getMaxAnisotropy();
+    texture.generateMipmaps = true;
     texture.needsUpdate = true;
-  }, [texture]);
+  }, [texture, gl]);
 
   // Calculate dimensions from actual image aspect ratio
   const { width, height } = useMemo(() => {
@@ -82,9 +88,7 @@ const TexturedFace: React.FC<{
         side={FrontSide}
         toneMapped={false}
         depthWrite={true}
-        polygonOffset={true}
-        polygonOffsetFactor={-renderOrder}
-        polygonOffsetUnits={-1}
+        depthTest={true}
       />
     </mesh>
   );
@@ -101,7 +105,7 @@ export const PanelMesh: React.FC<PanelMeshProps> = ({
   backPanel,
   width,
   height,
-  thickness = 3,
+  thickness = 0.01,
   renderOrder = 0,
 }) => {
   const halfThickness = thickness / 2;
@@ -110,17 +114,21 @@ export const PanelMesh: React.FC<PanelMeshProps> = ({
     <group>
       {/* Front face - facing +Z */}
       {frontPanel ? (
-        <React.Suspense fallback={
-          <PlaceholderPanel 
-            width={width} 
-            height={height} 
-            color="#6366F1" 
-            position={[0, 0, halfThickness]}
-            rotation={[0, 0, 0]}
-            renderOrder={renderOrder}
-          />
-        }>
+        <React.Suspense 
+          key={`front-${frontPanel.id}-${frontPanel.panel_index}`}
+          fallback={
+            <PlaceholderPanel 
+              width={width} 
+              height={height} 
+              color="#6366F1" 
+              position={[0, 0, halfThickness]}
+              rotation={[0, 0, 0]}
+              renderOrder={renderOrder}
+            />
+          }
+        >
           <TexturedFace
+            key={`front-tex-${frontPanel.id}-${frontPanel.panel_index}`}
             url={frontPanel.thumbnail_url}
             targetWidth={width}
             fallbackHeight={height}
@@ -131,6 +139,7 @@ export const PanelMesh: React.FC<PanelMeshProps> = ({
         </React.Suspense>
       ) : (
         <PlaceholderPanel 
+          key="front-placeholder"
           width={width} 
           height={height} 
           color="#6366F1" 
@@ -142,17 +151,21 @@ export const PanelMesh: React.FC<PanelMeshProps> = ({
 
       {/* Back face - facing -Z (rotated 180° on Y axis) */}
       {backPanel ? (
-        <React.Suspense fallback={
-          <PlaceholderPanel 
-            width={width} 
-            height={height} 
-            color="#8B5CF6" 
-            position={[0, 0, -halfThickness]}
-            rotation={[0, Math.PI, 0]}
-            renderOrder={renderOrder}
-          />
-        }>
+        <React.Suspense 
+          key={`back-${backPanel.id}-${backPanel.panel_index}`}
+          fallback={
+            <PlaceholderPanel 
+              width={width} 
+              height={height} 
+              color="#8B5CF6" 
+              position={[0, 0, -halfThickness]}
+              rotation={[0, Math.PI, 0]}
+              renderOrder={renderOrder}
+            />
+          }
+        >
           <TexturedFace
+            key={`back-tex-${backPanel.id}-${backPanel.panel_index}`}
             url={backPanel.thumbnail_url}
             targetWidth={width}
             fallbackHeight={height}
@@ -163,6 +176,7 @@ export const PanelMesh: React.FC<PanelMeshProps> = ({
         </React.Suspense>
       ) : (
         <PlaceholderPanel 
+          key="back-placeholder"
           width={width} 
           height={height} 
           color="#8B5CF6" 
