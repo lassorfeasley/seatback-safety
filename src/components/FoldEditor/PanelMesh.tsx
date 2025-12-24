@@ -188,3 +188,4 @@ export const PanelMesh: React.FC<PanelMeshProps> = ({
     </group>
   );
 };
+

@@ -105,3 +105,4 @@ export const CropToolbar: React.FC<CropToolbarProps> = ({
     </div>
   );
 };
+

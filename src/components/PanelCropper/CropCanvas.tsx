@@ -1,10 +1,59 @@
-import React, { useRef, useState, useEffect, useCallback } from 'react';
-import { Stage, Layer, Image as KonvaImage, Rect, Transformer } from 'react-konva';
+import React, { useRef, useState, useEffect, useCallback, useMemo } from 'react';
+import { Stage, Layer, Image as KonvaImage, Rect, Transformer, Group } from 'react-konva';
 import type Konva from 'konva';
 import type { CropCanvasProps, CropRegion } from './types';
 
 const MIN_REGION_SIZE = 20;
 const ZOOM_SCALE_BY = 1.1;
+
+// Check if two rectangles intersect
+function rectsIntersect(
+  a: { x: number; y: number; width: number; height: number },
+  b: { x: number; y: number; width: number; height: number }
+): boolean {
+  return !(
+    a.x + a.width <= b.x ||
+    b.x + b.width <= a.x ||
+    a.y + a.height <= b.y ||
+    b.y + b.height <= a.y
+  );
+}
+
+// Find a valid position that doesn't intersect with other regions
+function findNonIntersectingPosition(
+  region: CropRegion,
+  otherRegions: CropRegion[],
+  bounds: { width: number; height: number } | null
+): { x: number; y: number } {
+  // Start with the desired position
+  let { x, y } = region;
+
+  // Check for intersections and try to resolve
+  for (const other of otherRegions) {
+    if (other.id === region.id) continue;
+
+    const testRegion = { ...region, x, y };
+    if (rectsIntersect(testRegion, other)) {
+      // Try moving right of the intersecting region
+      const rightX = other.x + other.width + 5;
+      if (!bounds || rightX + region.width <= bounds.width) {
+        x = rightX;
+      } else {
+        // Try moving below
+        y = other.y + other.height + 5;
+        x = region.x; // Reset x
+      }
+    }
+  }
+
+  // Clamp to bounds
+  if (bounds) {
+    x = Math.max(0, Math.min(bounds.width - region.width, x));
+    y = Math.max(0, Math.min(bounds.height - region.height, y));
+  }
+
+  return { x, y };
+}
 
 export const CropCanvas: React.FC<CropCanvasProps> = ({
   imageUrl,
@@ -14,9 +63,11 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
   lockDimensions,
   lockedWidth,
   lockedHeight,
+  rotation,
   onRegionAdd,
   onRegionUpdate,
   onRegionSelect,
+  onRegionDelete,
   onImageLoad,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -28,6 +79,38 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
   const [stagePosition, setStagePosition] = useState({ x: 0, y: 0 });
   const [isDrawing, setIsDrawing] = useState(false);
   const [drawingRegion, setDrawingRegion] = useState<CropRegion | null>(null);
+
+  // Calculate the bounding box of the rotated image
+  const rotatedBounds = useMemo(() => {
+    if (!imageDimensions) return null;
+    
+    const radians = (rotation * Math.PI) / 180;
+    const cos = Math.abs(Math.cos(radians));
+    const sin = Math.abs(Math.sin(radians));
+    
+    // The bounding box of the rotated image
+    const width = imageDimensions.width * cos + imageDimensions.height * sin;
+    const height = imageDimensions.width * sin + imageDimensions.height * cos;
+    
+    return { width, height };
+  }, [imageDimensions, rotation]);
+
+  // Keyboard event handler for delete
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedRegionId) {
+        // Don't delete if user is typing in an input
+        if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
+          return;
+        }
+        e.preventDefault();
+        onRegionDelete(selectedRegionId);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [selectedRegionId, onRegionDelete]);
 
   // Load image when URL changes
   useEffect(() => {
@@ -77,7 +160,7 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
     if (!transformerRef.current || !stageRef.current) return;
 
     const stage = stageRef.current;
-    const selectedNode = stage.findOne(`#region-${selectedRegionId}`);
+    const selectedNode = stage.findOne(`#${selectedRegionId}`);
 
     if (selectedNode) {
       transformerRef.current.nodes([selectedNode]);
@@ -118,9 +201,10 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
     setStagePosition(newPos);
   }, [stageScale, stagePosition]);
 
-  // Convert stage coordinates to image coordinates
-  const stageToImageCoords = useCallback(
+  // Convert stage coordinates to canvas coordinates (for axis-aligned crops on rotated image)
+  const stageToCanvasCoords = useCallback(
     (stageX: number, stageY: number) => {
+      // Simple conversion - crops are in canvas space (axis-aligned)
       return {
         x: (stageX - stagePosition.x) / stageScale,
         y: (stageY - stagePosition.y) / stageScale,
@@ -129,13 +213,28 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
     [stageScale, stagePosition]
   );
 
+  // Check if a new region would intersect with existing ones
+  const wouldIntersect = useCallback(
+    (newRegion: CropRegion, excludeId?: string) => {
+      for (const region of regions) {
+        if (region.id === excludeId) continue;
+        if (rectsIntersect(newRegion, region)) {
+          return true;
+        }
+      }
+      return false;
+    },
+    [regions]
+  );
+
   // Handle mouse down - start drawing new region
   const handleMouseDown = useCallback(
     (e: Konva.KonvaEventObject<MouseEvent>) => {
       // Only start drawing if clicking on stage/image, not on existing regions
-      const clickedOnEmpty = e.target === e.target.getStage() || e.target.name() === 'background-image';
+      const target = e.target;
+      const isRegion = target.name()?.startsWith('crop-') || target.id()?.startsWith('crop-');
       
-      if (!clickedOnEmpty) {
+      if (isRegion) {
         return;
       }
 
@@ -148,32 +247,33 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
       const pointer = stage.getPointerPosition();
       if (!pointer) return;
 
-      const imageCoords = stageToImageCoords(pointer.x, pointer.y);
+      const canvasCoords = stageToCanvasCoords(pointer.x, pointer.y);
 
-      // Check if click is within image bounds
-      if (
-        imageDimensions &&
-        (imageCoords.x < 0 ||
-          imageCoords.y < 0 ||
-          imageCoords.x > imageDimensions.width ||
-          imageCoords.y > imageDimensions.height)
-      ) {
-        return;
+      // Check if click is within the rotated image bounds
+      if (rotatedBounds) {
+        if (
+          canvasCoords.x < 0 ||
+          canvasCoords.y < 0 ||
+          canvasCoords.x > rotatedBounds.width ||
+          canvasCoords.y > rotatedBounds.height
+        ) {
+          return;
+        }
       }
 
       setIsDrawing(true);
 
       const newRegion: CropRegion = {
-        id: `region-${Date.now()}`,
-        x: Math.round(imageCoords.x),
-        y: Math.round(imageCoords.y),
+        id: `crop-${Date.now()}`,
+        x: Math.round(canvasCoords.x),
+        y: Math.round(canvasCoords.y),
         width: lockDimensions && lockedWidth ? lockedWidth : 0,
         height: lockDimensions && lockedHeight ? lockedHeight : 0,
       };
 
       setDrawingRegion(newRegion);
     },
-    [imageDimensions, lockDimensions, lockedWidth, lockedHeight, onRegionSelect, stageToImageCoords]
+    [rotatedBounds, lockDimensions, lockedWidth, lockedHeight, onRegionSelect, stageToCanvasCoords]
   );
 
   // Handle mouse move - resize drawing region
@@ -187,15 +287,15 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
       const pointer = stage.getPointerPosition();
       if (!pointer) return;
 
-      const imageCoords = stageToImageCoords(pointer.x, pointer.y);
+      const canvasCoords = stageToCanvasCoords(pointer.x, pointer.y);
 
-      // Clamp to image bounds
-      const clampedX = imageDimensions
-        ? Math.max(0, Math.min(imageDimensions.width, imageCoords.x))
-        : imageCoords.x;
-      const clampedY = imageDimensions
-        ? Math.max(0, Math.min(imageDimensions.height, imageCoords.y))
-        : imageCoords.y;
+      // Clamp to rotated image bounds
+      const clampedX = rotatedBounds
+        ? Math.max(0, Math.min(rotatedBounds.width, canvasCoords.x))
+        : canvasCoords.x;
+      const clampedY = rotatedBounds
+        ? Math.max(0, Math.min(rotatedBounds.height, canvasCoords.y))
+        : canvasCoords.y;
 
       // If dimensions are locked, don't resize
       if (lockDimensions && lockedWidth && lockedHeight) {
@@ -211,7 +311,7 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
         height: height,
       });
     },
-    [isDrawing, drawingRegion, imageDimensions, lockDimensions, lockedWidth, lockedHeight, stageToImageCoords]
+    [isDrawing, drawingRegion, rotatedBounds, lockDimensions, lockedWidth, lockedHeight, stageToCanvasCoords]
   );
 
   // Handle mouse up - finish drawing region
@@ -243,7 +343,7 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
 
     // Only add if region is large enough
     if (width >= MIN_REGION_SIZE && height >= MIN_REGION_SIZE) {
-      const finalRegion: CropRegion = {
+      const candidateRegion: CropRegion = {
         ...drawingRegion,
         x: Math.round(x),
         y: Math.round(y),
@@ -251,11 +351,25 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
         height: Math.round(height),
         label: `Panel ${regions.length + 1}`,
       };
-      onRegionAdd(finalRegion);
+
+      // Check for intersection and find valid position
+      if (wouldIntersect(candidateRegion)) {
+        const validPos = findNonIntersectingPosition(candidateRegion, regions, rotatedBounds);
+        candidateRegion.x = validPos.x;
+        candidateRegion.y = validPos.y;
+
+        // If still intersecting after adjustment, don't add
+        if (wouldIntersect(candidateRegion)) {
+          setDrawingRegion(null);
+          return;
+        }
+      }
+
+      onRegionAdd(candidateRegion);
     }
 
     setDrawingRegion(null);
-  }, [isDrawing, drawingRegion, lockDimensions, lockedWidth, lockedHeight, regions.length, onRegionAdd]);
+  }, [isDrawing, drawingRegion, lockDimensions, lockedWidth, lockedHeight, regions, rotatedBounds, wouldIntersect, onRegionAdd]);
 
   // Handle region click (select)
   const handleRegionClick = useCallback(
@@ -287,9 +401,19 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
         height: Math.round(Math.max(MIN_REGION_SIZE, node.height() * scaleY)),
       };
 
+      // Check for intersection with other regions
+      if (wouldIntersect(updatedRegion, regionId)) {
+        // Revert to original position/size
+        node.x(region.x);
+        node.y(region.y);
+        node.width(region.width);
+        node.height(region.height);
+        return;
+      }
+
       onRegionUpdate(updatedRegion);
     },
-    [regions, onRegionUpdate]
+    [regions, wouldIntersect, onRegionUpdate]
   );
 
   // Handle region drag end
@@ -299,13 +423,13 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
       const region = regions.find((r) => r.id === regionId);
       if (!region) return;
 
-      // Clamp position to image bounds
+      // Clamp position to rotated bounds
       let x = node.x();
       let y = node.y();
 
-      if (imageDimensions) {
-        x = Math.max(0, Math.min(imageDimensions.width - region.width, x));
-        y = Math.max(0, Math.min(imageDimensions.height - region.height, y));
+      if (rotatedBounds) {
+        x = Math.max(0, Math.min(rotatedBounds.width - region.width, x));
+        y = Math.max(0, Math.min(rotatedBounds.height - region.height, y));
       }
 
       const updatedRegion: CropRegion = {
@@ -314,9 +438,26 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
         y: Math.round(y),
       };
 
+      // Check for intersection and revert if needed
+      if (wouldIntersect(updatedRegion, regionId)) {
+        // Find non-intersecting position
+        const validPos = findNonIntersectingPosition(updatedRegion, regions, rotatedBounds);
+        
+        // If still intersecting, revert to original
+        const testRegion = { ...updatedRegion, ...validPos };
+        if (wouldIntersect(testRegion, regionId)) {
+          node.x(region.x);
+          node.y(region.y);
+          return;
+        }
+        
+        updatedRegion.x = validPos.x;
+        updatedRegion.y = validPos.y;
+      }
+
       onRegionUpdate(updatedRegion);
     },
-    [regions, imageDimensions, onRegionUpdate]
+    [regions, rotatedBounds, wouldIntersect, onRegionUpdate]
   );
 
   // Normalize drawing region for display
@@ -330,8 +471,29 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
       }
     : null;
 
+  // Check if currently drawing region would intersect
+  const drawingWouldIntersect = useMemo(() => {
+    if (!normalizedDrawingRegion || normalizedDrawingRegion.width < MIN_REGION_SIZE || normalizedDrawingRegion.height < MIN_REGION_SIZE) {
+      return false;
+    }
+    return wouldIntersect(normalizedDrawingRegion as CropRegion);
+  }, [normalizedDrawingRegion, wouldIntersect]);
+
+  // Calculate image position to center the rotated image
+  const imageOffset = useMemo(() => {
+    if (!imageDimensions || !rotatedBounds) return { x: 0, y: 0 };
+    return {
+      x: (rotatedBounds.width - imageDimensions.width) / 2,
+      y: (rotatedBounds.height - imageDimensions.height) / 2,
+    };
+  }, [imageDimensions, rotatedBounds]);
+
   return (
-    <div ref={containerRef} className="relative w-full overflow-hidden bg-neutral-900 rounded-b-lg">
+    <div 
+      ref={containerRef} 
+      className="relative w-full overflow-hidden bg-neutral-900 rounded-b-lg"
+      tabIndex={0}
+    >
       <Stage
         ref={stageRef}
         width={stageSize.width}
@@ -348,20 +510,29 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
         onMouseLeave={handleMouseUp}
       >
         <Layer>
-          {/* Background Image */}
-          {image && (
-            <KonvaImage
-              image={image}
-              name="background-image"
-              listening={true}
-            />
+          {/* Rotated image (the image rotates to align with axis-aligned crops) */}
+          {image && imageDimensions && (
+            <Group
+              x={imageOffset.x + imageDimensions.width / 2}
+              y={imageOffset.y + imageDimensions.height / 2}
+              rotation={rotation}
+              offsetX={imageDimensions.width / 2}
+              offsetY={imageDimensions.height / 2}
+            >
+              <KonvaImage
+                image={image}
+                name="background-image"
+                listening={true}
+              />
+            </Group>
           )}
 
-          {/* Existing regions */}
+          {/* Axis-aligned crop regions (these stay horizontal/vertical) */}
           {regions.map((region) => (
             <Rect
               key={region.id}
-              id={`region-${region.id}`}
+              id={region.id}
+              name={region.id}
               x={region.x}
               y={region.y}
               width={region.width}
@@ -377,21 +548,21 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
             />
           ))}
 
-          {/* Currently drawing region */}
+          {/* Currently drawing region (axis-aligned) */}
           {normalizedDrawingRegion && normalizedDrawingRegion.width > 0 && normalizedDrawingRegion.height > 0 && (
             <Rect
               x={normalizedDrawingRegion.x}
               y={normalizedDrawingRegion.y}
               width={normalizedDrawingRegion.width}
               height={normalizedDrawingRegion.height}
-              fill="rgba(99, 102, 241, 0.3)"
-              stroke="#6366f1"
+              fill={drawingWouldIntersect ? 'rgba(239, 68, 68, 0.3)' : 'rgba(99, 102, 241, 0.3)'}
+              stroke={drawingWouldIntersect ? '#ef4444' : '#6366f1'}
               strokeWidth={2 / stageScale}
               dash={[10 / stageScale, 5 / stageScale]}
             />
           )}
 
-          {/* Transformer for selected region */}
+          {/* Transformer for selected region - edge handles only */}
           <Transformer
             ref={transformerRef}
             boundBoxFunc={(oldBox, newBox) => {
@@ -402,8 +573,24 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
               return newBox;
             }}
             rotateEnabled={false}
-            enabledAnchors={['top-left', 'top-right', 'bottom-left', 'bottom-right']}
+            keepRatio={false}
+            enabledAnchors={['top-center', 'bottom-center', 'middle-left', 'middle-right']}
+            anchorSize={14}
+            anchorStroke="#6366f1"
+            anchorFill="#ffffff"
+            anchorCornerRadius={2}
+            borderStroke="#6366f1"
+            borderStrokeWidth={2}
           />
+
+          {/* Fallback when no dimensions yet */}
+          {image && !imageDimensions && (
+            <KonvaImage
+              image={image}
+              name="background-image"
+              listening={true}
+            />
+          )}
         </Layer>
       </Stage>
 
@@ -436,12 +623,13 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
       {imageDimensions && (
         <div className="absolute top-4 left-4 bg-black/60 text-white text-xs px-2 py-1 rounded">
           {imageDimensions.width} × {imageDimensions.height}px | Zoom: {Math.round(stageScale * 100)}%
+          {rotation !== 0 && ` | Rotation: ${Math.round(rotation * 10) / 10}°`}
         </div>
       )}
 
       {/* Instructions */}
       <div className="absolute bottom-4 left-4 bg-black/60 text-white text-xs px-2 py-1 rounded">
-        Click + drag to create crop | Scroll to zoom | Drag canvas to pan
+        Click + drag to crop | Delete/Backspace to remove | Scroll to zoom
       </div>
     </div>
   );

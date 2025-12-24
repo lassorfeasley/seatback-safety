@@ -276,3 +276,4 @@ export const FoldableCard: React.FC<FoldableCardProps> = ({
     </animated.group>
   );
 };
+

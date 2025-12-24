@@ -31,3 +31,4 @@ COMMENT ON COLUMN public.card_creases.unfold_sequence IS
   'The order in which this crease unfolds during animation. 0 = unfolds first (innermost), higher numbers unfold later. Must be unique per card+side combination.';
 
 
+

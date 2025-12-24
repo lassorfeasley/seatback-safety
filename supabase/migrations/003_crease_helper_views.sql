@@ -156,3 +156,4 @@ COMMENT ON FUNCTION update_unfold_sequence IS
   'Updates the unfold_sequence for a crease, automatically swapping with any crease that already has that sequence number. Ensures uniqueness is maintained.';
 
 
+

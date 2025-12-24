@@ -133,3 +133,4 @@ export const CropPreview: React.FC<CropPreviewProps> = ({
     </Card>
   );
 };
+
