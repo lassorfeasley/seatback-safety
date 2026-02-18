@@ -5,55 +5,8 @@ import type { CropCanvasProps, CropRegion } from './types';
 
 const MIN_REGION_SIZE = 20;
 const ZOOM_SCALE_BY = 1.1;
-
-// Check if two rectangles intersect
-function rectsIntersect(
-  a: { x: number; y: number; width: number; height: number },
-  b: { x: number; y: number; width: number; height: number }
-): boolean {
-  return !(
-    a.x + a.width <= b.x ||
-    b.x + b.width <= a.x ||
-    a.y + a.height <= b.y ||
-    b.y + b.height <= a.y
-  );
-}
-
-// Find a valid position that doesn't intersect with other regions
-function findNonIntersectingPosition(
-  region: CropRegion,
-  otherRegions: CropRegion[],
-  bounds: { width: number; height: number } | null
-): { x: number; y: number } {
-  // Start with the desired position
-  let { x, y } = region;
-
-  // Check for intersections and try to resolve
-  for (const other of otherRegions) {
-    if (other.id === region.id) continue;
-
-    const testRegion = { ...region, x, y };
-    if (rectsIntersect(testRegion, other)) {
-      // Try moving right of the intersecting region
-      const rightX = other.x + other.width + 5;
-      if (!bounds || rightX + region.width <= bounds.width) {
-        x = rightX;
-      } else {
-        // Try moving below
-        y = other.y + other.height + 5;
-        x = region.x; // Reset x
-      }
-    }
-  }
-
-  // Clamp to bounds
-  if (bounds) {
-    x = Math.max(0, Math.min(bounds.width - region.width, x));
-    y = Math.max(0, Math.min(bounds.height - region.height, y));
-  }
-
-  return { x, y };
-}
+const MAX_ZOOM = 5;
+const MIN_ZOOM = 0.1;
 
 export const CropCanvas: React.FC<CropCanvasProps> = ({
   imageUrl,
@@ -63,7 +16,9 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
   lockDimensions,
   lockedWidth,
   lockedHeight,
+  constrainHeight,
   rotation,
+  singleCropMode = false,
   onRegionAdd,
   onRegionUpdate,
   onRegionSelect,
@@ -77,69 +32,94 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
   const [stageSize, setStageSize] = useState({ width: 800, height: 600 });
   const [stageScale, setStageScale] = useState(1);
   const [stagePosition, setStagePosition] = useState({ x: 0, y: 0 });
+
+  // Drawing state
   const [isDrawing, setIsDrawing] = useState(false);
+  const [drawStart, setDrawStart] = useState<{ x: number; y: number } | null>(null);
   const [drawingRegion, setDrawingRegion] = useState<CropRegion | null>(null);
 
-  // Calculate the bounding box of the rotated image
+  const hasLockedDimensions = lockDimensions && lockedWidth != null && lockedHeight != null;
+  const hasConstrainedHeight = !hasLockedDimensions && constrainHeight != null && constrainHeight > 0;
+
+  // ─── Rotated image bounds ──────────────────────────────────────
+
   const rotatedBounds = useMemo(() => {
     if (!imageDimensions) return null;
-    
     const radians = (rotation * Math.PI) / 180;
     const cos = Math.abs(Math.cos(radians));
     const sin = Math.abs(Math.sin(radians));
-    
-    // The bounding box of the rotated image
-    const width = imageDimensions.width * cos + imageDimensions.height * sin;
-    const height = imageDimensions.width * sin + imageDimensions.height * cos;
-    
-    return { width, height };
+    return {
+      width: imageDimensions.width * cos + imageDimensions.height * sin,
+      height: imageDimensions.width * sin + imageDimensions.height * cos,
+    };
   }, [imageDimensions, rotation]);
 
-  // Keyboard event handler for delete
+  const imageOffset = useMemo(() => {
+    if (!imageDimensions || !rotatedBounds) return { x: 0, y: 0 };
+    return {
+      x: (rotatedBounds.width - imageDimensions.width) / 2,
+      y: (rotatedBounds.height - imageDimensions.height) / 2,
+    };
+  }, [imageDimensions, rotatedBounds]);
+
+  // ─── Fit image to container ────────────────────────────────────
+
+  const fitToContainer = useCallback(() => {
+    if (!containerRef.current || !rotatedBounds) return;
+    const containerWidth = containerRef.current.offsetWidth;
+    const containerHeight = stageSize.height;
+    const scaleX = containerWidth / rotatedBounds.width;
+    const scaleY = containerHeight / rotatedBounds.height;
+    const scale = Math.min(scaleX, scaleY) * 0.9; // 90% to add padding
+    const clampedScale = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, scale));
+
+    // Center the image in the container
+    const offsetX = (containerWidth - rotatedBounds.width * clampedScale) / 2;
+    const offsetY = (containerHeight - rotatedBounds.height * clampedScale) / 2;
+
+    setStageScale(clampedScale);
+    setStagePosition({ x: offsetX, y: offsetY });
+  }, [rotatedBounds, stageSize.height]);
+
+  // ─── Keyboard: Delete/Backspace ────────────────────────────────
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.key === 'Delete' || e.key === 'Backspace') && selectedRegionId) {
-        // Don't delete if user is typing in an input
-        if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
-          return;
-        }
+        if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
         e.preventDefault();
         onRegionDelete(selectedRegionId);
       }
     };
-
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [selectedRegionId, onRegionDelete]);
 
-  // Load image when URL changes
+  // ─── Load image ────────────────────────────────────────────────
+
   useEffect(() => {
     if (!imageUrl) {
       setImage(null);
       return;
     }
-
     const img = new window.Image();
     img.crossOrigin = 'anonymous';
     img.onload = () => {
       setImage(img);
       onImageLoad({ width: img.width, height: img.height });
-
-      // Fit image to container
-      if (containerRef.current) {
-        const containerWidth = containerRef.current.offsetWidth;
-        const containerHeight = Math.min(600, window.innerHeight - 300);
-        const scaleX = containerWidth / img.width;
-        const scaleY = containerHeight / img.height;
-        const scale = Math.min(scaleX, scaleY, 1);
-        setStageScale(scale);
-        setStagePosition({ x: 0, y: 0 });
-      }
     };
     img.src = imageUrl;
   }, [imageUrl, onImageLoad]);
 
-  // Update stage size on resize
+  // Fit to container when image dimensions or rotation change
+  useEffect(() => {
+    if (rotatedBounds) {
+      fitToContainer();
+    }
+  }, [rotatedBounds, fitToContainer]);
+
+  // ─── Resize container ──────────────────────────────────────────
+
   useEffect(() => {
     const updateSize = () => {
       if (containerRef.current) {
@@ -149,229 +129,259 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
         });
       }
     };
-
     updateSize();
     window.addEventListener('resize', updateSize);
     return () => window.removeEventListener('resize', updateSize);
   }, []);
 
-  // Update transformer when selection changes
+  // ─── Transformer sync ─────────────────────────────────────────
+
   useEffect(() => {
     if (!transformerRef.current || !stageRef.current) return;
-
-    const stage = stageRef.current;
-    const selectedNode = stage.findOne(`#${selectedRegionId}`);
-
-    if (selectedNode) {
+    const selectedNode = stageRef.current.findOne(`#${selectedRegionId}`);
+    if (selectedNode && !hasLockedDimensions) {
       transformerRef.current.nodes([selectedNode]);
     } else {
       transformerRef.current.nodes([]);
     }
     transformerRef.current.getLayer()?.batchDraw();
-  }, [selectedRegionId, regions]);
+  }, [selectedRegionId, regions, hasLockedDimensions]);
 
-  // Handle wheel zoom
-  const handleWheel = useCallback((e: Konva.KonvaEventObject<WheelEvent>) => {
-    e.evt.preventDefault();
+  // ─── Coordinate conversion ─────────────────────────────────────
 
+  const pointerToCanvas = useCallback((): { x: number; y: number } | null => {
     const stage = stageRef.current;
-    if (!stage) return;
-
-    const oldScale = stageScale;
+    if (!stage) return null;
     const pointer = stage.getPointerPosition();
-    if (!pointer) return;
-
-    const mousePointTo = {
-      x: (pointer.x - stagePosition.x) / oldScale,
-      y: (pointer.y - stagePosition.y) / oldScale,
+    if (!pointer) return null;
+    return {
+      x: (pointer.x - stagePosition.x) / stageScale,
+      y: (pointer.y - stagePosition.y) / stageScale,
     };
-
-    const direction = e.evt.deltaY > 0 ? -1 : 1;
-    const newScale = direction > 0 ? oldScale * ZOOM_SCALE_BY : oldScale / ZOOM_SCALE_BY;
-
-    // Limit zoom
-    const clampedScale = Math.max(0.1, Math.min(5, newScale));
-
-    const newPos = {
-      x: pointer.x - mousePointTo.x * clampedScale,
-      y: pointer.y - mousePointTo.y * clampedScale,
-    };
-
-    setStageScale(clampedScale);
-    setStagePosition(newPos);
   }, [stageScale, stagePosition]);
 
-  // Convert stage coordinates to canvas coordinates (for axis-aligned crops on rotated image)
-  const stageToCanvasCoords = useCallback(
-    (stageX: number, stageY: number) => {
-      // Simple conversion - crops are in canvas space (axis-aligned)
+  // Clamp a point to rotated image bounds
+  const clampToBounds = useCallback(
+    (x: number, y: number) => {
+      if (!rotatedBounds) return { x, y };
       return {
-        x: (stageX - stagePosition.x) / stageScale,
-        y: (stageY - stagePosition.y) / stageScale,
+        x: Math.max(0, Math.min(rotatedBounds.width, x)),
+        y: Math.max(0, Math.min(rotatedBounds.height, y)),
       };
     },
-    [stageScale, stagePosition]
+    [rotatedBounds]
   );
 
-  // Check if a new region would intersect with existing ones
-  const wouldIntersect = useCallback(
-    (newRegion: CropRegion, excludeId?: string) => {
-      for (const region of regions) {
-        if (region.id === excludeId) continue;
-        if (rectsIntersect(newRegion, region)) {
-          return true;
-        }
-      }
-      return false;
-    },
-    [regions]
-  );
+  // ─── Zoom (scroll wheel, pointer-centric) ─────────────────────
 
-  // Handle mouse down - start drawing new region
-  const handleMouseDown = useCallback(
-    (e: Konva.KonvaEventObject<MouseEvent>) => {
-      // Only start drawing if clicking on stage/image, not on existing regions
-      const target = e.target;
-      const isRegion = target.name()?.startsWith('crop-') || target.id()?.startsWith('crop-');
-      
-      if (isRegion) {
-        return;
-      }
-
-      // Deselect when clicking empty area
-      onRegionSelect(null);
-
+  const handleWheel = useCallback(
+    (e: Konva.KonvaEventObject<WheelEvent>) => {
+      e.evt.preventDefault();
       const stage = stageRef.current;
       if (!stage) return;
 
       const pointer = stage.getPointerPosition();
       if (!pointer) return;
 
-      const canvasCoords = stageToCanvasCoords(pointer.x, pointer.y);
+      const oldScale = stageScale;
+      const mousePointTo = {
+        x: (pointer.x - stagePosition.x) / oldScale,
+        y: (pointer.y - stagePosition.y) / oldScale,
+      };
 
-      // Check if click is within the rotated image bounds
+      const direction = e.evt.deltaY > 0 ? -1 : 1;
+      const newScale =
+        direction > 0 ? oldScale * ZOOM_SCALE_BY : oldScale / ZOOM_SCALE_BY;
+      const clampedScale = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, newScale));
+
+      setStageScale(clampedScale);
+      setStagePosition({
+        x: pointer.x - mousePointTo.x * clampedScale,
+        y: pointer.y - mousePointTo.y * clampedScale,
+      });
+    },
+    [stageScale, stagePosition]
+  );
+
+  // ─── Zoom buttons (center-centric) ────────────────────────────
+
+  const zoomBy = useCallback(
+    (factor: number) => {
+      const newScale = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, stageScale * factor));
+      // Zoom towards the center of the viewport
+      const centerX = stageSize.width / 2;
+      const centerY = stageSize.height / 2;
+      const mousePointTo = {
+        x: (centerX - stagePosition.x) / stageScale,
+        y: (centerY - stagePosition.y) / stageScale,
+      };
+      setStageScale(newScale);
+      setStagePosition({
+        x: centerX - mousePointTo.x * newScale,
+        y: centerY - mousePointTo.y * newScale,
+      });
+    },
+    [stageScale, stagePosition, stageSize]
+  );
+
+  // ─── Mouse handlers ────────────────────────────────────────────
+
+  const handleMouseDown = useCallback(
+    (e: Konva.KonvaEventObject<MouseEvent>) => {
+      // Only react to left click
+      if (e.evt.button !== 0) return;
+
+      const target = e.target;
+      const clickedOnRegion =
+        target.name()?.startsWith('crop-') || target.id()?.startsWith('crop-');
+
+      // Clicked on an existing crop region -> select it, don't start drawing
+      if (clickedOnRegion) return;
+
+      // Clicked on empty canvas/image -> deselect + start drawing
+      onRegionSelect(null);
+
+      const coords = pointerToCanvas();
+      if (!coords) return;
+
+      // Must be inside the image bounds
       if (rotatedBounds) {
         if (
-          canvasCoords.x < 0 ||
-          canvasCoords.y < 0 ||
-          canvasCoords.x > rotatedBounds.width ||
-          canvasCoords.y > rotatedBounds.height
+          coords.x < 0 ||
+          coords.y < 0 ||
+          coords.x > rotatedBounds.width ||
+          coords.y > rotatedBounds.height
         ) {
           return;
         }
       }
 
-      setIsDrawing(true);
+      // ── Locked dimensions: place a fixed-size rectangle ──
+      if (hasLockedDimensions) {
+        const halfW = lockedWidth! / 2;
+        const halfH = lockedHeight! / 2;
+        let rx = coords.x - halfW;
+        let ry = coords.y - halfH;
 
-      const newRegion: CropRegion = {
-        id: `crop-${Date.now()}`,
-        x: Math.round(canvasCoords.x),
-        y: Math.round(canvasCoords.y),
-        width: lockDimensions && lockedWidth ? lockedWidth : 0,
-        height: lockDimensions && lockedHeight ? lockedHeight : 0,
-      };
+        // Clamp so the rectangle stays inside the image
+        if (rotatedBounds) {
+          rx = Math.max(0, Math.min(rotatedBounds.width - lockedWidth!, rx));
+          ry = Math.max(0, Math.min(rotatedBounds.height - lockedHeight!, ry));
+        }
 
-      setDrawingRegion(newRegion);
-    },
-    [rotatedBounds, lockDimensions, lockedWidth, lockedHeight, onRegionSelect, stageToCanvasCoords]
-  );
+        const placed: CropRegion = {
+          id: `crop-${Date.now()}`,
+          x: Math.round(rx),
+          y: Math.round(ry),
+          width: lockedWidth!,
+          height: lockedHeight!,
+          label: singleCropMode ? 'Crop' : `Panel ${regions.length + 1}`,
+        };
 
-  // Handle mouse move - resize drawing region
-  const handleMouseMove = useCallback(
-    (e: Konva.KonvaEventObject<MouseEvent>) => {
-      if (!isDrawing || !drawingRegion) return;
-
-      const stage = stageRef.current;
-      if (!stage) return;
-
-      const pointer = stage.getPointerPosition();
-      if (!pointer) return;
-
-      const canvasCoords = stageToCanvasCoords(pointer.x, pointer.y);
-
-      // Clamp to rotated image bounds
-      const clampedX = rotatedBounds
-        ? Math.max(0, Math.min(rotatedBounds.width, canvasCoords.x))
-        : canvasCoords.x;
-      const clampedY = rotatedBounds
-        ? Math.max(0, Math.min(rotatedBounds.height, canvasCoords.y))
-        : canvasCoords.y;
-
-      // If dimensions are locked, don't resize
-      if (lockDimensions && lockedWidth && lockedHeight) {
+        onRegionAdd(placed);
         return;
       }
 
-      const width = Math.round(clampedX - drawingRegion.x);
-      const height = Math.round(clampedY - drawingRegion.y);
-
+      // ── Free draw: start a rectangle ──
+      const clamped = clampToBounds(coords.x, coords.y);
+      let startY = clamped.y;
+      if (hasConstrainedHeight && rotatedBounds) {
+        startY = Math.max(0, Math.min(rotatedBounds.height - constrainHeight!, startY));
+      }
+      setIsDrawing(true);
+      setDrawStart({ x: clamped.x, y: startY });
       setDrawingRegion({
-        ...drawingRegion,
-        width: width,
-        height: height,
+        id: `crop-${Date.now()}`,
+        x: Math.round(clamped.x),
+        y: Math.round(startY),
+        width: 0,
+        height: hasConstrainedHeight ? Math.round(constrainHeight!) : 0,
       });
     },
-    [isDrawing, drawingRegion, rotatedBounds, lockDimensions, lockedWidth, lockedHeight, stageToCanvasCoords]
+    [
+      pointerToCanvas,
+      rotatedBounds,
+      hasLockedDimensions,
+      hasConstrainedHeight,
+      constrainHeight,
+      lockedWidth,
+      lockedHeight,
+      singleCropMode,
+      regions.length,
+      clampToBounds,
+      onRegionSelect,
+      onRegionAdd,
+    ]
   );
 
-  // Handle mouse up - finish drawing region
+  const handleMouseMove = useCallback(
+    (_e: Konva.KonvaEventObject<MouseEvent>) => {
+      if (!isDrawing || !drawStart) return;
+
+      const coords = pointerToCanvas();
+      if (!coords) return;
+
+      const clamped = clampToBounds(coords.x, coords.y);
+
+      if (hasConstrainedHeight) {
+        const x = Math.min(drawStart.x, clamped.x);
+        const width = Math.abs(clamped.x - drawStart.x);
+        setDrawingRegion((prev) =>
+          prev
+            ? { ...prev, x: Math.round(x), width: Math.round(width) }
+            : null
+        );
+        return;
+      }
+
+      const x = Math.min(drawStart.x, clamped.x);
+      const y = Math.min(drawStart.y, clamped.y);
+      const width = Math.abs(clamped.x - drawStart.x);
+      const height = Math.abs(clamped.y - drawStart.y);
+
+      setDrawingRegion((prev) =>
+        prev
+          ? { ...prev, x: Math.round(x), y: Math.round(y), width: Math.round(width), height: Math.round(height) }
+          : null
+      );
+    },
+    [isDrawing, drawStart, pointerToCanvas, clampToBounds, hasConstrainedHeight]
+  );
+
   const handleMouseUp = useCallback(() => {
     if (!isDrawing || !drawingRegion) {
       setIsDrawing(false);
+      setDrawStart(null);
+      setDrawingRegion(null);
       return;
     }
 
     setIsDrawing(false);
+    setDrawStart(null);
 
-    // Normalize region (handle negative width/height from drawing backwards)
-    let { x, y, width, height } = drawingRegion;
+    const { x, y, width, height } = drawingRegion;
+    const finalHeight = hasConstrainedHeight ? Math.round(constrainHeight!) : height;
 
-    if (width < 0) {
-      x = x + width;
-      width = Math.abs(width);
-    }
-    if (height < 0) {
-      y = y + height;
-      height = Math.abs(height);
-    }
+    const widthOk = width >= MIN_REGION_SIZE;
+    const heightOk = hasConstrainedHeight || finalHeight >= MIN_REGION_SIZE;
 
-    // Use locked dimensions if available
-    if (lockDimensions && lockedWidth && lockedHeight) {
-      width = lockedWidth;
-      height = lockedHeight;
-    }
-
-    // Only add if region is large enough
-    if (width >= MIN_REGION_SIZE && height >= MIN_REGION_SIZE) {
-      const candidateRegion: CropRegion = {
+    if (widthOk && heightOk) {
+      const region: CropRegion = {
         ...drawingRegion,
         x: Math.round(x),
         y: Math.round(y),
         width: Math.round(width),
-        height: Math.round(height),
-        label: `Panel ${regions.length + 1}`,
+        height: finalHeight,
+        label: singleCropMode ? 'Crop' : `Panel ${regions.length + 1}`,
       };
-
-      // Check for intersection and find valid position
-      if (wouldIntersect(candidateRegion)) {
-        const validPos = findNonIntersectingPosition(candidateRegion, regions, rotatedBounds);
-        candidateRegion.x = validPos.x;
-        candidateRegion.y = validPos.y;
-
-        // If still intersecting after adjustment, don't add
-        if (wouldIntersect(candidateRegion)) {
-          setDrawingRegion(null);
-          return;
-        }
-      }
-
-      onRegionAdd(candidateRegion);
+      onRegionAdd(region);
     }
 
     setDrawingRegion(null);
-  }, [isDrawing, drawingRegion, lockDimensions, lockedWidth, lockedHeight, regions, rotatedBounds, wouldIntersect, onRegionAdd]);
+  }, [isDrawing, drawingRegion, singleCropMode, regions.length, onRegionAdd, hasConstrainedHeight, constrainHeight]);
 
-  // Handle region click (select)
+  // ─── Region click (select) ─────────────────────────────────────
+
   const handleRegionClick = useCallback(
     (regionId: string) => {
       onRegionSelect(regionId);
@@ -379,118 +389,70 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
     [onRegionSelect]
   );
 
-  // Handle region transform (resize)
-  const handleRegionTransformEnd = useCallback(
-    (regionId: string, e: Konva.KonvaEventObject<Event>) => {
-      const node = e.target as Konva.Rect;
-      const scaleX = node.scaleX();
-      const scaleY = node.scaleY();
+  // ─── Region drag end (reposition) ─────────────────────────────
 
-      // Reset scale and apply to width/height
-      node.scaleX(1);
-      node.scaleY(1);
-
-      const region = regions.find((r) => r.id === regionId);
-      if (!region) return;
-
-      const updatedRegion: CropRegion = {
-        ...region,
-        x: Math.round(node.x()),
-        y: Math.round(node.y()),
-        width: Math.round(Math.max(MIN_REGION_SIZE, node.width() * scaleX)),
-        height: Math.round(Math.max(MIN_REGION_SIZE, node.height() * scaleY)),
-      };
-
-      // Check for intersection with other regions
-      if (wouldIntersect(updatedRegion, regionId)) {
-        // Revert to original position/size
-        node.x(region.x);
-        node.y(region.y);
-        node.width(region.width);
-        node.height(region.height);
-        return;
-      }
-
-      onRegionUpdate(updatedRegion);
-    },
-    [regions, wouldIntersect, onRegionUpdate]
-  );
-
-  // Handle region drag end
   const handleRegionDragEnd = useCallback(
     (regionId: string, e: Konva.KonvaEventObject<DragEvent>) => {
       const node = e.target as Konva.Rect;
       const region = regions.find((r) => r.id === regionId);
       if (!region) return;
 
-      // Clamp position to rotated bounds
       let x = node.x();
       let y = node.y();
 
+      // Clamp to image bounds
       if (rotatedBounds) {
         x = Math.max(0, Math.min(rotatedBounds.width - region.width, x));
         y = Math.max(0, Math.min(rotatedBounds.height - region.height, y));
       }
 
-      const updatedRegion: CropRegion = {
+      // Snap the node to the clamped position
+      node.x(x);
+      node.y(y);
+
+      onRegionUpdate({
         ...region,
         x: Math.round(x),
         y: Math.round(y),
-      };
-
-      // Check for intersection and revert if needed
-      if (wouldIntersect(updatedRegion, regionId)) {
-        // Find non-intersecting position
-        const validPos = findNonIntersectingPosition(updatedRegion, regions, rotatedBounds);
-        
-        // If still intersecting, revert to original
-        const testRegion = { ...updatedRegion, ...validPos };
-        if (wouldIntersect(testRegion, regionId)) {
-          node.x(region.x);
-          node.y(region.y);
-          return;
-        }
-        
-        updatedRegion.x = validPos.x;
-        updatedRegion.y = validPos.y;
-      }
-
-      onRegionUpdate(updatedRegion);
+      });
     },
-    [regions, rotatedBounds, wouldIntersect, onRegionUpdate]
+    [regions, rotatedBounds, onRegionUpdate]
   );
 
-  // Normalize drawing region for display
-  const normalizedDrawingRegion = drawingRegion
-    ? {
-        ...drawingRegion,
-        x: drawingRegion.width < 0 ? drawingRegion.x + drawingRegion.width : drawingRegion.x,
-        y: drawingRegion.height < 0 ? drawingRegion.y + drawingRegion.height : drawingRegion.y,
-        width: Math.abs(drawingRegion.width),
-        height: Math.abs(drawingRegion.height),
-      }
-    : null;
+  // ─── Region transform end (resize via handles) ────────────────
 
-  // Check if currently drawing region would intersect
-  const drawingWouldIntersect = useMemo(() => {
-    if (!normalizedDrawingRegion || normalizedDrawingRegion.width < MIN_REGION_SIZE || normalizedDrawingRegion.height < MIN_REGION_SIZE) {
-      return false;
-    }
-    return wouldIntersect(normalizedDrawingRegion as CropRegion);
-  }, [normalizedDrawingRegion, wouldIntersect]);
+  const handleRegionTransformEnd = useCallback(
+    (regionId: string, e: Konva.KonvaEventObject<Event>) => {
+      const node = e.target as Konva.Rect;
+      const scaleX = node.scaleX();
+      const scaleY = node.scaleY();
+      node.scaleX(1);
+      node.scaleY(1);
 
-  // Calculate image position to center the rotated image
-  const imageOffset = useMemo(() => {
-    if (!imageDimensions || !rotatedBounds) return { x: 0, y: 0 };
-    return {
-      x: (rotatedBounds.width - imageDimensions.width) / 2,
-      y: (rotatedBounds.height - imageDimensions.height) / 2,
-    };
-  }, [imageDimensions, rotatedBounds]);
+      const region = regions.find((r) => r.id === regionId);
+      if (!region) return;
+
+      const newWidth = Math.round(Math.max(MIN_REGION_SIZE, node.width() * scaleX));
+      const newHeight = hasConstrainedHeight
+        ? Math.round(constrainHeight!)
+        : Math.round(Math.max(MIN_REGION_SIZE, node.height() * scaleY));
+
+      onRegionUpdate({
+        ...region,
+        x: Math.round(node.x()),
+        y: Math.round(node.y()),
+        width: newWidth,
+        height: newHeight,
+      });
+    },
+    [regions, onRegionUpdate, hasConstrainedHeight, constrainHeight]
+  );
+
+  // ─── Render ────────────────────────────────────────────────────
 
   return (
-    <div 
-      ref={containerRef} 
+    <div
+      ref={containerRef}
       className="relative w-full overflow-hidden bg-neutral-900 rounded-b-lg"
       tabIndex={0}
     >
@@ -502,7 +464,6 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
         scaleY={stageScale}
         x={stagePosition.x}
         y={stagePosition.y}
-        draggable={!isDrawing}
         onWheel={handleWheel}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
@@ -510,7 +471,7 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
         onMouseLeave={handleMouseUp}
       >
         <Layer>
-          {/* Rotated image (the image rotates to align with axis-aligned crops) */}
+          {/* Rotated image */}
           {image && imageDimensions && (
             <Group
               x={imageOffset.x + imageDimensions.width / 2}
@@ -519,15 +480,11 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
               offsetX={imageDimensions.width / 2}
               offsetY={imageDimensions.height / 2}
             >
-              <KonvaImage
-                image={image}
-                name="background-image"
-                listening={true}
-              />
+              <KonvaImage image={image} name="background-image" listening={true} />
             </Group>
           )}
 
-          {/* Axis-aligned crop regions (these stay horizontal/vertical) */}
+          {/* Crop regions */}
           {regions.map((region) => (
             <Rect
               key={region.id}
@@ -539,7 +496,11 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
               height={region.height}
               fill="rgba(99, 102, 241, 0.2)"
               stroke={selectedRegionId === region.id ? '#6366f1' : '#818cf8'}
-              strokeWidth={selectedRegionId === region.id ? 3 / stageScale : 2 / stageScale}
+              strokeWidth={
+                selectedRegionId === region.id
+                  ? 3 / stageScale
+                  : 2 / stageScale
+              }
               draggable
               onClick={() => handleRegionClick(region.id)}
               onTap={() => handleRegionClick(region.id)}
@@ -548,34 +509,50 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
             />
           ))}
 
-          {/* Currently drawing region (axis-aligned) */}
-          {normalizedDrawingRegion && normalizedDrawingRegion.width > 0 && normalizedDrawingRegion.height > 0 && (
+          {/* Drawing preview rectangle */}
+          {drawingRegion && drawingRegion.width > 0 && drawingRegion.height > 0 && (
             <Rect
-              x={normalizedDrawingRegion.x}
-              y={normalizedDrawingRegion.y}
-              width={normalizedDrawingRegion.width}
-              height={normalizedDrawingRegion.height}
-              fill={drawingWouldIntersect ? 'rgba(239, 68, 68, 0.3)' : 'rgba(99, 102, 241, 0.3)'}
-              stroke={drawingWouldIntersect ? '#ef4444' : '#6366f1'}
+              x={drawingRegion.x}
+              y={drawingRegion.y}
+              width={drawingRegion.width}
+              height={drawingRegion.height}
+              fill="rgba(99, 102, 241, 0.3)"
+              stroke="#6366f1"
               strokeWidth={2 / stageScale}
               dash={[10 / stageScale, 5 / stageScale]}
+              listening={false}
             />
           )}
 
-          {/* Transformer for selected region - edge handles only */}
+          {/* Transformer: only shown when NOT locked and a region is selected */}
           <Transformer
             ref={transformerRef}
             boundBoxFunc={(oldBox, newBox) => {
-              // Limit minimum size
               if (newBox.width < MIN_REGION_SIZE || newBox.height < MIN_REGION_SIZE) {
                 return oldBox;
+              }
+              if (hasConstrainedHeight) {
+                return { ...newBox, y: oldBox.y, height: oldBox.height };
               }
               return newBox;
             }}
             rotateEnabled={false}
             keepRatio={false}
-            enabledAnchors={['top-center', 'bottom-center', 'middle-left', 'middle-right']}
-            anchorSize={14}
+            enabledAnchors={
+              hasConstrainedHeight
+                ? ['middle-left', 'middle-right']
+                : [
+                    'top-left',
+                    'top-center',
+                    'top-right',
+                    'middle-left',
+                    'middle-right',
+                    'bottom-left',
+                    'bottom-center',
+                    'bottom-right',
+                  ]
+            }
+            anchorSize={12}
             anchorStroke="#6366f1"
             anchorFill="#ffffff"
             anchorCornerRadius={2}
@@ -583,53 +560,55 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
             borderStrokeWidth={2}
           />
 
-          {/* Fallback when no dimensions yet */}
+          {/* Fallback: image before dimensions known */}
           {image && !imageDimensions && (
-            <KonvaImage
-              image={image}
-              name="background-image"
-              listening={true}
-            />
+            <KonvaImage image={image} name="background-image" listening={true} />
           )}
         </Layer>
       </Stage>
 
       {/* Zoom controls */}
-      <div className="absolute bottom-4 right-4 flex gap-2">
+      <div className="absolute bottom-4 right-4 flex gap-1.5">
         <button
-          className="bg-white/90 hover:bg-white rounded-md px-3 py-1 text-sm font-medium shadow"
-          onClick={() => setStageScale((s) => Math.min(5, s * 1.2))}
+          className="bg-white/90 hover:bg-white rounded-md px-3 py-1.5 text-sm font-medium shadow-md transition-colors"
+          onClick={() => zoomBy(1.3)}
+          title="Zoom in"
         >
           +
         </button>
         <button
-          className="bg-white/90 hover:bg-white rounded-md px-3 py-1 text-sm font-medium shadow"
-          onClick={() => setStageScale((s) => Math.max(0.1, s / 1.2))}
+          className="bg-white/90 hover:bg-white rounded-md px-3 py-1.5 text-sm font-medium shadow-md transition-colors"
+          onClick={() => zoomBy(1 / 1.3)}
+          title="Zoom out"
         >
-          −
+          &minus;
         </button>
         <button
-          className="bg-white/90 hover:bg-white rounded-md px-3 py-1 text-sm font-medium shadow"
-          onClick={() => {
-            setStageScale(1);
-            setStagePosition({ x: 0, y: 0 });
-          }}
+          className="bg-white/90 hover:bg-white rounded-md px-3 py-1.5 text-sm font-medium shadow-md transition-colors"
+          onClick={fitToContainer}
+          title="Fit to screen"
         >
-          1:1
+          Fit
         </button>
       </div>
 
       {/* Image info overlay */}
       {imageDimensions && (
-        <div className="absolute top-4 left-4 bg-black/60 text-white text-xs px-2 py-1 rounded">
-          {imageDimensions.width} × {imageDimensions.height}px | Zoom: {Math.round(stageScale * 100)}%
-          {rotation !== 0 && ` | Rotation: ${Math.round(rotation * 10) / 10}°`}
+        <div className="absolute top-4 left-4 bg-black/60 text-white text-xs px-2 py-1 rounded pointer-events-none">
+          {imageDimensions.width} &times; {imageDimensions.height}px
+          &nbsp;|&nbsp;Zoom: {Math.round(stageScale * 100)}%
+          {rotation !== 0 &&
+            ` | Rotation: ${Math.round(rotation * 10) / 10}°`}
         </div>
       )}
 
       {/* Instructions */}
-      <div className="absolute bottom-4 left-4 bg-black/60 text-white text-xs px-2 py-1 rounded">
-        Click + drag to crop | Delete/Backspace to remove | Scroll to zoom
+      <div className="absolute bottom-4 left-4 bg-black/60 text-white text-xs px-2 py-1 rounded pointer-events-none">
+        {hasLockedDimensions
+          ? 'Click to place crop | Drag to reposition | Scroll to zoom'
+          : hasConstrainedHeight
+            ? 'Click + drag horizontally to set width | Height is locked | Scroll to zoom'
+            : 'Click + drag to draw crop | Drag to reposition | Scroll to zoom'}
       </div>
     </div>
   );

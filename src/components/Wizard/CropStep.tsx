@@ -1,0 +1,610 @@
+import React, { useState, useCallback, useEffect, useMemo } from 'react';
+import { Button } from '@/components/ui/button';
+import {
+  ArrowLeft,
+  ArrowRight,
+  Check,
+  X,
+  Scissors,
+  RotateCcw,
+  RotateCw,
+  Lock,
+} from 'lucide-react';
+import { CropCanvas } from '@/components/PanelCropper/CropCanvas';
+import type { CropStepProps, LibraryImage } from './types';
+import type { CropRegion, ImageDimensions } from '@/components/PanelCropper/types';
+
+export const CropStep: React.FC<CropStepProps> = ({
+  panelCount,
+  slots,
+  images,
+  cropWidth,
+  cropHeight,
+  activeSlot,
+  selectedImageId,
+  onSelectSlot,
+  onSelectImage,
+  onCancelCrop,
+  onConfirmCrop,
+  onClearSlot,
+  onSetCropDimensions,
+  onBack,
+  onContinue,
+}) => {
+  const filledCount = slots.filter((s) => s.cropRegion !== null).length;
+  const totalCount = slots.length;
+  const allFilled = filledCount === totalCount;
+
+  // If we're in a crop session, show the crop UI
+  if (activeSlot) {
+    const oppositeSide = activeSlot.side === 'front' ? 'back' : 'front';
+    const oppositeSlot = slots.find(
+      (s) => s.panelIndex === activeSlot.panelIndex && s.side === oppositeSide
+    );
+
+    return (
+      <CropSession
+        activeSlot={activeSlot}
+        images={images}
+        selectedImageId={selectedImageId}
+        cropWidth={cropWidth}
+        cropHeight={cropHeight}
+        existingSlot={slots.find(
+          (s) => s.panelIndex === activeSlot.panelIndex && s.side === activeSlot.side
+        )}
+        oppositeSlot={oppositeSlot}
+        onSelectImage={onSelectImage}
+        onCancelCrop={onCancelCrop}
+        onConfirmCrop={onConfirmCrop}
+        onSetCropDimensions={onSetCropDimensions}
+      />
+    );
+  }
+
+  const frontSlots = Array.from({ length: panelCount }, (_, i) =>
+    slots.find((s) => s.panelIndex === i && s.side === 'front') || null
+  );
+  const backSlots = Array.from({ length: panelCount }, (_, i) =>
+    slots.find((s) => s.panelIndex === i && s.side === 'back') || null
+  );
+
+  const frontFilled = frontSlots.filter((s) => s?.cropRegion !== null).length;
+  const backFilled = backSlots.filter((s) => s?.cropRegion !== null).length;
+
+  // Shared height from the first cropped panel (any side).
+  // Per-panel-index width from whichever side of that index was cropped first.
+  const { referenceHeight, panelWidths } = useMemo(() => {
+    const filledSlots = slots.filter((s) => s.cropRegion !== null);
+    const refHeight = filledSlots.length > 0 ? filledSlots[0].cropRegion!.height : null;
+
+    const widths: Record<number, number> = {};
+    for (let i = 0; i < panelCount; i++) {
+      const front = frontSlots[i]?.cropRegion;
+      const back = backSlots[i]?.cropRegion;
+      if (front) widths[i] = front.width;
+      else if (back) widths[i] = back.width;
+    }
+
+    return { referenceHeight: refHeight, panelWidths: widths };
+  }, [slots, panelCount, frontSlots, backSlots]);
+
+  const DEFAULT_ASPECT = 3 / 4;
+
+  // Compute aspect ratio (width/height) for a given panel index
+  const getAspectRatio = useCallback(
+    (panelIdx: number) => {
+      if (referenceHeight && panelWidths[panelIdx] != null) {
+        return panelWidths[panelIdx] / referenceHeight;
+      }
+      if (referenceHeight && Object.keys(panelWidths).length > 0) {
+        const avgWidth =
+          Object.values(panelWidths).reduce((a, b) => a + b, 0) /
+          Object.values(panelWidths).length;
+        return avgWidth / referenceHeight;
+      }
+      return DEFAULT_ASPECT;
+    },
+    [referenceHeight, panelWidths]
+  );
+
+  return (
+    <div className="flex flex-col h-full p-3 gap-2">
+      {/* Compact toolbar: nav + title + progress + lock info */}
+      <div className="flex items-center gap-3 flex-shrink-0">
+        <Button variant="outline" size="sm" onClick={onBack} className="h-8 gap-1.5 px-2.5">
+          <ArrowLeft className="h-3.5 w-3.5" />
+          Back
+        </Button>
+
+        <div className="flex items-center gap-3 flex-1 min-w-0">
+          <span className="text-sm font-semibold whitespace-nowrap">Crop Panels</span>
+          <div className="flex-1 max-w-[200px] bg-muted rounded-full h-1.5">
+            <div
+              className="bg-primary rounded-full h-1.5 transition-all duration-300"
+              style={{ width: `${totalCount > 0 ? (filledCount / totalCount) * 100 : 0}%` }}
+            />
+          </div>
+          <span className="text-xs text-muted-foreground whitespace-nowrap">
+            {filledCount}/{totalCount}
+          </span>
+          {cropWidth != null && cropHeight != null && (
+            <span className="text-xs text-muted-foreground whitespace-nowrap flex items-center gap-1">
+              <Lock className="h-3 w-3" />
+              <span className="font-mono">{cropWidth}&times;{cropHeight}</span>
+            </span>
+          )}
+        </div>
+
+        <Button size="sm" onClick={onContinue} disabled={!allFilled} className="h-8 gap-1.5 px-2.5">
+          Continue
+          <ArrowRight className="h-3.5 w-3.5" />
+        </Button>
+      </div>
+
+      {/* Front side — fills half the remaining space */}
+      <div className="flex-1 min-h-0 flex flex-col gap-1">
+        <div className="flex items-center justify-between px-1 flex-shrink-0">
+          <span className="text-xs font-medium flex items-center gap-1.5">
+            <span className="w-2 h-2 rounded-full bg-blue-500" />
+            Front Side
+          </span>
+          <span className="text-[10px] text-muted-foreground">
+            {frontFilled}/{panelCount}
+          </span>
+        </div>
+        <div className="flex-1 min-h-0 flex items-stretch justify-center">
+          {frontSlots.map((slot, panelIdx) => (
+            <PanelPlaceholder
+              key={panelIdx}
+              panelIndex={panelIdx}
+              side="front"
+              slot={slot}
+              totalPanels={panelCount}
+              aspectRatio={getAspectRatio(panelIdx)}
+              onClick={() => onSelectSlot(panelIdx, 'front')}
+              onClear={() => onClearSlot(panelIdx, 'front')}
+            />
+          ))}
+        </div>
+      </div>
+
+      {/* Back side — fills other half (reversed order) */}
+      <div className="flex-1 min-h-0 flex flex-col gap-1">
+        <div className="flex items-center justify-between px-1 flex-shrink-0">
+          <span className="text-xs font-medium flex items-center gap-1.5">
+            <span className="w-2 h-2 rounded-full bg-amber-500" />
+            Back Side
+            <span className="text-[10px] text-muted-foreground font-normal ml-1">flipped</span>
+          </span>
+          <span className="text-[10px] text-muted-foreground">
+            {backFilled}/{panelCount}
+          </span>
+        </div>
+        <div className="flex-1 min-h-0 flex items-stretch justify-center">
+          {Array.from({ length: panelCount }, (_, rawI) => {
+            const panelIdx = panelCount - 1 - rawI;
+            return (
+              <PanelPlaceholder
+                key={panelIdx}
+                panelIndex={panelIdx}
+                side="back"
+                slot={backSlots[panelIdx]}
+                totalPanels={panelCount}
+                aspectRatio={getAspectRatio(panelIdx)}
+                onClick={() => onSelectSlot(panelIdx, 'back')}
+                onClear={() => onClearSlot(panelIdx, 'back')}
+              />
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ─── PanelPlaceholder ─────────────────────────────────────────────
+
+interface PanelPlaceholderProps {
+  panelIndex: number;
+  side: 'front' | 'back';
+  slot: { cropRegion: CropRegion | null; thumbnailUrl: string | null } | null;
+  totalPanels: number;
+  aspectRatio: number;
+  onClick: () => void;
+  onClear: () => void;
+}
+
+const PanelPlaceholder: React.FC<PanelPlaceholderProps> = ({
+  panelIndex,
+  side,
+  slot,
+  totalPanels,
+  aspectRatio,
+  onClick,
+  onClear,
+}) => {
+  const isFilled = slot?.cropRegion !== null;
+  const isFirst = side === 'front' ? panelIndex === 0 : panelIndex === totalPanels - 1;
+  const isLast = side === 'front' ? panelIndex === totalPanels - 1 : panelIndex === 0;
+
+  const roundedClass = [
+    isFirst ? 'rounded-l-lg' : '',
+    isLast ? 'rounded-r-lg' : '',
+  ].join(' ');
+
+  return (
+    <div
+      className={`
+        relative group cursor-pointer transition-all h-full flex-shrink-0
+        ${isFilled ? '' : 'hover:bg-muted/40'}
+        ${roundedClass}
+      `}
+      style={{ overflow: 'hidden', aspectRatio: `${aspectRatio}` }}
+      onClick={onClick}
+    >
+      <div
+        className={`
+          relative w-full h-full flex flex-col items-center justify-center
+          border-y-2 transition-colors
+          ${isFirst ? 'border-l-2' : 'border-l'}
+          ${isLast ? 'border-r-2' : 'border-r'}
+          ${isFilled
+            ? 'border-muted bg-muted/10'
+            : 'border-dashed border-muted-foreground/20 bg-muted/5'
+          }
+          ${roundedClass}
+        `}
+      >
+        {isFilled && slot?.thumbnailUrl ? (
+          <>
+            <img
+              src={slot.thumbnailUrl}
+              alt={`Panel ${panelIndex + 1} ${side}`}
+              className={`w-full h-full object-contain ${roundedClass}`}
+            />
+            <div className={`absolute inset-0 bg-black/50 flex flex-col items-center justify-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity ${roundedClass}`}>
+              <Scissors className="h-4 w-4 text-white" />
+              <span className="text-white text-xs font-medium">Re-crop</span>
+            </div>
+            <button
+              className="absolute top-1.5 right-1.5 p-1 bg-destructive/90 hover:bg-destructive text-destructive-foreground rounded-full opacity-0 group-hover:opacity-100 transition-opacity z-10"
+              onClick={(e) => {
+                e.stopPropagation();
+                onClear();
+              }}
+              title="Clear crop"
+            >
+              <X className="w-3 h-3" />
+            </button>
+            <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/60 to-transparent px-1.5 py-1">
+              <div className="flex items-center gap-1">
+                <Check className="h-3 w-3 text-green-400" />
+                <span className="text-[10px] font-medium text-white/90">
+                  Panel {panelIndex + 1}
+                </span>
+              </div>
+            </div>
+          </>
+        ) : (
+          <div className="flex flex-col items-center justify-center gap-1.5 p-2">
+            <div className="w-8 h-8 rounded-full border-2 border-dashed border-muted-foreground/20 flex items-center justify-center">
+              <Scissors className="h-3.5 w-3.5 text-muted-foreground/30" />
+            </div>
+            <div className="text-center">
+              <p className="text-[11px] font-medium text-muted-foreground/60">
+                Panel {panelIndex + 1}
+              </p>
+              <p className="text-[10px] text-muted-foreground/40">
+                Click to crop
+              </p>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+// ─── CropSession ─────────────────────────────────────────────────
+
+interface CropSessionProps {
+  activeSlot: { panelIndex: number; side: 'front' | 'back' };
+  images: LibraryImage[];
+  selectedImageId: string | null;
+  cropWidth: number | null;
+  cropHeight: number | null;
+  existingSlot: { imageId: string | null; cropRegion: CropRegion | null } | undefined;
+  oppositeSlot: { imageId: string | null; cropRegion: CropRegion | null } | undefined;
+  onSelectImage: (imageId: string) => void;
+  onCancelCrop: () => void;
+  onConfirmCrop: (
+    panelIndex: number,
+    side: 'front' | 'back',
+    imageId: string,
+    region: CropRegion,
+    thumbnailUrl: string
+  ) => void;
+  onSetCropDimensions: (width: number, height: number) => void;
+}
+
+const CropSession: React.FC<CropSessionProps> = ({
+  activeSlot,
+  images,
+  selectedImageId,
+  cropWidth,
+  cropHeight,
+  existingSlot,
+  oppositeSlot,
+  onSelectImage,
+  onCancelCrop,
+  onConfirmCrop,
+  onSetCropDimensions,
+}) => {
+  // Local state for the crop region being drawn
+  const [region, setRegion] = useState<CropRegion | null>(
+    existingSlot?.cropRegion || null
+  );
+  const [imageDimensions, setImageDimensions] = useState<ImageDimensions | null>(null);
+
+  const selectedImage = images.find((i) => i.id === selectedImageId);
+
+  // Rotation controls for the selected image during crop
+  const [localRotation, setLocalRotation] = useState(selectedImage?.rotation || 0);
+
+  // Sync rotation when image changes
+  useEffect(() => {
+    if (selectedImage) {
+      setLocalRotation(selectedImage.rotation);
+    }
+  }, [selectedImage]);
+
+  // Reset region when image changes (unless it's the same image the slot already has)
+  useEffect(() => {
+    if (selectedImageId !== existingSlot?.imageId) {
+      setRegion(null);
+    }
+  }, [selectedImageId, existingSlot?.imageId]);
+
+  // ── Constraint logic ──
+  // Height from the first crop is shared by all panels.
+  // Width is shared between opposite faces of the same panel index.
+  const hasReferenceHeight = cropHeight != null;
+  const oppositeWidth = oppositeSlot?.cropRegion?.width ?? null;
+
+  // Both dimensions locked: opposite face already has a crop (we know both W and H)
+  const dimensionsLocked = hasReferenceHeight && oppositeWidth != null;
+  // Height-only constraint: reference height exists but no opposite face width yet
+  const heightConstrained = hasReferenceHeight && oppositeWidth == null;
+  // Fully free: first crop ever (no reference height)
+  const isFirstCrop = !hasReferenceHeight;
+
+  const handleRegionAdd = useCallback(
+    (newRegion: CropRegion) => {
+      setRegion(newRegion);
+    },
+    []
+  );
+
+  const handleRegionUpdate = useCallback((updated: CropRegion) => {
+    setRegion(updated);
+  }, []);
+
+  const handleRegionSelect = useCallback(() => {}, []);
+
+  const handleRegionDelete = useCallback(() => {
+    setRegion(null);
+  }, []);
+
+  const handleImageLoad = useCallback((dims: ImageDimensions) => {
+    setImageDimensions(dims);
+  }, []);
+
+  // Generate thumbnail and confirm
+  const handleConfirm = useCallback(async () => {
+    if (!region || !selectedImageId || !selectedImage) return;
+
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    await new Promise<void>((resolve, reject) => {
+      img.onload = () => resolve();
+      img.onerror = reject;
+      img.src = selectedImage.imageUrl;
+    });
+
+    const radians = (localRotation * Math.PI) / 180;
+    const cos = Math.abs(Math.cos(radians));
+    const sin = Math.abs(Math.sin(radians));
+    const rotatedWidth = img.width * cos + img.height * sin;
+    const rotatedHeight = img.width * sin + img.height * cos;
+
+    const rotCanvas = document.createElement('canvas');
+    rotCanvas.width = rotatedWidth;
+    rotCanvas.height = rotatedHeight;
+    const rotCtx = rotCanvas.getContext('2d');
+    if (rotCtx) {
+      rotCtx.translate(rotatedWidth / 2, rotatedHeight / 2);
+      rotCtx.rotate(radians);
+      rotCtx.drawImage(img, -img.width / 2, -img.height / 2);
+    }
+
+    const thumbCanvas = document.createElement('canvas');
+    const maxW = 300;
+    const scale = Math.min(1, maxW / region.width);
+    thumbCanvas.width = Math.round(region.width * scale);
+    thumbCanvas.height = Math.round(region.height * scale);
+    const thumbCtx = thumbCanvas.getContext('2d');
+    if (thumbCtx) {
+      thumbCtx.drawImage(
+        rotCanvas,
+        region.x,
+        region.y,
+        region.width,
+        region.height,
+        0,
+        0,
+        thumbCanvas.width,
+        thumbCanvas.height
+      );
+    }
+
+    const thumbnailUrl = thumbCanvas.toDataURL('image/jpeg', 0.8);
+
+    // Every crop reports its dimensions; the wizard handler locks height on first call
+    onSetCropDimensions(region.width, region.height);
+
+    onConfirmCrop(
+      activeSlot.panelIndex,
+      activeSlot.side,
+      selectedImageId,
+      region,
+      thumbnailUrl
+    );
+  }, [region, selectedImageId, selectedImage, localRotation, activeSlot, onSetCropDimensions, onConfirmCrop]);
+
+  const sideLabel = activeSlot.side === 'front' ? 'Front' : 'Back';
+  const sideColor = activeSlot.side === 'front' ? 'bg-blue-500' : 'bg-amber-500';
+
+  // Build the constraint description for the header
+  let constraintMessage: React.ReactNode = null;
+  if (dimensionsLocked) {
+    constraintMessage = (
+      <p className="text-sm text-muted-foreground flex items-center gap-1.5">
+        <Lock className="h-3.5 w-3.5" />
+        Crop locked to{' '}
+        <span className="font-mono font-medium">
+          {oppositeWidth} &times; {cropHeight}px
+        </span>
+        {' '}(matching opposite face)
+      </p>
+    );
+  } else if (heightConstrained) {
+    constraintMessage = (
+      <p className="text-sm text-muted-foreground flex items-center gap-1.5">
+        <Lock className="h-3.5 w-3.5" />
+        Height locked to{' '}
+        <span className="font-mono font-medium">{cropHeight}px</span>
+        {' '}&mdash; set the width for this panel
+      </p>
+    );
+  } else {
+    constraintMessage = (
+      <p className="text-sm text-muted-foreground">
+        Draw your first crop to set the shared height for all panels
+      </p>
+    );
+  }
+
+  // Build the instruction text for the crop canvas card
+  let canvasInstruction: string;
+  if (dimensionsLocked) {
+    canvasInstruction = 'Click to place crop. Drag to reposition.';
+  } else if (heightConstrained) {
+    canvasInstruction = 'Click and drag horizontally to set width. Height is locked. Drag to reposition.';
+  } else {
+    canvasInstruction = 'Click and drag to draw a crop region. Drag to reposition. Use handles to resize.';
+  }
+
+  return (
+    <div className="flex flex-col h-full p-3 gap-2">
+      {/* Compact header: title + constraints + image picker + actions */}
+      <div className="flex items-center gap-3 flex-shrink-0 flex-wrap">
+        <Button variant="outline" size="sm" onClick={onCancelCrop} className="h-8 gap-1.5 px-2.5">
+          <X className="h-3.5 w-3.5" />
+          Cancel
+        </Button>
+        <span className="text-sm font-semibold flex items-center gap-1.5 whitespace-nowrap">
+          <span className={`w-2 h-2 rounded-full ${sideColor}`} />
+          Panel {activeSlot.panelIndex + 1} {sideLabel}
+        </span>
+        <span className="text-xs text-muted-foreground">&mdash;</span>
+        <span className="text-xs text-muted-foreground flex-shrink min-w-0">
+          {dimensionsLocked
+            ? <>Locked to <span className="font-mono">{oppositeWidth}&times;{cropHeight}px</span></>
+            : heightConstrained
+            ? <>Height locked to <span className="font-mono">{cropHeight}px</span> &mdash; set width</>
+            : 'Draw first crop to set shared height'}
+        </span>
+        <div className="flex items-center gap-2 ml-auto">
+          {region && (
+            <Button variant="outline" size="sm" onClick={() => setRegion(null)} className="h-8 gap-1.5 px-2.5">
+              <RotateCcw className="h-3.5 w-3.5" />
+              Redraw
+            </Button>
+          )}
+          <Button size="sm" onClick={handleConfirm} disabled={!region || !selectedImageId} className="h-8 gap-1.5 px-2.5">
+            <Check className="h-3.5 w-3.5" />
+            Confirm
+          </Button>
+        </div>
+      </div>
+
+      {/* Image picker + rotation: compact horizontal strip */}
+      <div className="flex items-center gap-2 flex-shrink-0">
+        <div className="flex gap-2 overflow-x-auto py-1">
+          {images.map((img) => (
+            <button
+              key={img.id}
+              className={`
+                flex-shrink-0 w-14 h-14 rounded-md overflow-hidden border-2 transition-all
+                ${selectedImageId === img.id
+                  ? 'border-primary ring-2 ring-primary/20'
+                  : 'border-muted hover:border-primary/50'
+                }
+              `}
+              onClick={() => onSelectImage(img.id)}
+            >
+              <img
+                src={img.imageUrl}
+                alt={img.label}
+                className="w-full h-full object-cover"
+                style={{ transform: `rotate(${img.rotation}deg)` }}
+              />
+            </button>
+          ))}
+        </div>
+        {selectedImage && (
+          <div className="flex-shrink-0 border-l pl-2 flex items-center gap-1.5">
+            <button
+              className="flex items-center gap-1 px-2 py-1 bg-background hover:bg-accent border border-border rounded-md text-xs font-medium transition-colors"
+              onClick={() => setLocalRotation((r) => (r - 90 + 360) % 360)}
+              title="Rotate 90° counter-clockwise"
+            >
+              <RotateCcw className="h-3 w-3" /> 90°
+            </button>
+            <button
+              className="flex items-center gap-1 px-2 py-1 bg-background hover:bg-accent border border-border rounded-md text-xs font-medium transition-colors"
+              onClick={() => setLocalRotation((r) => (r + 90) % 360)}
+              title="Rotate 90° clockwise"
+            >
+              90° <RotateCw className="h-3 w-3" />
+            </button>
+            <span className="text-xs text-muted-foreground font-mono ml-1">{Math.round(localRotation)}°</span>
+          </div>
+        )}
+      </div>
+
+      {/* Crop canvas — fills remaining space */}
+      {selectedImage && (
+        <div className="flex-1 min-h-0 rounded-lg overflow-hidden border">
+          <CropCanvas
+            imageUrl={selectedImage.imageUrl}
+            imageDimensions={imageDimensions}
+            regions={region ? [region] : []}
+            selectedRegionId={region?.id || null}
+            lockDimensions={dimensionsLocked}
+            lockedWidth={dimensionsLocked ? oppositeWidth : null}
+            lockedHeight={dimensionsLocked ? cropHeight : null}
+            constrainHeight={heightConstrained ? cropHeight : null}
+            rotation={localRotation}
+            singleCropMode={true}
+            onRegionAdd={handleRegionAdd}
+            onRegionUpdate={handleRegionUpdate}
+            onRegionSelect={handleRegionSelect}
+            onRegionDelete={handleRegionDelete}
+            onImageLoad={handleImageLoad}
+          />
+        </div>
+      )}
+    </div>
+  );
+};

@@ -1,10 +1,8 @@
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
-import { Canvas } from '@react-three/fiber';
-import { OrbitControls, ContactShadows, Environment } from '@react-three/drei';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { RotateCw, RotateCcw, Maximize2, Minimize2 } from 'lucide-react';
-import { FoldableCard } from './FoldableCard';
+import { cn } from '@/lib/utils';
 import type { Panel, Crease, CoverDesignation } from './types';
 
 interface CardVisualizer3DProps {
@@ -13,320 +11,384 @@ interface CardVisualizer3DProps {
   cover?: CoverDesignation;
 }
 
-// Animation timing constants for button-triggered fold/unfold
-const FOLD_DURATION_PER_CREASE = 1200; // ms delay between each crease starting
-const FOLD_STAGGER_DELAY = 200; // ms overlap between sequential folds
+interface Spread {
+  index: number;
+  frontPanel: Panel | undefined;
+  backPanel: Panel | undefined;
+}
+
+const FOLD_DURATION = 600;
+const FOLD_STAGGER = 100;
+const PAPER_THICKNESS = 3;
+const PANEL_HEIGHT = 250;
+const PANEL_WIDTH_FALLBACK = 180;
 
 export const CardVisualizer3D: React.FC<CardVisualizer3DProps> = ({ panels, creases, cover }) => {
-  // Target state: 0 = all unfolded, 1 = all folded
-  // Start folded so front panel 0 is visible as the "cover"
   const [targetFoldState, setTargetFoldState] = useState<0 | 1>(1);
-  
-  // OrbitControls ref for reset functionality
-  const controlsRef = useRef<any>(null);
-  
-  // Animation refs
+  const [rotation, setRotation] = useState({ x: 15, y: -20 });
+  const [isDragging, setIsDragging] = useState(false);
+  const [isSliderActive, setIsSliderActive] = useState(false);
+  const dragStart = useRef({ x: 0, y: 0 });
+  const rotationStart = useRef({ x: 0, y: 0 });
   const animationTimeouts = useRef<NodeJS.Timeout[]>([]);
 
-  // Get front creases for fold direction reference
+  const coverDesignation: CoverDesignation = cover || { spreadIndex: 0, side: 'front' };
+
+  const frontPanels = useMemo(
+    () => panels.filter((p) => p.side === 'front').sort((a, b) => a.panel_index - b.panel_index),
+    [panels]
+  );
+  const backPanels = useMemo(
+    () => panels.filter((p) => p.side === 'back').sort((a, b) => a.panel_index - b.panel_index),
+    [panels]
+  );
+
+  const spreads: Spread[] = useMemo(() => {
+    const maxIndex = Math.max(
+      ...frontPanels.map((p) => p.panel_index),
+      ...backPanels.map((p) => p.panel_index),
+      -1
+    );
+    const result: Spread[] = [];
+    for (let i = 0; i <= maxIndex; i++) {
+      result.push({
+        index: i,
+        frontPanel: frontPanels.find((p) => p.panel_index === i),
+        backPanel: backPanels.find((p) => p.panel_index === i),
+      });
+    }
+    return result;
+  }, [frontPanels, backPanels]);
+
   const frontCreases = useMemo(
     () => creases.filter((c) => c.side === 'front').sort((a, b) => a.between_panel - b.between_panel),
     [creases]
   );
 
-  // Sort creases by unfold_sequence for animation ordering
   const creasesByUnfoldOrder = useMemo(() => {
-    return [...frontCreases].sort((a, b) => 
-      (a.unfold_sequence ?? a.between_panel) - (b.unfold_sequence ?? b.between_panel)
+    return [...frontCreases].sort(
+      (a, b) => (a.unfold_sequence ?? a.between_panel) - (b.unfold_sequence ?? b.between_panel)
     );
   }, [frontCreases]);
 
-  // Per-crease fold amounts (keyed by between_panel index)
   const [creaseFolds, setCreaseFolds] = useState<Record<number, number>>({});
 
-  // Initialize and update crease folds when frontCreases change
-  // Default to folded (1) so front panel 0 is visible as the "cover"
   useEffect(() => {
     setCreaseFolds((prev) => {
       const updated: Record<number, number> = {};
       frontCreases.forEach((c) => {
-        // Preserve existing value or default to 1 (folded)
         updated[c.between_panel] = prev[c.between_panel] ?? 1;
       });
       return updated;
     });
   }, [frontCreases]);
 
-  // Clear any pending animations on unmount
-  useEffect(() => {
-    return () => {
-      animationTimeouts.current.forEach(clearTimeout);
-    };
-  }, []);
+  useEffect(() => () => { animationTimeouts.current.forEach(clearTimeout); }, []);
 
-  // Reset to initial state: folded card with default camera view
-  const handleReset = useCallback(() => {
-    // Reset camera
-    if (controlsRef.current) {
-      controlsRef.current.reset();
-    }
-    
-    // Reset to folded state (initial state on load)
-    // Clear any pending animations
-    animationTimeouts.current.forEach(clearTimeout);
-    animationTimeouts.current = [];
-    
-    setTargetFoldState(1);
-    
-    // Fold all creases smoothly
-    const newFolds: Record<number, number> = {};
-    frontCreases.forEach((c) => {
-      newFolds[c.between_panel] = 1;
-    });
-    setCreaseFolds(newFolds);
-  }, [frontCreases]);
-
-  // Flip to back view (180° on Y axis)
-  const handleFlip = useCallback(() => {
-    // OrbitControls doesn't have a direct flip, so we'll rotate around
-    if (controlsRef.current) {
-      const controls = controlsRef.current;
-      const currentAzimuth = controls.getAzimuthalAngle();
-      controls.setAzimuthalAngle(currentAzimuth + Math.PI);
-    }
-  }, []);
-
-  // Sequential fold animation
-  const handleFold = useCallback(() => {
-    // Clear any existing animations
-    animationTimeouts.current.forEach(clearTimeout);
-    animationTimeouts.current = [];
-    
-    setTargetFoldState(1);
-    
-    // Fold in REVERSE unfold order (outer creases first for folding)
-    const foldOrder = [...creasesByUnfoldOrder].reverse();
-    
-    foldOrder.forEach((crease, orderIndex) => {
-      const delay = orderIndex * (FOLD_DURATION_PER_CREASE - FOLD_STAGGER_DELAY);
-      
-      const timeout = setTimeout(() => {
-        setCreaseFolds((prev) => ({
-          ...prev,
-          [crease.between_panel]: 1,
-        }));
-      }, delay);
-      
-      animationTimeouts.current.push(timeout);
-    });
-  }, [creasesByUnfoldOrder]);
-
-  // Sequential unfold animation
-  const handleUnfold = useCallback(() => {
-    // Clear any existing animations
-    animationTimeouts.current.forEach(clearTimeout);
-    animationTimeouts.current = [];
-    
-    setTargetFoldState(0);
-    
-    // Unfold in unfold_sequence order (inner creases first)
-    creasesByUnfoldOrder.forEach((crease, orderIndex) => {
-      const delay = orderIndex * (FOLD_DURATION_PER_CREASE - FOLD_STAGGER_DELAY);
-      
-      const timeout = setTimeout(() => {
-        setCreaseFolds((prev) => ({
-          ...prev,
-          [crease.between_panel]: 0,
-        }));
-      }, delay);
-      
-      animationTimeouts.current.push(timeout);
-    });
-  }, [creasesByUnfoldOrder]);
-
-  // Calculate overall fold progress for UI display
   const overallFoldProgress = useMemo(() => {
     const values = Object.values(creaseFolds);
     if (values.length === 0) return 0;
     return values.reduce((sum, v) => sum + v, 0) / values.length;
   }, [creaseFolds]);
 
-  // Handle slider change - sequential unfolding based on slider position
-  const handleSliderChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const sliderValue = parseFloat(e.target.value);
-    const n = creasesByUnfoldOrder.length;
-    
-    if (n === 0) return;
-    
+  // ─── Controls ──────────────────────────────────────────────────
+
+  const handleReset = useCallback(() => {
+    animationTimeouts.current.forEach(clearTimeout);
+    animationTimeouts.current = [];
+    setRotation({ x: 15, y: -20 });
+    setTargetFoldState(1);
     const newFolds: Record<number, number> = {};
-    
-    creasesByUnfoldOrder.forEach((crease, orderIndex) => {
-      // Each crease gets a segment of the slider range
-      // Crease at orderIndex i unfolds during slider range [(n-i-1)/n, (n-i)/n]
-      const rangeStart = (n - orderIndex - 1) / n;
-      const rangeEnd = (n - orderIndex) / n;
-      
-      if (sliderValue >= rangeEnd) {
-        // Slider is above this crease's range - fully folded
-        newFolds[crease.between_panel] = 1;
-      } else if (sliderValue <= rangeStart) {
-        // Slider is below this crease's range - fully unfolded
-        newFolds[crease.between_panel] = 0;
-      } else {
-        // Slider is within this crease's range - interpolate
-        const foldAmount = (sliderValue - rangeStart) / (rangeEnd - rangeStart);
-        newFolds[crease.between_panel] = foldAmount;
-      }
-    });
-    
+    frontCreases.forEach((c) => { newFolds[c.between_panel] = 1; });
     setCreaseFolds(newFolds);
-    setTargetFoldState(sliderValue > 0.5 ? 1 : 0);
+  }, [frontCreases]);
+
+  const handleFlip = useCallback(() => {
+    setRotation((prev) => ({ x: prev.x, y: prev.y + 180 }));
+  }, []);
+
+  const handleFold = useCallback(() => {
+    animationTimeouts.current.forEach(clearTimeout);
+    animationTimeouts.current = [];
+    setTargetFoldState(1);
+    const foldOrder = [...creasesByUnfoldOrder].reverse();
+    foldOrder.forEach((crease, i) => {
+      const delay = i * (FOLD_DURATION - FOLD_STAGGER);
+      const t = setTimeout(() => {
+        setCreaseFolds((prev) => ({ ...prev, [crease.between_panel]: 1 }));
+      }, delay);
+      animationTimeouts.current.push(t);
+    });
   }, [creasesByUnfoldOrder]);
 
-  return (
-    <Card className="w-full mt-8">
-      <CardHeader>
-        <div className="flex items-center justify-between">
-          <CardTitle>Card Preview</CardTitle>
-          <div className="flex gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleReset}
-              className="gap-2"
+  const handleUnfold = useCallback(() => {
+    animationTimeouts.current.forEach(clearTimeout);
+    animationTimeouts.current = [];
+    setTargetFoldState(0);
+    creasesByUnfoldOrder.forEach((crease, i) => {
+      const delay = i * (FOLD_DURATION - FOLD_STAGGER);
+      const t = setTimeout(() => {
+        setCreaseFolds((prev) => ({ ...prev, [crease.between_panel]: 0 }));
+      }, delay);
+      animationTimeouts.current.push(t);
+    });
+  }, [creasesByUnfoldOrder]);
+
+  const handleSliderChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      setIsSliderActive(true);
+      const v = parseFloat(e.target.value);
+      const n = creasesByUnfoldOrder.length;
+      if (n === 0) return;
+      const newFolds: Record<number, number> = {};
+      creasesByUnfoldOrder.forEach((crease, i) => {
+        const lo = (n - i - 1) / n;
+        const hi = (n - i) / n;
+        if (v >= hi) newFolds[crease.between_panel] = 1;
+        else if (v <= lo) newFolds[crease.between_panel] = 0;
+        else newFolds[crease.between_panel] = (v - lo) / (hi - lo);
+      });
+      setCreaseFolds(newFolds);
+      setTargetFoldState(v > 0.5 ? 1 : 0);
+    },
+    [creasesByUnfoldOrder]
+  );
+
+  const handleSliderRelease = useCallback(() => {
+    setTimeout(() => setIsSliderActive(false), 50);
+  }, []);
+
+  // ─── Drag-to-rotate ───────────────────────────────────────────
+
+  const startDrag = useCallback(
+    (x: number, y: number) => {
+      setIsDragging(true);
+      dragStart.current = { x, y };
+      rotationStart.current = { ...rotation };
+    },
+    [rotation]
+  );
+
+  const moveDrag = useCallback(
+    (x: number, y: number) => {
+      if (!isDragging) return;
+      setRotation({
+        x: rotationStart.current.x - (y - dragStart.current.y) * 0.5,
+        y: rotationStart.current.y + (x - dragStart.current.x) * 0.5,
+      });
+    },
+    [isDragging]
+  );
+
+  const endDrag = useCallback(() => setIsDragging(false), []);
+
+  // ─── Layout math ──────────────────────────────────────────────
+
+  const totalWidth = spreads.length * PANEL_WIDTH_FALLBACK;
+  const currentWidth = totalWidth - (totalWidth - PANEL_WIDTH_FALLBACK) * overallFoldProgress;
+  const offsetX = -currentWidth / 2;
+  const offsetY = -PANEL_HEIGHT / 2;
+  const staticFlipY = coverDesignation.side === 'back' ? 180 : 0;
+  const foldTransition = isSliderActive
+    ? 'none'
+    : `transform ${FOLD_DURATION}ms cubic-bezier(0.4, 0, 0.2, 1)`;
+
+  // ─── Recursive card rendering ─────────────────────────────────
+
+  const renderSpread = (idx: number): React.ReactNode => {
+    const spread = spreads[idx];
+    if (!spread) return null;
+
+    const isLast = idx === spreads.length - 1;
+    const crease = frontCreases.find((c) => c.between_panel === idx);
+    const amount = creaseFolds[idx] ?? 0;
+    const angle = crease
+      ? (crease.fold_direction === 'forward' ? -1 : 1) * amount * 180
+      : 0;
+    const zShift = crease
+      ? (crease.fold_direction === 'forward' ? 1 : -1) * PAPER_THICKNESS * amount
+      : 0;
+
+    const hasFront = spread.frontPanel && spread.frontPanel.thumbnail_url;
+    const hasBack = spread.backPanel && spread.backPanel.thumbnail_url;
+
+    return (
+      <div key={spread.index} className="flex" style={{ transformStyle: 'preserve-3d' }}>
+        {/* Panel: a double-sided surface with front and back faces */}
+        <div className="relative flex-shrink-0" style={{ transformStyle: 'preserve-3d' }}>
+          {hasFront ? (
+            <img
+              src={spread.frontPanel!.thumbnail_url}
+              alt={`Front ${spread.index + 1}`}
+              className="w-auto object-contain pointer-events-none"
+              style={{
+                height: PANEL_HEIGHT,
+                backfaceVisibility: 'hidden',
+                transform: `translateZ(${PAPER_THICKNESS / 2}px)`,
+              }}
+              draggable={false}
+            />
+          ) : (
+            <div
+              className="flex items-center justify-center text-xs text-indigo-400 bg-indigo-500/10 border border-indigo-300/20 rounded-sm"
+              style={{
+                height: PANEL_HEIGHT,
+                width: PANEL_WIDTH_FALLBACK,
+                backfaceVisibility: 'hidden',
+                transform: `translateZ(${PAPER_THICKNESS / 2}px)`,
+              }}
             >
-              <RotateCcw className="h-4 w-4" />
+              F-S{spread.index + 1}
+            </div>
+          )}
+
+          {hasBack ? (
+            <img
+              src={spread.backPanel!.thumbnail_url}
+              alt={`Back ${spread.index + 1}`}
+              className="absolute inset-0 w-auto object-contain pointer-events-none"
+              style={{
+                height: PANEL_HEIGHT,
+                backfaceVisibility: 'hidden',
+                transform: `translateZ(${-PAPER_THICKNESS / 2}px) rotateY(180deg)`,
+              }}
+              draggable={false}
+            />
+          ) : (
+            <div
+              className="absolute inset-0 flex items-center justify-center text-xs text-violet-400 bg-violet-500/10 border border-violet-300/20 rounded-sm"
+              style={{
+                height: PANEL_HEIGHT,
+                width: PANEL_WIDTH_FALLBACK,
+                backfaceVisibility: 'hidden',
+                transform: `translateZ(${-PAPER_THICKNESS / 2}px) rotateY(180deg)`,
+              }}
+            >
+              B-S{spread.index + 1}
+            </div>
+          )}
+        </div>
+
+        {/* Hinge to next spread — nested inside current so the rotation cascades */}
+        {!isLast && (
+          <div
+            style={{
+              transformStyle: 'preserve-3d',
+              transformOrigin: 'left center',
+              transition: foldTransition,
+              transform: `translateZ(${zShift}px) rotateY(${angle}deg)`,
+            }}
+          >
+            {renderSpread(idx + 1)}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  if (spreads.length === 0) return null;
+
+  return (
+    <Card className="w-full flex flex-col">
+      <CardHeader className="py-3 px-4">
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-sm">Preview</CardTitle>
+          <div className="flex gap-1.5">
+            <Button variant="outline" size="sm" onClick={handleReset} className="h-7 px-2 text-xs">
+              <RotateCcw className="h-3 w-3 mr-1" />
               Reset
             </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleFlip}
-              className="gap-2"
-            >
-              <RotateCw className="h-4 w-4" />
+            <Button variant="outline" size="sm" onClick={handleFlip} className="h-7 px-2 text-xs">
+              <RotateCw className="h-3 w-3 mr-1" />
               Flip
             </Button>
             <Button
-              variant={targetFoldState === 0 ? "default" : "outline"}
+              variant={targetFoldState === 0 ? 'default' : 'outline'}
               size="sm"
               onClick={handleUnfold}
-              className="gap-2"
+              className="h-7 px-2 text-xs"
             >
-              <Maximize2 className="h-4 w-4" />
+              <Maximize2 className="h-3 w-3 mr-1" />
               Unfold
             </Button>
             <Button
-              variant={targetFoldState === 1 ? "default" : "outline"}
+              variant={targetFoldState === 1 ? 'default' : 'outline'}
               size="sm"
               onClick={handleFold}
-              className="gap-2"
+              className="h-7 px-2 text-xs"
             >
-              <Minimize2 className="h-4 w-4" />
+              <Minimize2 className="h-3 w-3 mr-1" />
               Fold
             </Button>
           </div>
         </div>
-        <div className="flex items-center gap-4 mt-2">
-          <p className="text-sm text-muted-foreground">
-            Drag to rotate • Scroll to zoom
-          </p>
-          <div className="flex items-center gap-2 flex-1 max-w-xs">
-            <span className="text-xs text-muted-foreground">Flat</span>
-            <input
-              type="range"
-              min="0"
-              max="1"
-              step="0.01"
-              value={overallFoldProgress}
-              onChange={handleSliderChange}
-              className="flex-1 h-2 bg-muted rounded-lg appearance-none cursor-pointer"
-            />
-            <span className="text-xs text-muted-foreground">Folded</span>
-          </div>
+        <div className="flex items-center gap-2 mt-1.5">
+          <span className="text-[10px] text-muted-foreground">Flat</span>
+          <input
+            type="range"
+            min="0"
+            max="1"
+            step="0.01"
+            value={overallFoldProgress}
+            onChange={handleSliderChange}
+            onMouseUp={handleSliderRelease}
+            onTouchEnd={handleSliderRelease}
+            className="flex-1 h-1.5 bg-muted rounded-lg appearance-none cursor-pointer"
+          />
+          <span className="text-[10px] text-muted-foreground">Folded</span>
         </div>
+        <p className="text-[10px] text-muted-foreground mt-1">Drag to rotate</p>
       </CardHeader>
-      <CardContent>
-        <div className="rounded-lg overflow-hidden bg-gradient-to-b from-slate-100 to-slate-200 dark:from-slate-800 dark:to-slate-900" style={{ height: '400px' }}>
-          <Canvas
-            camera={{ position: [0, 20, 200], fov: 50 }}
-            shadows
-            dpr={[1.5, 2]}
-            gl={{ 
-              logarithmicDepthBuffer: true,
-              antialias: true,
-              powerPreference: 'high-performance',
+      <CardContent className="p-0 flex-1">
+        <div
+          className={cn(
+            'rounded-b-lg bg-gradient-to-b from-slate-100 to-slate-200 dark:from-slate-800 dark:to-slate-900',
+            'relative min-h-[350px] h-full select-none overflow-hidden',
+            isDragging ? 'cursor-grabbing' : 'cursor-grab'
+          )}
+          style={{ perspective: '1200px' }}
+          onMouseDown={(e) => { e.preventDefault(); startDrag(e.clientX, e.clientY); }}
+          onMouseMove={(e) => moveDrag(e.clientX, e.clientY)}
+          onMouseUp={endDrag}
+          onMouseLeave={() => { if (isDragging) endDrag(); }}
+          onTouchStart={(e) => { if (e.touches.length === 1) startDrag(e.touches[0].clientX, e.touches[0].clientY); }}
+          onTouchMove={(e) => { if (e.touches.length === 1) moveDrag(e.touches[0].clientX, e.touches[0].clientY); }}
+          onTouchEnd={endDrag}
+        >
+          {/*
+           * Anchor: positioned at the exact center of the canvas.
+           * This zero-size point is where all rotation happens, so drag
+           * always rotates around the visual center of the card.
+           */}
+          <div
+            style={{
+              position: 'absolute',
+              left: '50%',
+              top: '50%',
+              transformStyle: 'preserve-3d',
+              transition: isDragging ? 'none' : 'transform 300ms ease-out',
+              transform: `rotateX(${rotation.x}deg) rotateY(${rotation.y + staticFlipY}deg)`,
             }}
           >
-            {/* Soft ambient lighting */}
-            <ambientLight intensity={0.6} />
-            
-            {/* Main key light */}
-            <directionalLight
-              position={[150, 200, 150]}
-              intensity={1.2}
-              castShadow
-              shadow-mapSize={[2048, 2048]}
-              shadow-camera-far={500}
-              shadow-camera-left={-200}
-              shadow-camera-right={200}
-              shadow-camera-top={200}
-              shadow-camera-bottom={-200}
-              shadow-bias={-0.0001}
-            />
-            
-            {/* Fill light from opposite side */}
-            <directionalLight
-              position={[-100, 80, -100]}
-              intensity={0.4}
-            />
-            
-            {/* Rim light for edge definition */}
-            <directionalLight
-              position={[0, -50, -150]}
-              intensity={0.2}
-            />
-
-            {/* Environment for subtle reflections */}
-            <Environment preset="studio" />
-
-            {/* The foldable card - uses internal centering that animates with fold state */}
-            {/* Scale down for better framing in the viewport */}
-            <group scale={0.3}>
-              <FoldableCard
-                panels={panels}
-                creases={creases}
-                creaseFolds={creaseFolds}
-                cover={cover}
-                panelWidth={180}
-                panelHeight={120}
-              />
-            </group>
-
-            {/* Soft contact shadow on ground */}
-            <ContactShadows
-              position={[0, -90, 0]}
-              opacity={0.5}
-              scale={400}
-              blur={2.5}
-              far={150}
-              color="#1a1a2e"
-            />
-
-            {/* Orbit controls for rotation only (zoom disabled) */}
-            <OrbitControls
-              ref={controlsRef}
-              enablePan={false}
-              enableZoom={false}
-              autoRotate={false}
-              enableDamping
-              dampingFactor={0.05}
-              makeDefault
-            />
-          </Canvas>
+            {/*
+             * Card content: translated so its visual center sits on the
+             * rotation anchor. offsetX shifts left by half the current
+             * visual width; offsetY shifts up by half the panel height.
+             */}
+            <div
+              style={{
+                transformStyle: 'preserve-3d',
+                transition: foldTransition,
+                transform: `translate(${offsetX}px, ${offsetY}px)`,
+              }}
+            >
+              <div className="inline-flex" style={{ transformStyle: 'preserve-3d' }}>
+                {renderSpread(0)}
+              </div>
+            </div>
+          </div>
         </div>
       </CardContent>
     </Card>
   );
 };
-

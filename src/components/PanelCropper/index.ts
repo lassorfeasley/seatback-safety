@@ -1,16 +1,11 @@
-export { PanelCropper } from './PanelCropper';
-export { SideTabs } from './SideTabs';
-export { ScanGallery } from './ScanGallery';
+export { CropCanvas } from './CropCanvas';
 export { ScanControls } from './ScanControls';
-export { OrganizedCropPreview } from './OrganizedCropPreview';
+export { extractCrop, extractCropWithRotation, exportCrops, exportCropsWithRotation, generateRegionId } from './utils';
 export type {
   CropRegion,
-  CropperState,
-  PanelCropperState,
-  Scan,
+  CropCanvasProps,
   PanelSide,
   ImageDimensions,
   ExportOptions,
   ScanControlsProps,
 } from './types';
-
