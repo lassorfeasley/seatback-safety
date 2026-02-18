@@ -3,7 +3,7 @@ import { Check } from 'lucide-react';
 import type { StepIndicatorProps } from './types';
 
 const STEPS = [
-  { step: 1 as const, label: 'Panel Count' },
+  { step: 1 as const, label: 'Card Info' },
   { step: 2 as const, label: 'Image Library' },
   { step: 3 as const, label: 'Crop Panels' },
   { step: 4 as const, label: 'Fold Structure' },
@@ -14,54 +14,48 @@ export const StepIndicator: React.FC<StepIndicatorProps> = ({
   onStepClick,
 }) => {
   return (
-    <nav className="flex items-center justify-center gap-1 py-4 px-4" aria-label="Steps">
+    <nav className="flex items-center justify-center gap-1 py-3 px-4" aria-label="Steps">
       {STEPS.map(({ step, label }, index) => {
         const isCompleted = step < currentStep;
         const isActive = step === currentStep;
-        const isClickable = step < currentStep; // can only go back
+        const isClickable = step < currentStep;
 
         return (
           <React.Fragment key={step}>
-            {/* Connector line */}
             {index > 0 && (
               <div
-                className={`hidden sm:block h-px w-8 mx-1 transition-colors ${
-                  step <= currentStep ? 'bg-primary' : 'bg-border'
+                className={`hidden sm:block h-px w-6 mx-0.5 transition-colors ${
+                  step <= currentStep ? 'bg-foreground/20' : 'bg-border'
                 }`}
               />
             )}
-
-            {/* Step button */}
             <button
               onClick={() => isClickable && onStepClick(step)}
               disabled={!isClickable}
               className={`
-                flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all
+                flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm transition-all
                 ${isActive
-                  ? 'bg-primary text-primary-foreground shadow-sm'
+                  ? 'text-foreground font-medium'
                   : isCompleted
-                  ? 'bg-primary/10 text-primary hover:bg-primary/20 cursor-pointer'
-                  : 'bg-muted/50 text-muted-foreground cursor-default'
+                  ? 'text-muted-foreground hover:text-foreground cursor-pointer'
+                  : 'text-muted-foreground/50 cursor-default'
                 }
               `}
               aria-current={isActive ? 'step' : undefined}
             >
-              {/* Step number or check */}
               <span
                 className={`
-                  flex items-center justify-center w-6 h-6 rounded-full text-xs font-bold
+                  flex items-center justify-center w-5 h-5 rounded-full text-[11px] font-medium
                   ${isActive
-                    ? 'bg-primary-foreground/20 text-primary-foreground'
+                    ? 'bg-foreground text-background'
                     : isCompleted
-                    ? 'bg-primary text-primary-foreground'
+                    ? 'bg-foreground/10 text-foreground'
                     : 'bg-muted text-muted-foreground'
                   }
                 `}
               >
-                {isCompleted ? <Check className="h-3.5 w-3.5" /> : step}
+                {isCompleted ? <Check className="h-3 w-3" /> : step}
               </span>
-
-              {/* Label (hidden on small screens for non-active steps) */}
               <span className={`${isActive ? '' : 'hidden sm:inline'}`}>
                 {label}
               </span>

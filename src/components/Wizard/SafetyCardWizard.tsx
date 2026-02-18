@@ -1,12 +1,13 @@
 import React, { useState, useCallback, useMemo } from 'react';
 import { StepIndicator } from './StepIndicator';
-import { PanelCountStep } from './PanelCountStep';
+import { CardInfoStep } from './CardInfoStep';
 import { ImageLibraryStep } from './ImageLibraryStep';
 import { CropStep } from './CropStep';
 import { FoldStep } from './FoldStep';
 import { extractCropWithRotation } from '@/components/PanelCropper/utils';
 import { saveCardToLibrary } from '@/lib/safetyCardService';
-import type { WizardState, PanelSlot, PanelSide, LibraryImage } from './types';
+import type { WizardState, PanelSlot, PanelSide, LibraryImage, CardMetadata } from './types';
+import { EMPTY_METADATA } from './types';
 import type { CropRegion } from '@/components/PanelCropper/types';
 import type { Crease, Side, FoldDirection } from '@/components/FoldEditor/types';
 import JSZip from 'jszip';
@@ -55,6 +56,7 @@ export const SafetyCardWizard: React.FC<SafetyCardWizardProps> = ({
 }) => {
   const [state, setState] = useState<WizardState>({
     currentStep: 1,
+    metadata: { ...EMPTY_METADATA },
     panelCount: 0,
     images: [],
     slots: [],
@@ -84,15 +86,19 @@ export const SafetyCardWizard: React.FC<SafetyCardWizardProps> = ({
     setState((prev) => ({ ...prev, currentStep: step, activeSlot: null, selectedImageId: null }));
   }, []);
 
-  // ─── Step 1: Panel Count ──────────────────────────────────────
+  // ─── Step 1: Card Info ──────────────────────────────────────────
 
-  const handlePanelCountConfirm = useCallback((count: number) => {
+  const handleMetadataChange = useCallback((metadata: CardMetadata) => {
+    setState((prev) => ({ ...prev, metadata }));
+  }, []);
+
+  const handlePanelCountChange = useCallback((count: number) => {
     setState((prev) => {
-      // If count changed, regenerate slots and creases, preserving existing data where possible
+      if (count === prev.panelCount) return { ...prev, panelCount: count };
+
       const newSlots = generateSlots(count);
       const newCreases = generateDefaultCreases(count);
 
-      // Carry over existing slot data for panels that still exist
       for (const newSlot of newSlots) {
         const existing = prev.slots.find(
           (s) => s.panelIndex === newSlot.panelIndex && s.side === newSlot.side
@@ -104,7 +110,6 @@ export const SafetyCardWizard: React.FC<SafetyCardWizardProps> = ({
         }
       }
 
-      // Carry over existing crease settings for positions that still exist
       for (let i = 0; i < newCreases.length; i++) {
         const nc = newCreases[i];
         const existing = prev.creases.find(
@@ -115,13 +120,7 @@ export const SafetyCardWizard: React.FC<SafetyCardWizardProps> = ({
         }
       }
 
-      return {
-        ...prev,
-        panelCount: count,
-        slots: newSlots,
-        creases: newCreases,
-        currentStep: 2,
-      };
+      return { ...prev, panelCount: count, slots: newSlots, creases: newCreases };
     });
   }, []);
 
@@ -371,8 +370,7 @@ export const SafetyCardWizard: React.FC<SafetyCardWizardProps> = ({
 
   return (
     <div className="h-dvh flex flex-col bg-background overflow-hidden">
-      {/* Step indicator header */}
-      <div className="border-b bg-card flex-shrink-0">
+      <div className="border-b flex-shrink-0">
         <div className="max-w-7xl mx-auto flex items-center">
           {onBackToLibrary && (
             <button
@@ -396,9 +394,12 @@ export const SafetyCardWizard: React.FC<SafetyCardWizardProps> = ({
       {/* Step content — fills remaining height */}
       <div className="flex-1 min-h-0 max-w-7xl w-full mx-auto">
         {state.currentStep === 1 && (
-          <PanelCountStep
+          <CardInfoStep
+            metadata={state.metadata}
             panelCount={state.panelCount}
-            onConfirm={handlePanelCountConfirm}
+            onMetadataChange={handleMetadataChange}
+            onPanelCountChange={handlePanelCountChange}
+            onContinue={() => goToStep(2)}
           />
         )}
 

@@ -1,19 +1,17 @@
 import React, { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Card, CardContent } from '@/components/ui/card';
 import {
   ArrowLeft,
   Trash2,
   Loader2,
-  Calendar,
-  Layers,
-  ScanLine,
-  Maximize,
   ZoomIn,
   Info,
   ChevronDown,
   ChevronUp,
+  Download,
+  Paperclip,
+  Layers,
 } from 'lucide-react';
 import { CardVisualizer3D } from '@/components/FoldEditor/CardVisualizer3D';
 import {
@@ -21,6 +19,9 @@ import {
   deleteCard,
   type CardDetailData,
   type ScanInfo,
+  type DetailProvenanceEntry,
+  type DetailPriceObservation,
+  type DetailDocumentInfo,
 } from '@/lib/safetyCardService';
 import type { Panel } from '@/components/FoldEditor/types';
 
@@ -42,6 +43,8 @@ export const CardDetail: React.FC<CardDetailProps> = ({ cardId, onBack }) => {
   const [deleting, setDeleting] = useState(false);
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
   const [showScans, setShowScans] = useState(false);
+  const [showProvenance, setShowProvenance] = useState(false);
+  const [showPricing, setShowPricing] = useState(false);
 
   useEffect(() => {
     setLoading(true);
@@ -68,8 +71,6 @@ export const CardDetail: React.FC<CardDetailProps> = ({ cardId, onBack }) => {
       setDeleting(false);
     }
   };
-
-  // ─── Loading / Error states ────────────────────────────────────
 
   if (loading) {
     return (
@@ -99,14 +100,6 @@ export const CardDetail: React.FC<CardDetailProps> = ({ cardId, onBack }) => {
     );
   }
 
-  // ─── Computed values ───────────────────────────────────────────
-
-  const date = new Date(card.created_at).toLocaleDateString(undefined, {
-    month: 'long',
-    day: 'numeric',
-    year: 'numeric',
-  });
-
   const frontPanels = card.panels
     .filter((p) => p.side === 'front')
     .sort((a, b) => a.panel_index - b.panel_index);
@@ -116,57 +109,69 @@ export const CardDetail: React.FC<CardDetailProps> = ({ cardId, onBack }) => {
 
   const panelsPerSide = card.panel_count ? Math.ceil(card.panel_count / 2) : frontPanels.length;
 
+  const metaItems: { label: string; value: string }[] = [];
+  if (card.airline_name) metaItems.push({ label: 'Airline', value: card.airline_name });
+  if (card.aircraft_label) metaItems.push({ label: 'Aircraft', value: card.aircraft_label });
+  if (card.published_year) metaItems.push({ label: 'Printed', value: String(card.published_year) });
+  if (card.revision) metaItems.push({ label: 'Revision', value: card.revision });
+  if (card.language) metaItems.push({ label: 'Language', value: card.language });
+  if (card.panel_count) metaItems.push({ label: 'Panels', value: String(card.panel_count) });
+  if (card.crop_width && card.crop_height)
+    metaItems.push({ label: 'Crop', value: `${card.crop_width} × ${card.crop_height}` });
+
   return (
     <div className="h-dvh flex flex-col bg-background overflow-hidden">
       {/* ── Header ────────────────────────────────────────────────── */}
-      <header className="border-b bg-card flex-shrink-0">
-        <div className="max-w-6xl mx-auto flex items-center justify-between px-6 py-3">
-          <div className="flex items-center gap-3">
-            <Button variant="ghost" size="icon" onClick={onBack} className="flex-shrink-0">
-              <ArrowLeft className="h-5 w-5" />
-            </Button>
-            <div className="min-w-0">
-              <h1 className="text-lg font-semibold truncate">
-                {card.title || 'Untitled Card'}
-              </h1>
-              <div className="flex items-center gap-2 flex-wrap mt-0.5">
-                <Badge variant="secondary" className="gap-1 text-[11px]">
-                  <Layers className="h-3 w-3" />
-                  {card.panel_count ?? '?'} panels
-                </Badge>
-                <Badge variant="outline" className="gap-1 text-[11px]">
-                  <Calendar className="h-3 w-3" />
-                  {date}
-                </Badge>
-                {card.crop_width && card.crop_height && (
-                  <Badge variant="outline" className="gap-1 text-[11px]">
-                    <Maximize className="h-3 w-3" />
-                    {card.crop_width} &times; {card.crop_height}
-                  </Badge>
+      <header className="flex-shrink-0 bg-card border-b">
+        <div className="max-w-6xl mx-auto px-6 py-4">
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex items-start gap-3 min-w-0">
+              <button
+                onClick={onBack}
+                className="mt-1 text-muted-foreground hover:text-foreground transition-colors flex-shrink-0"
+              >
+                <ArrowLeft className="h-5 w-5" />
+              </button>
+              <div className="min-w-0">
+                <h1 className="text-2xl font-semibold tracking-tight truncate">
+                  {card.title || 'Untitled Card'}
+                </h1>
+                {metaItems.length > 0 && (
+                  <div className="flex items-center gap-x-5 gap-y-1 flex-wrap mt-1.5 text-sm text-muted-foreground">
+                    {metaItems.map((item) => (
+                      <span key={item.label}>
+                        <span className="text-muted-foreground/60">{item.label}:</span>{' '}
+                        {item.value}
+                      </span>
+                    ))}
+                  </div>
+                )}
+                {card.notes && (
+                  <p className="text-sm text-muted-foreground mt-2 line-clamp-2">{card.notes}</p>
                 )}
               </div>
             </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleDelete}
+              disabled={deleting}
+              className="flex-shrink-0 text-muted-foreground hover:text-destructive gap-1.5"
+            >
+              {deleting ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Trash2 className="h-4 w-4" />
+              )}
+              Delete
+            </Button>
           </div>
-          <Button
-            variant="destructive"
-            size="sm"
-            onClick={handleDelete}
-            disabled={deleting}
-            className="gap-2 flex-shrink-0"
-          >
-            {deleting ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Trash2 className="h-4 w-4" />
-            )}
-            Delete
-          </Button>
         </div>
       </header>
 
       {/* ── Body ──────────────────────────────────────────────────── */}
       <main className="flex-1 min-h-0 overflow-auto">
-        <div className="max-w-6xl mx-auto px-6 py-6 flex flex-col gap-8">
+        <div className="max-w-6xl mx-auto px-6 py-8 flex flex-col gap-12">
 
           {/* ── Full Spread View ────────────────────────────────── */}
           {(frontPanels.length > 0 || backPanels.length > 0) && (
@@ -179,7 +184,7 @@ export const CardDetail: React.FC<CardDetailProps> = ({ cardId, onBack }) => {
                 fullUrls={card.fullUrls}
                 onZoom={setLightboxUrl}
               />
-              <div className="my-4 border-t border-dashed" />
+              <div className="my-6" />
               <SpreadRow
                 label="Back"
                 panels={backPanels}
@@ -194,9 +199,7 @@ export const CardDetail: React.FC<CardDetailProps> = ({ cardId, onBack }) => {
           {/* ── 3D Fold Preview ─────────────────────────────────── */}
           {card.panels.length > 0 && (
             <section>
-              <h2 className="text-sm font-medium text-muted-foreground mb-3 uppercase tracking-wider">
-                Fold Preview
-              </h2>
+              <SectionHeading>Fold Preview</SectionHeading>
               <CardVisualizer3D
                 panels={card.panels}
                 creases={card.creases}
@@ -208,23 +211,54 @@ export const CardDetail: React.FC<CardDetailProps> = ({ cardId, onBack }) => {
           {/* ── Scan Archive ────────────────────────────────────── */}
           {card.scans.length > 0 && (
             <section>
-              <button
-                onClick={() => setShowScans(!showScans)}
-                className="flex items-center gap-2 text-sm font-medium text-muted-foreground
-                           uppercase tracking-wider hover:text-foreground transition-colors w-full"
+              <CollapsibleHeading
+                open={showScans}
+                onToggle={() => setShowScans(!showScans)}
               >
-                <ScanLine className="h-4 w-4" />
                 Original Scans ({card.scans.length})
-                {showScans ? (
-                  <ChevronUp className="h-4 w-4 ml-auto" />
-                ) : (
-                  <ChevronDown className="h-4 w-4 ml-auto" />
-                )}
-              </button>
+              </CollapsibleHeading>
               {showScans && (
-                <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
                   {card.scans.map((scan) => (
                     <ScanCard key={scan.id} scan={scan} />
+                  ))}
+                </div>
+              )}
+            </section>
+          )}
+
+          {/* ── Provenance ──────────────────────────────────────── */}
+          {card.provenance.length > 0 && (
+            <section>
+              <CollapsibleHeading
+                open={showProvenance}
+                onToggle={() => setShowProvenance(!showProvenance)}
+              >
+                Provenance ({card.provenance.length})
+              </CollapsibleHeading>
+              {showProvenance && (
+                <div className="mt-4 flex flex-col gap-4">
+                  {card.provenance.map((entry) => (
+                    <ProvenanceCard key={entry.id} entry={entry} />
+                  ))}
+                </div>
+              )}
+            </section>
+          )}
+
+          {/* ── Price History ────────────────────────────────────── */}
+          {card.priceObservations.length > 0 && (
+            <section>
+              <CollapsibleHeading
+                open={showPricing}
+                onToggle={() => setShowPricing(!showPricing)}
+              >
+                Price History ({card.priceObservations.length})
+              </CollapsibleHeading>
+              {showPricing && (
+                <div className="mt-4 flex flex-col gap-4">
+                  {card.priceObservations.map((obs) => (
+                    <PriceObservationCard key={obs.id} observation={obs} />
                   ))}
                 </div>
               )}
@@ -245,13 +279,37 @@ export const CardDetail: React.FC<CardDetailProps> = ({ cardId, onBack }) => {
         </div>
       </main>
 
-      {/* ── Lightbox ──────────────────────────────────────────────── */}
       {lightboxUrl && (
         <Lightbox url={lightboxUrl} onClose={() => setLightboxUrl(null)} />
       )}
     </div>
   );
 };
+
+// ─── Shared Section Components ───────────────────────────────────
+
+const SectionHeading: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+  <h2 className="text-base font-medium text-muted-foreground mb-4">{children}</h2>
+);
+
+const CollapsibleHeading: React.FC<{
+  children: React.ReactNode;
+  open: boolean;
+  onToggle: () => void;
+}> = ({ children, open, onToggle }) => (
+  <button
+    onClick={onToggle}
+    className="flex items-center gap-2 text-base font-medium text-muted-foreground
+               hover:text-foreground transition-colors w-full"
+  >
+    {children}
+    {open ? (
+      <ChevronUp className="h-4 w-4 ml-auto" />
+    ) : (
+      <ChevronDown className="h-4 w-4 ml-auto" />
+    )}
+  </button>
+);
 
 // ─── Spread Row ──────────────────────────────────────────────────
 
@@ -278,7 +336,7 @@ const SpreadRow: React.FC<SpreadRowProps> = ({
 
   return (
     <div>
-      <h2 className="text-sm font-medium text-muted-foreground mb-3 uppercase tracking-wider">
+      <h2 className="text-sm font-medium text-muted-foreground mb-3">
         {label} Side
       </h2>
       <div
@@ -292,7 +350,7 @@ const SpreadRow: React.FC<SpreadRowProps> = ({
           return (
             <div
               key={panel?.id ?? `empty-${i}`}
-              className="relative group bg-muted rounded-sm overflow-hidden border"
+              className="relative group bg-muted/50 rounded-sm overflow-hidden"
             >
               {displayUrl ? (
                 <>
@@ -323,7 +381,6 @@ const SpreadRow: React.FC<SpreadRowProps> = ({
           );
         })}
       </div>
-      {/* Panel labels */}
       <div
         className="grid gap-1 mt-1"
         style={{ gridTemplateColumns: `repeat(${slots.length}, 1fr)` }}
@@ -342,31 +399,113 @@ const SpreadRow: React.FC<SpreadRowProps> = ({
 
 const ScanCard: React.FC<{ scan: ScanInfo }> = ({ scan }) => {
   return (
-    <Card>
-      <CardContent className="p-4">
-        <div className="flex items-start gap-3">
-          <div className="rounded-md bg-muted p-2 flex-shrink-0">
-            <ScanLine className="h-5 w-5 text-muted-foreground" />
-          </div>
-          <div className="min-w-0 flex-1">
-            <p className="text-sm font-medium truncate">
-              {scan.original_filename || 'Unknown file'}
-            </p>
-            <div className="flex flex-wrap gap-x-4 gap-y-1 mt-1 text-xs text-muted-foreground">
-              <span>{scan.width_px} &times; {scan.height_px} px</span>
-              <span>{scan.dpi} DPI</span>
-              {scan.file_size_bytes && <span>{formatBytes(scan.file_size_bytes)}</span>}
-              {scan.mime_type && <span>{scan.mime_type}</span>}
-              {scan.side && (
-                <Badge variant="outline" className="text-[10px] px-1.5 py-0">
-                  {scan.side}
-                </Badge>
-              )}
-            </div>
-          </div>
-        </div>
-      </CardContent>
-    </Card>
+    <div className="flex items-start gap-3 p-4 rounded-lg bg-muted/40">
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-medium truncate">
+          {scan.original_filename || 'Unknown file'}
+        </p>
+        <p className="text-xs text-muted-foreground mt-1">
+          {scan.width_px} &times; {scan.height_px} px
+          {' · '}{scan.dpi} DPI
+          {scan.file_size_bytes ? ` · ${formatBytes(scan.file_size_bytes)}` : ''}
+          {scan.side ? ` · ${scan.side}` : ''}
+        </p>
+      </div>
+    </div>
+  );
+};
+
+// ─── Document Download Links ─────────────────────────────────────
+
+const DocumentLinks: React.FC<{ documents: DetailDocumentInfo[] }> = ({ documents }) => {
+  if (documents.length === 0) return null;
+  return (
+    <div className="flex flex-wrap gap-2 mt-3">
+      {documents.map((doc) => (
+        <a
+          key={doc.id}
+          href={doc.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground
+                     bg-muted/50 hover:bg-muted rounded-md px-2.5 py-1.5 transition-colors"
+        >
+          <Paperclip className="h-3 w-3 flex-shrink-0" />
+          <span className="truncate max-w-[160px]">{doc.original_filename}</span>
+          {doc.file_size_bytes && (
+            <span className="text-muted-foreground/60">({formatBytes(doc.file_size_bytes)})</span>
+          )}
+          <Download className="h-3 w-3 flex-shrink-0" />
+        </a>
+      ))}
+    </div>
+  );
+};
+
+// ─── Provenance Display ──────────────────────────────────────────
+
+const ProvenanceCard: React.FC<{ entry: DetailProvenanceEntry }> = ({ entry }) => {
+  return (
+    <div className="p-4 rounded-lg bg-muted/40">
+      <p className="text-sm font-medium">{entry.source || 'Unknown source'}</p>
+      {entry.acquired_date && (
+        <p className="text-xs text-muted-foreground mt-1">
+          <span className="text-muted-foreground/60">Acquired:</span>{' '}
+          {new Date(entry.acquired_date + 'T00:00:00').toLocaleDateString(undefined, {
+            month: 'long',
+            day: 'numeric',
+            year: 'numeric',
+          })}
+        </p>
+      )}
+      {entry.notes && (
+        <p className="text-xs text-muted-foreground mt-2">{entry.notes}</p>
+      )}
+      <DocumentLinks documents={entry.documents} />
+    </div>
+  );
+};
+
+// ─── Price Observation Display ───────────────────────────────────
+
+const PRICE_TYPE_LABELS: Record<string, string> = {
+  purchase: 'Purchase',
+  asking: 'Asking',
+  auction_result: 'Auction Result',
+  estimate: 'Estimate',
+};
+
+const PriceObservationCard: React.FC<{ observation: DetailPriceObservation }> = ({ observation }) => {
+  const formattedPrice = observation.price_usd != null
+    ? new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(observation.price_usd)
+    : '—';
+
+  return (
+    <div className="p-4 rounded-lg bg-muted/40">
+      <div className="flex items-baseline gap-2">
+        <p className="text-sm font-medium">{formattedPrice}</p>
+        {observation.price_type && (
+          <Badge variant="outline" className="text-[10px] px-1.5 py-0 font-normal">
+            {PRICE_TYPE_LABELS[observation.price_type] ?? observation.price_type}
+          </Badge>
+        )}
+      </div>
+      <p className="text-xs text-muted-foreground mt-1">
+        {[
+          observation.source,
+          observation.observed_date
+            ? new Date(observation.observed_date + 'T00:00:00').toLocaleDateString(undefined, {
+                month: 'long',
+                day: 'numeric',
+                year: 'numeric',
+              })
+            : null,
+        ]
+          .filter(Boolean)
+          .join(' · ')}
+      </p>
+      <DocumentLinks documents={observation.documents} />
+    </div>
   );
 };
 

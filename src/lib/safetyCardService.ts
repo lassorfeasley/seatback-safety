@@ -13,6 +13,8 @@ export interface CardSummary {
   cover_side: string;
   cover_spread_index: number;
   thumbnail_url: string | null;
+  airline_name: string | null;
+  aircraft_label: string | null;
 }
 
 export interface ScanInfo {
@@ -26,6 +28,33 @@ export interface ScanInfo {
   file_size_bytes: number | null;
 }
 
+export interface DetailDocumentInfo {
+  id: string;
+  file_path: string;
+  original_filename: string;
+  mime_type: string | null;
+  file_size_bytes: number | null;
+  label: string | null;
+  url: string;
+}
+
+export interface DetailProvenanceEntry {
+  id: string;
+  source: string | null;
+  acquired_date: string | null;
+  notes: string | null;
+  documents: DetailDocumentInfo[];
+}
+
+export interface DetailPriceObservation {
+  id: string;
+  price_usd: number | null;
+  price_type: string | null;
+  source: string | null;
+  observed_date: string | null;
+  documents: DetailDocumentInfo[];
+}
+
 export interface CardDetailData {
   id: string;
   title: string | null;
@@ -35,12 +64,20 @@ export interface CardDetailData {
   cover_spread_index: number;
   cover_side: string;
   created_at: string;
+  airline_name: string | null;
+  aircraft_label: string | null;
+  published_year: number | null;
+  revision: string | null;
+  language: string | null;
+  notes: string | null;
   panels: Panel[];
   creases: Crease[];
   cover: CoverDesignation;
   displayUrls: Record<string, string>;
   fullUrls: Record<string, string>;
   scans: ScanInfo[];
+  provenance: DetailProvenanceEntry[];
+  priceObservations: DetailPriceObservation[];
 }
 
 export interface SaveResult {
@@ -121,9 +158,24 @@ export async function saveCardToLibrary(
     // ── 1. Create safety_cards record ────────────────────────────
     report('Creating card record', 0, 1);
 
+    const m = state.metadata;
+    const autoTitle =
+      m.title ||
+      [m.airlineName, m.manufacturerName, m.modelName, m.variantName]
+        .filter(Boolean)
+        .join(' ') ||
+      null;
+
     const { data: card, error: cardErr } = await supabase
       .from('safety_cards')
       .insert({
+        title: autoTitle,
+        airline_id: m.airlineId || null,
+        aircraft_variant_id: m.variantId || null,
+        published_year: m.publishedYear || null,
+        revision: m.revision || null,
+        language: m.language || null,
+        notes: m.notes || null,
         panel_count: state.panelCount,
         crop_width: state.cropWidth,
         crop_height: state.cropHeight,
@@ -324,6 +376,99 @@ export async function saveCardToLibrary(
       }
     }
 
+    // ── 6. Save provenance entries + documents ─────────────────
+    const provEntries = state.metadata.provenance ?? [];
+    for (let idx = 0; idx < provEntries.length; idx++) {
+      const entry = provEntries[idx];
+      report('Saving provenance', idx + 1, provEntries.length);
+
+      const { data: provRow, error: provErr } = await supabase
+        .from('card_provenance')
+        .insert({
+          card_id: cardId,
+          source: entry.source || null,
+          acquired_date: entry.acquiredDate || null,
+          notes: entry.notes || null,
+        })
+        .select('id')
+        .single();
+
+      if (provErr || !provRow) {
+        return { cardId, success: false, error: `Failed to save provenance: ${provErr?.message}` };
+      }
+
+      const provId = provRow.id as string;
+
+      for (const doc of entry.documents) {
+        if (!doc.file) continue;
+        const docId = crypto.randomUUID();
+        const ext = doc.originalFilename.split('.').pop()?.toLowerCase() || 'bin';
+        const docPath = `${cardId}/${docId}.${ext}`;
+
+        await supabase.storage.from('documents').upload(docPath, doc.file, {
+          contentType: doc.mimeType || 'application/octet-stream',
+        });
+
+        await supabase.from('card_documents').insert({
+          id: docId,
+          card_id: cardId,
+          provenance_id: provId,
+          file_path: docPath,
+          original_filename: doc.originalFilename,
+          mime_type: doc.mimeType || null,
+          file_size_bytes: doc.fileSizeBytes,
+          label: doc.label || null,
+        });
+      }
+    }
+
+    // ── 7. Save price observations + documents ──────────────
+    const priceObs = state.metadata.priceObservations ?? [];
+    for (let idx = 0; idx < priceObs.length; idx++) {
+      const obs = priceObs[idx];
+      report('Saving price history', idx + 1, priceObs.length);
+
+      const { data: priceRow, error: priceErr } = await supabase
+        .from('card_price_observations')
+        .insert({
+          card_id: cardId,
+          price_usd: obs.priceUsd,
+          price_type: obs.priceType || null,
+          source: obs.source || null,
+          observed_date: obs.observedDate || null,
+        })
+        .select('id')
+        .single();
+
+      if (priceErr || !priceRow) {
+        return { cardId, success: false, error: `Failed to save price: ${priceErr?.message}` };
+      }
+
+      const priceId = priceRow.id as string;
+
+      for (const doc of obs.documents) {
+        if (!doc.file) continue;
+        const docId = crypto.randomUUID();
+        const ext = doc.originalFilename.split('.').pop()?.toLowerCase() || 'bin';
+        const docPath = `${cardId}/${docId}.${ext}`;
+
+        await supabase.storage.from('documents').upload(docPath, doc.file, {
+          contentType: doc.mimeType || 'application/octet-stream',
+        });
+
+        await supabase.from('card_documents').insert({
+          id: docId,
+          card_id: cardId,
+          price_observation_id: priceId,
+          file_path: docPath,
+          original_filename: doc.originalFilename,
+          mime_type: doc.mimeType || null,
+          file_size_bytes: doc.fileSizeBytes,
+          label: doc.label || null,
+        });
+      }
+    }
+
     report('Done', 1, 1);
     return { cardId, success: true };
   } catch (err) {
@@ -339,11 +484,33 @@ function derivativePublicUrl(filePath: string): string {
   return data.publicUrl;
 }
 
+async function documentSignedUrl(filePath: string): Promise<string> {
+  const { data } = await supabase.storage
+    .from('documents')
+    .createSignedUrl(filePath, 3600);
+  return data?.signedUrl ?? '';
+}
+
+function unwrap(val: unknown): Record<string, unknown> | null {
+  if (!val) return null;
+  if (Array.isArray(val)) return val[0] ?? null;
+  return val as Record<string, unknown>;
+}
+
+function buildAircraftLabel(variant: Record<string, unknown> | null): string | null {
+  if (!variant) return null;
+  const model = unwrap(variant.aircraft_models);
+  const mfr = model ? unwrap(model.aircraft_manufacturers) : null;
+  return [mfr?.name, model?.name, variant.name].filter(Boolean).join(' ') || null;
+}
+
 export async function fetchCards(): Promise<CardSummary[]> {
   const { data: cards, error } = await supabase
     .from('safety_cards')
     .select(`
       id, title, panel_count, cover_spread_index, cover_side, created_at,
+      airlines ( name ),
+      aircraft_variants ( name, aircraft_models ( name, aircraft_manufacturers ( name ) ) ),
       card_sides (
         id, side,
         card_panels (
@@ -378,7 +545,6 @@ export async function fetchCards(): Promise<CardSummary[]> {
       thumbnailUrl = derivativePublicUrl(thumbImage.file_path);
     }
 
-    // Fallback: grab the first available thumbnail from any panel
     if (!thumbnailUrl) {
       for (const side of sides) {
         for (const panel of side.card_panels ?? []) {
@@ -392,6 +558,11 @@ export async function fetchCards(): Promise<CardSummary[]> {
       }
     }
 
+    const airlineRaw = card.airlines;
+    const airline = (Array.isArray(airlineRaw) ? airlineRaw[0] : airlineRaw) as Record<string, unknown> | null;
+    const variantRaw = card.aircraft_variants;
+    const variant = (Array.isArray(variantRaw) ? variantRaw[0] : variantRaw) as Record<string, unknown> | null;
+
     return {
       id: card.id as string,
       title: card.title as string | null,
@@ -400,17 +571,22 @@ export async function fetchCards(): Promise<CardSummary[]> {
       cover_side: card.cover_side as string,
       cover_spread_index: card.cover_spread_index as number,
       thumbnail_url: thumbnailUrl,
+      airline_name: (airline?.name as string) ?? null,
+      aircraft_label: buildAircraftLabel(variant),
     };
   });
 }
 
 export async function fetchCardDetail(cardId: string): Promise<CardDetailData | null> {
-  const [cardResult, scansResult] = await Promise.all([
+  const [cardResult, scansResult, provResult, priceResult] = await Promise.all([
     supabase
       .from('safety_cards')
       .select(`
         id, title, panel_count, crop_width, crop_height,
         cover_spread_index, cover_side, created_at,
+        published_year, revision, language, notes,
+        airlines ( name ),
+        aircraft_variants ( name, aircraft_models ( name, aircraft_manufacturers ( name ) ) ),
         card_sides (
           id, side,
           card_panels (
@@ -426,6 +602,22 @@ export async function fetchCardDetail(cardId: string): Promise<CardDetailData | 
       .from('card_scans')
       .select('id, side, dpi, width_px, height_px, original_filename, mime_type, file_size_bytes')
       .eq('card_id', cardId),
+    supabase
+      .from('card_provenance')
+      .select(`
+        id, source, acquired_date, notes,
+        card_documents ( id, file_path, original_filename, mime_type, file_size_bytes, label )
+      `)
+      .eq('card_id', cardId)
+      .order('acquired_date', { ascending: false }),
+    supabase
+      .from('card_price_observations')
+      .select(`
+        id, price_usd, price_type, source, observed_date,
+        card_documents ( id, file_path, original_filename, mime_type, file_size_bytes, label )
+      `)
+      .eq('card_id', cardId)
+      .order('observed_date', { ascending: false }),
   ]);
 
   const { data: card, error } = cardResult;
@@ -506,6 +698,85 @@ export async function fetchCardDetail(cardId: string): Promise<CardDetailData | 
     unfold_sequence: c.unfold_sequence,
   }));
 
+  const airlineRaw = card.airlines;
+  const airline = (Array.isArray(airlineRaw) ? airlineRaw[0] : airlineRaw) as Record<string, unknown> | null;
+  const variantRaw = card.aircraft_variants;
+  const aircraftVariant = (Array.isArray(variantRaw) ? variantRaw[0] : variantRaw) as Record<string, unknown> | null;
+
+  // Build provenance with signed document URLs
+  const rawProvenance = (provResult.data ?? []) as Array<{
+    id: string;
+    source: string | null;
+    acquired_date: string | null;
+    notes: string | null;
+    card_documents: Array<{
+      id: string;
+      file_path: string;
+      original_filename: string;
+      mime_type: string | null;
+      file_size_bytes: number | null;
+      label: string | null;
+    }>;
+  }>;
+
+  const provenance: DetailProvenanceEntry[] = await Promise.all(
+    rawProvenance.map(async (p) => ({
+      id: p.id,
+      source: p.source,
+      acquired_date: p.acquired_date,
+      notes: p.notes,
+      documents: await Promise.all(
+        (p.card_documents ?? []).map(async (d) => ({
+          id: d.id,
+          file_path: d.file_path,
+          original_filename: d.original_filename,
+          mime_type: d.mime_type,
+          file_size_bytes: d.file_size_bytes,
+          label: d.label,
+          url: await documentSignedUrl(d.file_path),
+        }))
+      ),
+    }))
+  );
+
+  // Build price observations with signed document URLs
+  const rawPrices = (priceResult.data ?? []) as Array<{
+    id: string;
+    price_usd: number | null;
+    price_type: string | null;
+    source: string | null;
+    observed_date: string | null;
+    card_documents: Array<{
+      id: string;
+      file_path: string;
+      original_filename: string;
+      mime_type: string | null;
+      file_size_bytes: number | null;
+      label: string | null;
+    }>;
+  }>;
+
+  const priceObservations: DetailPriceObservation[] = await Promise.all(
+    rawPrices.map(async (obs) => ({
+      id: obs.id,
+      price_usd: obs.price_usd,
+      price_type: obs.price_type,
+      source: obs.source,
+      observed_date: obs.observed_date,
+      documents: await Promise.all(
+        (obs.card_documents ?? []).map(async (d) => ({
+          id: d.id,
+          file_path: d.file_path,
+          original_filename: d.original_filename,
+          mime_type: d.mime_type,
+          file_size_bytes: d.file_size_bytes,
+          label: d.label,
+          url: await documentSignedUrl(d.file_path),
+        }))
+      ),
+    }))
+  );
+
   return {
     id: card.id,
     title: card.title,
@@ -515,6 +786,12 @@ export async function fetchCardDetail(cardId: string): Promise<CardDetailData | 
     cover_spread_index: card.cover_spread_index,
     cover_side: card.cover_side,
     created_at: card.created_at,
+    airline_name: (airline?.name as string) ?? null,
+    aircraft_label: buildAircraftLabel(aircraftVariant),
+    published_year: card.published_year ?? null,
+    revision: card.revision ?? null,
+    language: card.language ?? null,
+    notes: card.notes ?? null,
     panels,
     creases,
     cover: {
@@ -524,11 +801,25 @@ export async function fetchCardDetail(cardId: string): Promise<CardDetailData | 
     displayUrls,
     fullUrls,
     scans,
+    provenance,
+    priceObservations,
   };
 }
 
 export async function deleteCard(cardId: string): Promise<{ success: boolean; error?: string }> {
-  // Delete storage objects first (derivatives then scans)
+  // Delete storage objects first (documents, derivatives, then scans)
+  const { data: docs } = await supabase
+    .from('card_documents')
+    .select('file_path')
+    .eq('card_id', cardId);
+
+  if (docs) {
+    const paths = docs.map((d: { file_path: string }) => d.file_path);
+    if (paths.length > 0) {
+      await supabase.storage.from('documents').remove(paths);
+    }
+  }
+
   const { data: panelImages } = await supabase
     .from('panel_images')
     .select('file_path, panel_id, card_panels!inner( side_id, card_sides!inner( card_id ) )')

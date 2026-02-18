@@ -3,6 +3,74 @@ import type { Crease, CoverDesignation, Side } from '@/components/FoldEditor/typ
 
 export type PanelSide = 'front' | 'back';
 
+// ─── Document / Provenance / Pricing Types ──────────────────────
+
+export interface DocumentAttachment {
+  id?: string;
+  file: File | null;
+  url?: string;
+  originalFilename: string;
+  mimeType: string;
+  fileSizeBytes: number;
+  label: string;
+}
+
+export interface ProvenanceEntry {
+  id?: string;
+  source: string;
+  acquiredDate: string;
+  notes: string;
+  documents: DocumentAttachment[];
+}
+
+export type PriceType = 'purchase' | 'asking' | 'auction_result' | 'estimate';
+
+export interface PriceObservation {
+  id?: string;
+  priceUsd: number | null;
+  priceType: PriceType;
+  source: string;
+  observedDate: string;
+  documents: DocumentAttachment[];
+}
+
+// Metadata collected in the Card Info step
+export interface CardMetadata {
+  airlineId: string | null;
+  airlineName: string;
+  manufacturerId: string | null;
+  manufacturerName: string;
+  modelId: string | null;
+  modelName: string;
+  variantId: string | null;
+  variantName: string;
+  title: string;
+  publishedYear: number | null;
+  revision: string;
+  language: string;
+  notes: string;
+  provenance: ProvenanceEntry[];
+  priceObservations: PriceObservation[];
+}
+
+export const EMPTY_METADATA: CardMetadata = {
+  airlineId: null,
+  airlineName: '',
+  manufacturerId: null,
+  manufacturerName: '',
+  modelId: null,
+  modelName: '',
+  variantId: null,
+  variantName: '',
+  title: '',
+  publishedYear: null,
+  revision: '',
+  language: '',
+  notes: '',
+  provenance: [],
+  priceObservations: [],
+};
+
 // A scan image in the shared library (not assigned to any panel)
 export interface LibraryImage {
   id: string;
@@ -25,7 +93,8 @@ export interface PanelSlot {
 // Top-level wizard state
 export interface WizardState {
   currentStep: 1 | 2 | 3 | 4;
-  panelCount: number; // 0 = not set yet
+  metadata: CardMetadata;
+  panelCount: number; // 0 = not set yet (defaults to 3)
   images: LibraryImage[];
   slots: PanelSlot[];
   cropWidth: number | null;
@@ -40,9 +109,12 @@ export interface WizardState {
 
 // ─── Step Prop Interfaces ────────────────────────────────────────
 
-export interface PanelCountStepProps {
+export interface CardInfoStepProps {
+  metadata: CardMetadata;
   panelCount: number;
-  onConfirm: (count: number) => void;
+  onMetadataChange: (metadata: CardMetadata) => void;
+  onPanelCountChange: (count: number) => void;
+  onContinue: () => void;
 }
 
 export interface ImageLibraryStepProps {

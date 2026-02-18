@@ -1,5 +1,4 @@
 import React, { useMemo, useCallback } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft, Download, Save, Loader2, Star } from 'lucide-react';
 import { CreaseToggle } from '@/components/FoldEditor/CreaseToggle';
@@ -76,30 +75,23 @@ export const FoldStep: React.FC<FoldStepProps> = ({
     cover.spreadIndex === panelIdx && cover.side === side;
 
   return (
-    <div className="flex flex-col h-full p-4 gap-3">
-      {/* Header */}
+    <div className="flex flex-col h-full p-6 gap-4">
       <div className="flex items-center gap-3 flex-shrink-0">
         <div>
-          <h3 className="text-lg font-semibold">Fold Structure</h3>
-          <p className="text-sm text-muted-foreground">
+          <h3 className="text-2xl font-semibold tracking-tight">Fold Structure</h3>
+          <p className="text-sm text-muted-foreground mt-1">
             Define how the card folds. Click a panel to designate it as the cover.
           </p>
         </div>
       </div>
 
-      {/* Two-column layout: panels + creases on left, 3D preview on right */}
-      <div className="grid grid-cols-1 lg:grid-cols-[1fr_1fr] gap-4 items-start flex-1 min-h-0 overflow-auto">
-        {/* Left column: panel strips */}
-        <div className="flex flex-col gap-4">
-          {/* Front side */}
-          <Card>
-            <CardHeader className="pb-2 pt-4">
-              <CardTitle className="text-sm flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-blue-500" />
-                Front Side
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="pb-4">
+      <div className="grid grid-cols-1 lg:grid-cols-[1fr_1fr] gap-6 items-start flex-1 min-h-0 overflow-auto">
+        <div className="flex flex-col gap-6">
+          <div className="rounded-lg bg-muted/40 p-5">
+            <h4 className="text-sm font-medium text-muted-foreground mb-3 flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-blue-500" />
+              Front Side
+            </h4>
               <div className="flex items-stretch gap-0 overflow-x-auto pb-1">
                 {Array.from({ length: panelCount }, (_, i) => {
                   const slot = slots.find(
@@ -135,21 +127,16 @@ export const FoldStep: React.FC<FoldStepProps> = ({
                   );
                 })}
               </div>
-            </CardContent>
-          </Card>
+          </div>
 
-          {/* Back side (reversed) */}
-          <Card>
-            <CardHeader className="pb-2 pt-4">
-              <CardTitle className="text-sm flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-amber-500" />
-                Back Side
-              </CardTitle>
-              <p className="text-[11px] text-muted-foreground">
-                Flipped — as if you turned the card over
-              </p>
-            </CardHeader>
-            <CardContent className="pb-4">
+          <div className="rounded-lg bg-muted/40 p-5">
+            <h4 className="text-sm font-medium text-muted-foreground mb-1 flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-amber-500" />
+              Back Side
+            </h4>
+            <p className="text-[11px] text-muted-foreground mb-3">
+              Flipped — as if you turned the card over
+            </p>
               <div className="flex items-stretch gap-0 overflow-x-auto pb-1">
                 {Array.from({ length: panelCount }, (_, rawI) => {
                   const i = panelCount - 1 - rawI;
@@ -194,8 +181,7 @@ export const FoldStep: React.FC<FoldStepProps> = ({
                   );
                 })}
               </div>
-            </CardContent>
-          </Card>
+          </div>
         </div>
 
         {/* Right column: 3D preview (sticky so it stays visible while scrolling) */}
@@ -204,8 +190,7 @@ export const FoldStep: React.FC<FoldStepProps> = ({
         </div>
       </div>
 
-      {/* Navigation */}
-      <div className="flex justify-between items-center flex-shrink-0 pt-2 border-t">
+      <div className="flex justify-between items-center flex-shrink-0 pt-3 border-t">
         <Button variant="outline" onClick={onBack} disabled={isSaving} className="gap-2">
           <ArrowLeft className="h-4 w-4" />
           Back
