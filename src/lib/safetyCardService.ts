@@ -13,6 +13,7 @@ export interface CardSummary {
   cover_side: string;
   cover_spread_index: number;
   thumbnail_url: string | null;
+  preview_url: string | null;
   airline_name: string | null;
   aircraft_label: string | null;
 }
@@ -55,6 +56,15 @@ export interface DetailPriceObservation {
   documents: DetailDocumentInfo[];
 }
 
+export interface DetailAircraftEntry {
+  modelId: string | null;
+  modelName: string;
+  variantId: string | null;
+  variantName: string;
+  manufacturerId: string | null;
+  manufacturerName: string;
+}
+
 export interface CardDetailData {
   id: string;
   title: string | null;
@@ -78,6 +88,23 @@ export interface CardDetailData {
   scans: ScanInfo[];
   provenance: DetailProvenanceEntry[];
   priceObservations: DetailPriceObservation[];
+  preview_url: string | null;
+  airline_id: string | null;
+  aircraft: DetailAircraftEntry[];
+  languages: string[];
+}
+
+export interface CardMetadataUpdate {
+  title: string | null;
+  airlineId: string | null;
+  aircraft: Array<{
+    modelId: string;
+    variantId: string | null;
+  }>;
+  languages: string[];
+  publishedYear: number | null;
+  revision: string | null;
+  notes: string | null;
 }
 
 export interface SaveResult {
@@ -511,6 +538,10 @@ export async function fetchCards(): Promise<CardSummary[]> {
       id, title, panel_count, cover_spread_index, cover_side, created_at,
       airlines ( name ),
       aircraft_variants ( name, aircraft_models ( name, aircraft_manufacturers ( name ) ) ),
+      card_aircraft ( sort_order,
+        aircraft_variants ( name, aircraft_models ( name, aircraft_manufacturers ( name ) ) ),
+        aircraft_models ( name, aircraft_manufacturers ( name ) )
+      ),
       card_sides (
         id, side,
         card_panels (
@@ -560,8 +591,33 @@ export async function fetchCards(): Promise<CardSummary[]> {
 
     const airlineRaw = card.airlines;
     const airline = (Array.isArray(airlineRaw) ? airlineRaw[0] : airlineRaw) as Record<string, unknown> | null;
-    const variantRaw = card.aircraft_variants;
-    const variant = (Array.isArray(variantRaw) ? variantRaw[0] : variantRaw) as Record<string, unknown> | null;
+
+    const cardAircraftRows = (card.card_aircraft ?? []) as Array<Record<string, unknown>>;
+    let label: string | null = null;
+
+    if (cardAircraftRows.length > 0) {
+      const labels = cardAircraftRows
+        .sort((a, b) => ((a.sort_order as number) ?? 0) - ((b.sort_order as number) ?? 0))
+        .map((ca) => {
+          const v = unwrap(ca.aircraft_variants);
+          if (v) return buildAircraftLabel(v);
+          const m = unwrap(ca.aircraft_models);
+          if (m) {
+            const mfr = unwrap(m.aircraft_manufacturers);
+            return [mfr?.name, m.name].filter(Boolean).join(' ') || null;
+          }
+          return null;
+        })
+        .filter(Boolean);
+      label = labels.join(', ') || null;
+    } else {
+      const variantRaw = card.aircraft_variants;
+      const variant = (Array.isArray(variantRaw) ? variantRaw[0] : variantRaw) as Record<string, unknown> | null;
+      label = buildAircraftLabel(variant);
+    }
+
+    const hasImages = thumbnailUrl != null;
+    const previewUrl = hasImages ? derivativePublicUrl(`${card.id}/preview.jpg`) : null;
 
     return {
       id: card.id as string,
@@ -571,8 +627,9 @@ export async function fetchCards(): Promise<CardSummary[]> {
       cover_side: card.cover_side as string,
       cover_spread_index: card.cover_spread_index as number,
       thumbnail_url: thumbnailUrl,
+      preview_url: previewUrl,
       airline_name: (airline?.name as string) ?? null,
-      aircraft_label: buildAircraftLabel(variant),
+      aircraft_label: label,
     };
   });
 }
@@ -584,9 +641,14 @@ export async function fetchCardDetail(cardId: string): Promise<CardDetailData | 
       .select(`
         id, title, panel_count, crop_width, crop_height,
         cover_spread_index, cover_side, created_at,
-        published_year, revision, language, notes,
+        published_year, revision, language, notes, airline_id,
         airlines ( name ),
         aircraft_variants ( name, aircraft_models ( name, aircraft_manufacturers ( name ) ) ),
+        card_aircraft ( aircraft_variant_id, aircraft_model_id, sort_order,
+          aircraft_variants ( name, aircraft_models ( id, name, manufacturer_id, aircraft_manufacturers ( id, name ) ) ),
+          aircraft_models ( id, name, manufacturer_id, aircraft_manufacturers ( id, name ) )
+        ),
+        card_languages ( language, sort_order ),
         card_sides (
           id, side,
           card_panels (
@@ -700,8 +762,67 @@ export async function fetchCardDetail(cardId: string): Promise<CardDetailData | 
 
   const airlineRaw = card.airlines;
   const airline = (Array.isArray(airlineRaw) ? airlineRaw[0] : airlineRaw) as Record<string, unknown> | null;
-  const variantRaw = card.aircraft_variants;
-  const aircraftVariant = (Array.isArray(variantRaw) ? variantRaw[0] : variantRaw) as Record<string, unknown> | null;
+
+  // Build aircraft label from card_aircraft join table
+  const cardAircraft = (card.card_aircraft ?? []) as Array<Record<string, unknown>>;
+  let aircraftLabel: string | null = null;
+
+  if (cardAircraft.length > 0) {
+    const labels = cardAircraft
+      .sort((a, b) => ((a.sort_order as number) ?? 0) - ((b.sort_order as number) ?? 0))
+      .map((ca) => {
+        const v = unwrap(ca.aircraft_variants);
+        if (v) return buildAircraftLabel(v);
+        const m = unwrap(ca.aircraft_models);
+        if (m) {
+          const mfr = unwrap(m.aircraft_manufacturers);
+          return [mfr?.name, m.name].filter(Boolean).join(' ') || null;
+        }
+        return null;
+      })
+      .filter(Boolean);
+    aircraftLabel = labels.join(', ') || null;
+  } else {
+    const variantRaw = card.aircraft_variants;
+    const aircraftVariant = (Array.isArray(variantRaw) ? variantRaw[0] : variantRaw) as Record<string, unknown> | null;
+    aircraftLabel = buildAircraftLabel(aircraftVariant);
+  }
+
+  // Build language from card_languages join table
+  const cardLanguages = (card.card_languages ?? []) as Array<{ language: string; sort_order: number }>;
+  let languageLabel: string | null = null;
+  if (cardLanguages.length > 0) {
+    languageLabel = cardLanguages
+      .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
+      .map((l) => l.language)
+      .join(', ');
+  } else {
+    languageLabel = card.language ?? null;
+  }
+
+  // Structured aircraft entries for the edit form
+  const structuredAircraft: DetailAircraftEntry[] = cardAircraft
+    .sort((a, b) => ((a.sort_order as number) ?? 0) - ((b.sort_order as number) ?? 0))
+    .map((ca) => {
+      const v = unwrap(ca.aircraft_variants);
+      const m = unwrap(ca.aircraft_models);
+      const model = v ? unwrap(v.aircraft_models) : m;
+      const mfr = model ? unwrap(model.aircraft_manufacturers) : null;
+      return {
+        modelId: (ca.aircraft_model_id as string) ?? null,
+        modelName: (model?.name as string) ?? '',
+        variantId: (ca.aircraft_variant_id as string) ?? null,
+        variantName: (v?.name as string) ?? '',
+        manufacturerId: mfr ? ((mfr.id as string) ?? null) : null,
+        manufacturerName: (mfr?.name as string) ?? '',
+      };
+    });
+
+  const structuredLanguages: string[] = cardLanguages.length > 0
+    ? cardLanguages.sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0)).map((l) => l.language)
+    : card.language
+      ? card.language.split(',').map((s: string) => s.trim()).filter(Boolean)
+      : [];
 
   // Build provenance with signed document URLs
   const rawProvenance = (provResult.data ?? []) as Array<{
@@ -787,10 +908,10 @@ export async function fetchCardDetail(cardId: string): Promise<CardDetailData | 
     cover_side: card.cover_side,
     created_at: card.created_at,
     airline_name: (airline?.name as string) ?? null,
-    aircraft_label: buildAircraftLabel(aircraftVariant),
+    aircraft_label: aircraftLabel,
     published_year: card.published_year ?? null,
     revision: card.revision ?? null,
-    language: card.language ?? null,
+    language: languageLabel,
     notes: card.notes ?? null,
     panels,
     creases,
@@ -803,7 +924,65 @@ export async function fetchCardDetail(cardId: string): Promise<CardDetailData | 
     scans,
     provenance,
     priceObservations,
+    preview_url: derivativePublicUrl(`${cardId}/preview.jpg`),
+    airline_id: (card.airline_id as string) ?? null,
+    aircraft: structuredAircraft,
+    languages: structuredLanguages,
   };
+}
+
+// ─── Update Card Metadata ─────────────────────────────────────────
+
+export async function updateCardMetadata(
+  cardId: string,
+  update: CardMetadataUpdate
+): Promise<{ success: boolean; error?: string }> {
+  const primaryVariantId = update.aircraft.find((a) => a.variantId)?.variantId ?? null;
+  const legacyLanguage = update.languages.join(', ') || null;
+
+  const { error: cardErr } = await supabase
+    .from('safety_cards')
+    .update({
+      title: update.title,
+      airline_id: update.airlineId,
+      aircraft_variant_id: primaryVariantId,
+      published_year: update.publishedYear,
+      revision: update.revision,
+      language: legacyLanguage,
+      notes: update.notes,
+    })
+    .eq('id', cardId);
+
+  if (cardErr) return { success: false, error: cardErr.message };
+
+  await supabase.from('card_aircraft').delete().eq('card_id', cardId);
+  if (update.aircraft.length > 0) {
+    const rows = update.aircraft
+      .filter((a) => a.modelId)
+      .map((a, i) => ({
+        card_id: cardId,
+        aircraft_model_id: a.modelId,
+        aircraft_variant_id: a.variantId || null,
+        sort_order: i,
+      }));
+    if (rows.length > 0) {
+      const { error: acErr } = await supabase.from('card_aircraft').insert(rows);
+      if (acErr) return { success: false, error: acErr.message };
+    }
+  }
+
+  await supabase.from('card_languages').delete().eq('card_id', cardId);
+  if (update.languages.length > 0) {
+    const rows = update.languages.map((lang, i) => ({
+      card_id: cardId,
+      language: lang,
+      sort_order: i,
+    }));
+    const { error: langErr } = await supabase.from('card_languages').insert(rows);
+    if (langErr) return { success: false, error: langErr.message };
+  }
+
+  return { success: true };
 }
 
 export async function deleteCard(cardId: string): Promise<{ success: boolean; error?: string }> {

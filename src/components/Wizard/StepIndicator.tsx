@@ -3,8 +3,8 @@ import { Check } from 'lucide-react';
 import type { StepIndicatorProps } from './types';
 
 const STEPS = [
-  { step: 1 as const, label: 'Card Info' },
-  { step: 2 as const, label: 'Image Library' },
+  { step: 1 as const, label: 'Scans' },
+  { step: 2 as const, label: 'Card Info' },
   { step: 3 as const, label: 'Crop Panels' },
   { step: 4 as const, label: 'Fold Structure' },
 ];

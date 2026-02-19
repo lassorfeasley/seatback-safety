@@ -170,12 +170,12 @@ export const CardVisualizer3D: React.FC<CardVisualizer3DProps> = ({ panels, crea
   );
 
   const moveDrag = useCallback(
-    (x: number, y: number) => {
+    (x: number, _y: number) => {
       if (!isDragging) return;
-      setRotation({
-        x: rotationStart.current.x - (y - dragStart.current.y) * 0.5,
+      setRotation((prev) => ({
+        x: prev.x,
         y: rotationStart.current.y + (x - dragStart.current.x) * 0.5,
-      });
+      }));
     },
     [isDragging]
   );
@@ -346,7 +346,7 @@ export const CardVisualizer3D: React.FC<CardVisualizer3DProps> = ({ panels, crea
             'relative min-h-[350px] h-full select-none overflow-hidden',
             isDragging ? 'cursor-grabbing' : 'cursor-grab'
           )}
-          style={{ perspective: '1200px' }}
+          style={{ perspective: '1200px', perspectiveOrigin: '50% 50%' }}
           onMouseDown={(e) => { e.preventDefault(); startDrag(e.clientX, e.clientY); }}
           onMouseMove={(e) => moveDrag(e.clientX, e.clientY)}
           onMouseUp={endDrag}

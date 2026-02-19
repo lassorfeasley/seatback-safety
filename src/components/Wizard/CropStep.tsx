@@ -399,7 +399,8 @@ const CropSession: React.FC<CropSessionProps> = ({
     setImageDimensions(dims);
   }, []);
 
-  // Generate thumbnail and confirm
+  // Generate thumbnail and confirm — uses a single small canvas
+  // instead of creating a huge full-resolution rotated intermediate.
   const handleConfirm = useCallback(async () => {
     if (!region || !selectedImageId || !selectedImage) return;
 
@@ -414,37 +415,21 @@ const CropSession: React.FC<CropSessionProps> = ({
     const radians = (localRotation * Math.PI) / 180;
     const cos = Math.abs(Math.cos(radians));
     const sin = Math.abs(Math.sin(radians));
-    const rotatedWidth = img.width * cos + img.height * sin;
-    const rotatedHeight = img.width * sin + img.height * cos;
-
-    const rotCanvas = document.createElement('canvas');
-    rotCanvas.width = rotatedWidth;
-    rotCanvas.height = rotatedHeight;
-    const rotCtx = rotCanvas.getContext('2d');
-    if (rotCtx) {
-      rotCtx.translate(rotatedWidth / 2, rotatedHeight / 2);
-      rotCtx.rotate(radians);
-      rotCtx.drawImage(img, -img.width / 2, -img.height / 2);
-    }
+    const boundsW = img.width * cos + img.height * sin;
+    const boundsH = img.width * sin + img.height * cos;
 
     const thumbCanvas = document.createElement('canvas');
     const maxW = 300;
-    const scale = Math.min(1, maxW / region.width);
-    thumbCanvas.width = Math.round(region.width * scale);
-    thumbCanvas.height = Math.round(region.height * scale);
+    const drawScale = Math.min(1, maxW / region.width);
+    thumbCanvas.width = Math.round(region.width * drawScale);
+    thumbCanvas.height = Math.round(region.height * drawScale);
     const thumbCtx = thumbCanvas.getContext('2d');
     if (thumbCtx) {
-      thumbCtx.drawImage(
-        rotCanvas,
-        region.x,
-        region.y,
-        region.width,
-        region.height,
-        0,
-        0,
-        thumbCanvas.width,
-        thumbCanvas.height
-      );
+      thumbCtx.scale(drawScale, drawScale);
+      thumbCtx.translate(-region.x, -region.y);
+      thumbCtx.translate(boundsW / 2, boundsH / 2);
+      thumbCtx.rotate(radians);
+      thumbCtx.drawImage(img, -img.width / 2, -img.height / 2);
     }
 
     const thumbnailUrl = thumbCanvas.toDataURL('image/jpeg', 0.8);
@@ -538,7 +523,7 @@ const CropSession: React.FC<CropSessionProps> = ({
         </div>
       </div>
 
-      {/* Image picker + rotation: compact horizontal strip */}
+      {/* Image picker */}
       <div className="flex items-center gap-2 flex-shrink-0">
         <div className="flex gap-2 overflow-x-auto py-1">
           {images.map((img) => (
@@ -562,26 +547,12 @@ const CropSession: React.FC<CropSessionProps> = ({
             </button>
           ))}
         </div>
-        {selectedImage && (
-          <div className="flex-shrink-0 border-l pl-2 flex items-center gap-1.5">
-            <button
-              className="flex items-center gap-1 px-2 py-1 bg-background hover:bg-accent border border-border rounded-md text-xs font-medium transition-colors"
-              onClick={() => setLocalRotation((r) => (r - 90 + 360) % 360)}
-              title="Rotate 90° counter-clockwise"
-            >
-              <RotateCcw className="h-3 w-3" /> 90°
-            </button>
-            <button
-              className="flex items-center gap-1 px-2 py-1 bg-background hover:bg-accent border border-border rounded-md text-xs font-medium transition-colors"
-              onClick={() => setLocalRotation((r) => (r + 90) % 360)}
-              title="Rotate 90° clockwise"
-            >
-              90° <RotateCw className="h-3 w-3" />
-            </button>
-            <span className="text-xs text-muted-foreground font-mono ml-1">{Math.round(localRotation)}°</span>
-          </div>
-        )}
       </div>
+
+      {/* Rotation strip */}
+      {selectedImage && (
+        <RotationStrip rotation={localRotation} onRotationChange={setLocalRotation} />
+      )}
 
       {/* Crop canvas — fills remaining space */}
       {selectedImage && (
@@ -605,6 +576,85 @@ const CropSession: React.FC<CropSessionProps> = ({
           />
         </div>
       )}
+    </div>
+  );
+};
+
+// ─── RotationStrip ────────────────────────────────────────────────
+
+const RotationStrip: React.FC<{
+  rotation: number;
+  onRotationChange: React.Dispatch<React.SetStateAction<number>>;
+}> = ({ rotation, onRotationChange }) => {
+  const coarseBase = Math.round(rotation / 90) * 90;
+  const fine = rotation - coarseBase;
+
+  return (
+    <div className="flex items-center gap-2 flex-shrink-0 bg-muted/40 rounded-lg px-3 py-1.5">
+      <button
+        className="flex items-center gap-1 px-2 py-1 bg-background hover:bg-accent border border-border rounded-md text-xs font-medium transition-colors"
+        onClick={() => onRotationChange((r) => {
+          const base = Math.round(r / 90) * 90;
+          const f = r - base;
+          return ((base - 90 + 360) % 360) + f;
+        })}
+        title="Rotate 90° counter-clockwise"
+      >
+        <RotateCcw className="h-3 w-3" /> 90°
+      </button>
+
+      <div className="flex items-center gap-2 flex-1 min-w-0">
+        <span className="text-[10px] text-muted-foreground whitespace-nowrap">-15°</span>
+        <input
+          type="range"
+          min={-15}
+          max={15}
+          step={0.1}
+          value={fine}
+          onChange={(e) => {
+            const newFine = parseFloat(e.target.value);
+            onRotationChange(coarseBase + newFine);
+          }}
+          className="flex-1 h-1.5 accent-primary cursor-pointer"
+          title="Fine-tune rotation"
+        />
+        <span className="text-[10px] text-muted-foreground whitespace-nowrap">+15°</span>
+      </div>
+
+      <button
+        className="flex items-center gap-1 px-2 py-1 bg-background hover:bg-accent border border-border rounded-md text-xs font-medium transition-colors"
+        onClick={() => onRotationChange((r) => {
+          const base = Math.round(r / 90) * 90;
+          const f = r - base;
+          return ((base + 90) % 360) + f;
+        })}
+        title="Rotate 90° clockwise"
+      >
+        90° <RotateCw className="h-3 w-3" />
+      </button>
+
+      <div className="flex items-center gap-1.5 border-l pl-2">
+        <input
+          type="number"
+          value={Math.round(rotation * 10) / 10}
+          onChange={(e) => {
+            const v = parseFloat(e.target.value);
+            if (!isNaN(v)) onRotationChange(((v % 360) + 360) % 360);
+          }}
+          className="w-16 px-1.5 py-0.5 text-xs font-mono border border-border rounded-md bg-background text-center"
+          step={0.1}
+        />
+        <span className="text-xs text-muted-foreground">°</span>
+        {rotation !== 0 && (
+          <button
+            className="px-1.5 py-0.5 text-[10px] text-muted-foreground hover:text-foreground border border-border rounded-md transition-colors"
+            onClick={() => onRotationChange(0)}
+            title="Reset rotation"
+          >
+            Reset
+          </button>
+        )}
+      </div>
     </div>
   );
 };

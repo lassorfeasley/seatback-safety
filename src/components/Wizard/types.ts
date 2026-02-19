@@ -112,8 +112,10 @@ export interface WizardState {
 export interface CardInfoStepProps {
   metadata: CardMetadata;
   panelCount: number;
+  images: LibraryImage[];
   onMetadataChange: (metadata: CardMetadata) => void;
   onPanelCountChange: (count: number) => void;
+  onBack: () => void;
   onContinue: () => void;
 }
 
@@ -122,7 +124,6 @@ export interface ImageLibraryStepProps {
   onAddImages: (files: FileList) => void;
   onDeleteImage: (imageId: string) => void;
   onRotationChange: (imageId: string, rotation: number) => void;
-  onBack: () => void;
   onContinue: () => void;
 }
 

@@ -151,41 +151,26 @@ export async function exportCrops(
 }
 
 /**
- * Create a rotated version of an image
- * The crop regions are axis-aligned on this rotated image
+ * Compute the bounding box of a rotated image.
  */
-function createRotatedImage(
-  image: HTMLImageElement,
+function rotatedBounds(
+  imgWidth: number,
+  imgHeight: number,
   rotation: number
-): HTMLCanvasElement {
+): { width: number; height: number } {
   const radians = (rotation * Math.PI) / 180;
   const cos = Math.abs(Math.cos(radians));
   const sin = Math.abs(Math.sin(radians));
-
-  // Calculate the bounding box of the rotated image
-  const rotatedWidth = image.width * cos + image.height * sin;
-  const rotatedHeight = image.width * sin + image.height * cos;
-
-  const canvas = document.createElement('canvas');
-  canvas.width = rotatedWidth;
-  canvas.height = rotatedHeight;
-
-  const ctx = canvas.getContext('2d');
-  if (!ctx) {
-    throw new Error('Could not get canvas context');
-  }
-
-  // Move to center, rotate, then draw image centered
-  ctx.translate(rotatedWidth / 2, rotatedHeight / 2);
-  ctx.rotate(radians);
-  ctx.drawImage(image, -image.width / 2, -image.height / 2);
-
-  return canvas;
+  return {
+    width: imgWidth * cos + imgHeight * sin,
+    height: imgWidth * sin + imgHeight * cos,
+  };
 }
 
 /**
- * Extract a crop region from a rotated image
- * First rotates the image, then extracts the axis-aligned crop region
+ * Extract a crop region from a rotated image WITHOUT creating a huge
+ * intermediate canvas.  Instead we draw only the crop-sized output
+ * canvas, applying the rotation + crop offset as a single transform.
  */
 export async function extractCropWithRotation(
   image: HTMLImageElement,
@@ -199,18 +184,6 @@ export async function extractCropWithRotation(
 ): Promise<Blob> {
   const { targetWidth, format = 'jpeg', quality = 0.9 } = options;
 
-  // First, create the rotated image
-  const rotatedCanvas = createRotatedImage(image, rotation);
-
-  // Now extract the crop from the rotated image
-  const canvas = document.createElement('canvas');
-  const ctx = canvas.getContext('2d');
-
-  if (!ctx) {
-    throw new Error('Could not get canvas context');
-  }
-
-  // Calculate output dimensions
   let outputWidth = region.width;
   let outputHeight = region.height;
 
@@ -220,35 +193,31 @@ export async function extractCropWithRotation(
     outputHeight = Math.round(region.height * scale);
   }
 
+  const canvas = document.createElement('canvas');
   canvas.width = outputWidth;
   canvas.height = outputHeight;
 
-  // Use high-quality image smoothing
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('Could not get canvas context');
+
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = 'high';
 
-  // Draw the cropped region from the rotated image
-  ctx.drawImage(
-    rotatedCanvas,
-    region.x,
-    region.y,
-    region.width,
-    region.height,
-    0,
-    0,
-    outputWidth,
-    outputHeight
-  );
+  const radians = (rotation * Math.PI) / 180;
+  const bounds = rotatedBounds(image.width, image.height, rotation);
 
-  // Convert to blob
+  const drawScale = outputWidth / region.width;
+  ctx.scale(drawScale, drawScale);
+  ctx.translate(-region.x, -region.y);
+  ctx.translate(bounds.width / 2, bounds.height / 2);
+  ctx.rotate(radians);
+  ctx.drawImage(image, -image.width / 2, -image.height / 2);
+
   return new Promise((resolve, reject) => {
     canvas.toBlob(
       (blob) => {
-        if (blob) {
-          resolve(blob);
-        } else {
-          reject(new Error('Failed to create blob from canvas'));
-        }
+        if (blob) resolve(blob);
+        else reject(new Error('Failed to create blob from canvas'));
       },
       `image/${format}`,
       quality

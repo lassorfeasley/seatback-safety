@@ -24,8 +24,10 @@ import type {
 export const CardInfoStep: React.FC<CardInfoStepProps> = ({
   metadata,
   panelCount,
+  images,
   onMetadataChange,
   onPanelCountChange,
+  onBack,
   onContinue,
 }) => {
   const [count, setCount] = useState(panelCount > 0 ? panelCount : 3);
@@ -378,7 +380,10 @@ export const CardInfoStep: React.FC<CardInfoStepProps> = ({
         </div>
       </div>
 
-      <div className="flex justify-end flex-shrink-0 pt-3 border-t">
+      <div className="flex justify-between flex-shrink-0 pt-3 border-t">
+        <Button variant="outline" size="lg" onClick={onBack} className="gap-2">
+          Back
+        </Button>
         <Button
           size="lg"
           onClick={handleContinue}

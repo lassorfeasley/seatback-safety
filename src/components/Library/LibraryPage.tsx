@@ -67,6 +67,8 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onNewCard, onSelectCar
 // ─── Card Tile ───────────────────────────────────────────────────
 
 const CardTile: React.FC<{ card: CardSummary; onClick: () => void }> = ({ card, onClick }) => {
+  const [imgSrc, setImgSrc] = React.useState(card.preview_url || card.thumbnail_url);
+
   return (
     <button
       onClick={onClick}
@@ -74,13 +76,20 @@ const CardTile: React.FC<{ card: CardSummary; onClick: () => void }> = ({ card, 
                  transition-all hover:shadow-lg focus-visible:outline-none
                  focus-visible:ring-2 focus-visible:ring-primary text-left"
     >
-      <div className="aspect-[3/4] bg-muted/60 relative overflow-hidden rounded-lg">
-        {card.thumbnail_url ? (
+      <div className="aspect-square bg-muted/60 relative overflow-hidden rounded-lg">
+        {imgSrc ? (
           <img
-            src={card.thumbnail_url}
+            src={imgSrc}
             alt={card.title || 'Safety card'}
             className="absolute inset-0 w-full h-full object-cover
                        transition-transform group-hover:scale-[1.03]"
+            onError={() => {
+              if (imgSrc !== card.thumbnail_url && card.thumbnail_url) {
+                setImgSrc(card.thumbnail_url);
+              } else {
+                setImgSrc(null);
+              }
+            }}
           />
         ) : (
           <div className="absolute inset-0 flex items-center justify-center text-muted-foreground text-xs">

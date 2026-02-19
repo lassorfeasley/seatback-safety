@@ -175,11 +175,41 @@ export const SafetyCardWizard: React.FC<SafetyCardWizardProps> = ({
   // ─── Step 3: Crop Panels ─────────────────────────────────────
 
   const handleSelectSlot = useCallback((panelIndex: number, side: PanelSide) => {
-    setState((prev) => ({
-      ...prev,
-      activeSlot: { panelIndex, side },
-      selectedImageId: prev.images[0]?.id || null,
-    }));
+    setState((prev) => {
+      const existingSlot = prev.slots.find(
+        (s) => s.panelIndex === panelIndex && s.side === side
+      );
+      if (existingSlot?.imageId) {
+        return {
+          ...prev,
+          activeSlot: { panelIndex, side },
+          selectedImageId: existingSlot.imageId,
+        };
+      }
+
+      const oppositeSide: PanelSide = side === 'front' ? 'back' : 'front';
+      const oppositeSlot = prev.slots.find(
+        (s) => s.panelIndex === panelIndex && s.side === oppositeSide
+      );
+      const oppositeImageId = oppositeSlot?.imageId ?? null;
+
+      let defaultImageId = prev.images[0]?.id || null;
+      if (prev.images.length === 2) {
+        if (oppositeImageId) {
+          defaultImageId = prev.images.find((i) => i.id !== oppositeImageId)?.id ?? defaultImageId;
+        } else if (side === 'back') {
+          defaultImageId = prev.images[1].id;
+        }
+      } else if (prev.images.length > 2 && oppositeImageId) {
+        defaultImageId = prev.images.find((i) => i.id !== oppositeImageId)?.id ?? defaultImageId;
+      }
+
+      return {
+        ...prev,
+        activeSlot: { panelIndex, side },
+        selectedImageId: defaultImageId,
+      };
+    });
   }, []);
 
   const handleSelectImage = useCallback((imageId: string) => {
@@ -394,21 +424,22 @@ export const SafetyCardWizard: React.FC<SafetyCardWizardProps> = ({
       {/* Step content — fills remaining height */}
       <div className="flex-1 min-h-0 max-w-7xl w-full mx-auto">
         {state.currentStep === 1 && (
-          <CardInfoStep
-            metadata={state.metadata}
-            panelCount={state.panelCount}
-            onMetadataChange={handleMetadataChange}
-            onPanelCountChange={handlePanelCountChange}
-            onContinue={() => goToStep(2)}
-          />
-        )}
-
-        {state.currentStep === 2 && (
           <ImageLibraryStep
             images={state.images}
             onAddImages={handleAddImages}
             onDeleteImage={handleDeleteImage}
             onRotationChange={handleRotationChange}
+            onContinue={() => goToStep(2)}
+          />
+        )}
+
+        {state.currentStep === 2 && (
+          <CardInfoStep
+            metadata={state.metadata}
+            panelCount={state.panelCount}
+            images={state.images}
+            onMetadataChange={handleMetadataChange}
+            onPanelCountChange={handlePanelCountChange}
             onBack={() => goToStep(1)}
             onContinue={() => goToStep(3)}
           />

@@ -1,12 +1,14 @@
 import React, { useRef, useState, useEffect, useCallback, useMemo } from 'react';
-import { Stage, Layer, Image as KonvaImage, Rect, Transformer, Group } from 'react-konva';
+import { Stage, Layer, Image as KonvaImage, Rect, Transformer, Group, Line } from 'react-konva';
 import type Konva from 'konva';
 import type { CropCanvasProps, CropRegion } from './types';
+
+type GuideMode = 'off' | 'crosshair' | 'grid';
 
 const MIN_REGION_SIZE = 20;
 const ZOOM_SCALE_BY = 1.1;
 const MAX_ZOOM = 5;
-const MIN_ZOOM = 0.1;
+const MIN_ZOOM = 0.01;
 
 export const CropCanvas: React.FC<CropCanvasProps> = ({
   imageUrl,
@@ -37,6 +39,9 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
   const [isDrawing, setIsDrawing] = useState(false);
   const [drawStart, setDrawStart] = useState<{ x: number; y: number } | null>(null);
   const [drawingRegion, setDrawingRegion] = useState<CropRegion | null>(null);
+
+  // Alignment guides
+  const [guideMode, setGuideMode] = useState<GuideMode>('crosshair');
 
   const hasLockedDimensions = lockDimensions && lockedWidth != null && lockedHeight != null;
   const hasConstrainedHeight = !hasLockedDimensions && constrainHeight != null && constrainHeight > 0;
@@ -81,14 +86,19 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
     setStagePosition({ x: offsetX, y: offsetY });
   }, [rotatedBounds, stageSize.height]);
 
-  // ─── Keyboard: Delete/Backspace ────────────────────────────────
+  // ─── Keyboard: Delete/Backspace + G for guide toggle ──────────
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
       if ((e.key === 'Delete' || e.key === 'Backspace') && selectedRegionId) {
-        if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
         e.preventDefault();
         onRegionDelete(selectedRegionId);
+      }
+      if (e.key === 'g' || e.key === 'G') {
+        setGuideMode((prev) =>
+          prev === 'off' ? 'crosshair' : prev === 'crosshair' ? 'grid' : 'off'
+        );
       }
     };
     window.addEventListener('keydown', handleKeyDown);
@@ -111,12 +121,15 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
     img.src = imageUrl;
   }, [imageUrl, onImageLoad]);
 
-  // Fit to container when image dimensions or rotation change
+  // Fit to container only when a NEW image loads (not on rotation changes)
+  const fittedImageRef = useRef<string | null>(null);
   useEffect(() => {
-    if (rotatedBounds) {
+    if (rotatedBounds && imageUrl && imageUrl !== fittedImageRef.current) {
+      fittedImageRef.current = imageUrl;
       fitToContainer();
     }
-  }, [rotatedBounds, fitToContainer]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rotatedBounds, imageUrl]);
 
   // ─── Resize container ──────────────────────────────────────────
 
@@ -509,6 +522,32 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
             />
           ))}
 
+          {/* Alignment guides */}
+          {rotatedBounds && guideMode !== 'off' && (() => {
+            const sw = 1 / stageScale;
+            const w = rotatedBounds.width;
+            const h = rotatedBounds.height;
+            const guideLines: React.ReactNode[] = [];
+
+            if (guideMode === 'crosshair') {
+              guideLines.push(
+                <Line key="ch-v" points={[w / 2, 0, w / 2, h]} stroke="rgba(239,68,68,0.5)" strokeWidth={sw} listening={false} />,
+                <Line key="ch-h" points={[0, h / 2, w, h / 2]} stroke="rgba(239,68,68,0.5)" strokeWidth={sw} listening={false} />,
+              );
+            } else if (guideMode === 'grid') {
+              const count = 20;
+              for (let i = 1; i < count; i++) {
+                const x = (w / count) * i;
+                const y = (h / count) * i;
+                guideLines.push(
+                  <Line key={`gv-${i}`} points={[x, 0, x, h]} stroke="rgba(239,68,68,0.25)" strokeWidth={sw} listening={false} />,
+                  <Line key={`gh-${i}`} points={[0, y, w, y]} stroke="rgba(239,68,68,0.25)" strokeWidth={sw} listening={false} />,
+                );
+              }
+            }
+            return guideLines;
+          })()}
+
           {/* Drawing preview rectangle */}
           {drawingRegion && drawingRegion.width > 0 && drawingRegion.height > 0 && (
             <Rect
@@ -569,6 +608,15 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
 
       {/* Zoom controls */}
       <div className="absolute bottom-4 right-4 flex gap-1.5">
+        <button
+          className={`rounded-md px-3 py-1.5 text-sm font-medium shadow-md transition-colors ${
+            guideMode !== 'off' ? 'bg-red-500/80 text-white hover:bg-red-500' : 'bg-white/90 hover:bg-white'
+          }`}
+          onClick={() => setGuideMode((prev) => prev === 'off' ? 'crosshair' : prev === 'crosshair' ? 'grid' : 'off')}
+          title={`Guides: ${guideMode} (G)`}
+        >
+          {guideMode === 'off' ? '⊞' : guideMode === 'crosshair' ? '┼' : '▦'}
+        </button>
         <button
           className="bg-white/90 hover:bg-white rounded-md px-3 py-1.5 text-sm font-medium shadow-md transition-colors"
           onClick={() => zoomBy(1.3)}

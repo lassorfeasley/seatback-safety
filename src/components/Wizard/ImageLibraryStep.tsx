@@ -1,7 +1,7 @@
 import React, { useCallback, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { ArrowLeft, ArrowRight, Upload, X, RotateCw } from 'lucide-react';
-import { ScanControls } from '@/components/PanelCropper/ScanControls';
+import { ArrowRight, Upload, X, RotateCw } from 'lucide-react';
+import { ScanEditorModal } from './ScanEditorModal';
 import type { ImageLibraryStepProps } from './types';
 
 export const ImageLibraryStep: React.FC<ImageLibraryStepProps> = ({
@@ -9,11 +9,11 @@ export const ImageLibraryStep: React.FC<ImageLibraryStepProps> = ({
   onAddImages,
   onDeleteImage,
   onRotationChange,
-  onBack,
   onContinue,
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [selectedImageId, setSelectedImageId] = useState<string | null>(null);
+  const [editingImageId, setEditingImageId] = useState<string | null>(null);
+  const editingImage = editingImageId ? images.find((i) => i.id === editingImageId) ?? null : null;
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -46,31 +46,6 @@ export const ImageLibraryStep: React.FC<ImageLibraryStepProps> = ({
     },
     [onAddImages]
   );
-
-  const selectedImage = images.find((i) => i.id === selectedImageId);
-
-  const handleRotate90CW = useCallback(() => {
-    if (!selectedImageId) return;
-    const img = images.find((i) => i.id === selectedImageId);
-    if (img) onRotationChange(selectedImageId, (img.rotation + 90) % 360);
-  }, [selectedImageId, images, onRotationChange]);
-
-  const handleRotate90CCW = useCallback(() => {
-    if (!selectedImageId) return;
-    const img = images.find((i) => i.id === selectedImageId);
-    if (img) onRotationChange(selectedImageId, (img.rotation - 90 + 360) % 360);
-  }, [selectedImageId, images, onRotationChange]);
-
-  const handleRotationDirect = useCallback(
-    (degrees: number) => {
-      if (selectedImageId) onRotationChange(selectedImageId, degrees);
-    },
-    [selectedImageId, onRotationChange]
-  );
-
-  const handleResetRotation = useCallback(() => {
-    if (selectedImageId) onRotationChange(selectedImageId, 0);
-  }, [selectedImageId, onRotationChange]);
 
   return (
     <div className="flex flex-col gap-6 p-6">
@@ -114,23 +89,15 @@ export const ImageLibraryStep: React.FC<ImageLibraryStepProps> = ({
               Uploaded Images ({images.length})
             </h3>
             <p className="text-xs text-muted-foreground/60">
-              Click an image to adjust rotation
+              Click an image to edit rotation &amp; alignment
             </p>
           </div>
           <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-3">
             {images.map((img, index) => (
               <div
                 key={img.id}
-                className={`
-                  relative group cursor-pointer rounded-lg overflow-hidden border-2 transition-all aspect-square
-                  ${selectedImageId === img.id
-                    ? 'border-foreground ring-2 ring-foreground/10'
-                    : 'border-transparent hover:border-foreground/20'
-                  }
-                `}
-                onClick={() =>
-                  setSelectedImageId(selectedImageId === img.id ? null : img.id)
-                }
+                className="relative group cursor-pointer rounded-lg overflow-hidden border-2 border-transparent hover:border-foreground/20 transition-all aspect-square"
+                onClick={() => setEditingImageId(img.id)}
               >
                 <img
                   src={img.imageUrl}
@@ -153,7 +120,6 @@ export const ImageLibraryStep: React.FC<ImageLibraryStepProps> = ({
                   className="absolute bottom-1 right-1 p-1 bg-destructive/90 hover:bg-destructive text-destructive-foreground rounded transition-colors opacity-0 group-hover:opacity-100"
                   onClick={(e) => {
                     e.stopPropagation();
-                    if (selectedImageId === img.id) setSelectedImageId(null);
                     onDeleteImage(img.id);
                   }}
                   title="Delete image"
@@ -166,27 +132,7 @@ export const ImageLibraryStep: React.FC<ImageLibraryStepProps> = ({
         </div>
       )}
 
-      {/* Rotation controls */}
-      {selectedImage && (
-        <div className="rounded-lg bg-muted/40 p-5">
-          <h3 className="text-sm font-medium text-muted-foreground mb-3">
-            Rotation — {selectedImage.label}
-          </h3>
-          <ScanControls
-            rotation={selectedImage.rotation}
-            onRotate90CW={handleRotate90CW}
-            onRotate90CCW={handleRotate90CCW}
-            onRotationChange={handleRotationDirect}
-            onResetRotation={handleResetRotation}
-          />
-        </div>
-      )}
-
-      <div className="flex justify-between items-center pt-3 border-t">
-        <Button variant="outline" onClick={onBack} className="gap-2">
-          <ArrowLeft className="h-4 w-4" />
-          Back
-        </Button>
+      <div className="flex justify-end items-center pt-3 border-t">
         <Button
           onClick={onContinue}
           disabled={images.length === 0}
@@ -196,6 +142,19 @@ export const ImageLibraryStep: React.FC<ImageLibraryStepProps> = ({
           <ArrowRight className="h-4 w-4" />
         </Button>
       </div>
+
+      {/* Scan editor modal */}
+      {editingImage && (
+        <ScanEditorModal
+          image={editingImage}
+          onRotationChange={onRotationChange}
+          onDelete={(id) => {
+            onDeleteImage(id);
+            setEditingImageId(null);
+          }}
+          onClose={() => setEditingImageId(null)}
+        />
+      )}
     </div>
   );
 };
