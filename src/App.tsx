@@ -1,15 +1,16 @@
 import { useState, useCallback } from 'react';
 import { SafetyCardWizard } from './components/Wizard';
-import { LibraryPage, CardDetail } from './components/Library';
+import { LibraryPage, CardDetail, AirlinesPage, ManufacturersPage } from './components/Library';
+import { AppShell, type Section } from './components/Layout/AppShell';
 import { createBlankCard } from './lib/safetyCardService';
 
 type Page =
-  | { view: 'library' }
+  | { view: 'shell'; section: Section }
   | { view: 'wizard'; editCardId?: string; editStep?: 3 | 4 }
   | { view: 'detail'; cardId: string; isNew?: boolean; editing?: boolean };
 
 function App() {
-  const [page, setPage] = useState<Page>({ view: 'library' });
+  const [page, setPage] = useState<Page>({ view: 'shell', section: 'cards' });
 
   const handleNewCard = useCallback(async () => {
     const result = await createBlankCard();
@@ -23,7 +24,7 @@ function App() {
   if (page.view === 'wizard') {
     const returnTo = page.editCardId
       ? () => setPage({ view: 'detail', cardId: page.editCardId!, editing: true })
-      : () => setPage({ view: 'library' });
+      : () => setPage({ view: 'shell', section: 'cards' });
 
     return (
       <SafetyCardWizard
@@ -41,18 +42,33 @@ function App() {
         cardId={page.cardId}
         isNew={page.isNew}
         initialEditing={page.editing}
-        onBack={() => setPage({ view: 'library' })}
+        onBack={() => setPage({ view: 'shell', section: 'cards' })}
         onEditCrops={() => setPage({ view: 'wizard', editCardId: page.cardId, editStep: 3 })}
         onEditFolds={() => setPage({ view: 'wizard', editCardId: page.cardId, editStep: 4 })}
       />
     );
   }
 
+  const activeSection = page.section;
+
   return (
-    <LibraryPage
-      onNewCard={handleNewCard}
-      onSelectCard={(cardId) => setPage({ view: 'detail', cardId })}
-    />
+    <AppShell
+      activeSection={activeSection}
+      onSectionChange={(section) => setPage({ view: 'shell', section })}
+    >
+      {activeSection === 'cards' && (
+        <LibraryPage
+          onNewCard={handleNewCard}
+          onSelectCard={(cardId) => setPage({ view: 'detail', cardId })}
+        />
+      )}
+      {activeSection === 'airlines' && (
+        <AirlinesPage />
+      )}
+      {activeSection === 'manufacturers' && (
+        <ManufacturersPage />
+      )}
+    </AppShell>
   );
 }
 

@@ -23,6 +23,7 @@ import {
   Check,
   Upload,
   Hash,
+  RefreshCw,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { CardVisualizer3D } from '@/components/FoldEditor/CardVisualizer3D';
@@ -237,7 +238,9 @@ export const CardDetail: React.FC<CardDetailProps> = ({ cardId, onBack, onEditCr
     setGeneratingOg(true);
     const result = await generateAndUploadOgImage(cardId, {
       panels: card.panels,
+      creases: card.creases,
       cover: card.cover,
+      pivotIndex: card.pivotIndex ?? undefined,
       displayUrls: card.displayUrls,
     });
     setGeneratingOg(false);
@@ -547,21 +550,39 @@ export const CardDetail: React.FC<CardDetailProps> = ({ cardId, onBack, onEditCr
                 )}
               </SetupStep>
 
-              {(ogExists && ogImageUrl || generatingOg) && (
+              {(ogExists && ogImageUrl || generatingOg || isEditing) && (
                 <section>
-                  <SectionHeading>OG Image</SectionHeading>
-                  <div className="rounded-lg border bg-card overflow-hidden">
+                  <div className="flex items-center justify-between">
+                    <SectionHeading>OG Image</SectionHeading>
+                    {isEditing && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handleGenerateOg}
+                        disabled={generatingOg}
+                        className="h-7 px-2 text-xs gap-1.5"
+                      >
+                        <RefreshCw className={cn("h-3 w-3", generatingOg && "animate-spin")} />
+                        Regenerate
+                      </Button>
+                    )}
+                  </div>
+                  <div className="rounded-lg border bg-card overflow-hidden mt-1.5">
                     {generatingOg ? (
                       <div className="flex items-center justify-center gap-2 py-8 text-sm text-muted-foreground">
                         <Loader2 className="h-4 w-4 animate-spin" />
                         Generating OG image…
                       </div>
-                    ) : (
+                    ) : ogExists && ogImageUrl ? (
                       <img
-                        src={ogImageUrl!}
+                        src={ogImageUrl}
                         alt="Generated Open Graph image"
                         className="w-full h-auto"
                       />
+                    ) : (
+                      <div className="flex items-center justify-center py-8 text-sm text-muted-foreground">
+                        No OG image yet
+                      </div>
                     )}
                   </div>
                 </section>

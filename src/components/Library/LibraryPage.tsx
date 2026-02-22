@@ -21,10 +21,10 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onNewCard, onSelectCar
   }, []);
 
   return (
-    <div className="h-dvh flex flex-col bg-background">
+    <>
       <header className="flex-shrink-0 bg-card border-b">
         <div className="max-w-7xl mx-auto flex items-center justify-between px-6 py-5">
-          <h1 className="text-2xl font-semibold tracking-tight">Safety Card Library</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">Cards</h1>
           <Button onClick={() => { setCreating(true); onNewCard(); }} size="sm" className="gap-1.5" disabled={creating}>
             {creating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
             {creating ? 'Creating...' : 'New Card'}
@@ -61,7 +61,7 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onNewCard, onSelectCar
           )}
         </div>
       </main>
-    </div>
+    </>
   );
 };
 
@@ -69,7 +69,7 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onNewCard, onSelectCar
 
 const CardTile: React.FC<{ card: CardSummary; onClick: () => void }> = ({ card, onClick }) => {
   const fallbacks = [card.og_url, card.thumbnail_url].filter(Boolean) as string[];
-  const [imgSrc, setImgSrc] = React.useState(fallbacks[0] ?? null);
+  const [imgSrc, setImgSrc] = React.useState<string | null>(fallbacks[0] ?? null);
   const fallbackIdx = React.useRef(0);
 
   return (

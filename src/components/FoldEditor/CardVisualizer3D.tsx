@@ -229,6 +229,7 @@ export const CardVisualizer3D: React.FC<CardVisualizer3DProps> = ({
   const centerX = foldedCenter + (flatCenter - foldedCenter) * (1 - overallFoldProgress);
   const centerY = PANEL_HEIGHT / 2;
   const staticFlipY = coverDesignation.side === 'front' ? 180 : 0;
+  const zDirection = coverDesignation.side === 'front' ? -1 : 1;
   const foldTransition = isSliderActive
     ? 'none'
     : `transform ${FOLD_DURATION}ms cubic-bezier(0.4, 0, 0.2, 1)`;
@@ -454,7 +455,7 @@ export const CardVisualizer3D: React.FC<CardVisualizer3DProps> = ({
                       transformStyle: 'preserve-3d',
                       transformOrigin: origin,
                       transition: foldTransition,
-                      transform: `rotateY(${t.yRotation}deg) translateZ(${t.zOffset}px)`,
+                      transform: `translateZ(${zDirection * t.zOffset}px) rotateY(${t.yRotation}deg)`,
                     }}
                   >
                     {renderPanelFaces(spread)}

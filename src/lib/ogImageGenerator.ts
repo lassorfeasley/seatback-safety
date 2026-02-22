@@ -1,12 +1,11 @@
 import { supabase } from './supabase';
-import type { Panel, CoverDesignation } from '@/components/FoldEditor/types';
+import type { Panel, Crease, CoverDesignation } from '@/components/FoldEditor/types';
 
 const OG_SIZE = 1200;
 const BG_COLOR = '#ebeaef'; // oklch(92% 0.004 286.32)
 const SHADOW_COLOR = '#a8a7b2'; // oklch(70.5% 0.015 286.067) - solid offset rect, no blur
 const SHADOW_OFFSET_X = 100;
 const SHADOW_OFFSET_Y = 100;
-const FAN_OFFSET = 18; // px per panel distance from cover — subtle peek effect
 
 function loadImage(url: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
@@ -20,7 +19,9 @@ function loadImage(url: string): Promise<HTMLImageElement> {
 
 interface OgImageInput {
   panels: Panel[];
+  creases: Crease[];
   cover: CoverDesignation;
+  pivotIndex?: number;
   displayUrls: Record<string, string>;
 }
 
@@ -29,26 +30,73 @@ interface LoadedPanel {
   img: HTMLImageElement;
 }
 
+function defaultPivot(coverIdx: number, panelCount: number): number {
+  if (panelCount <= 1) return 0;
+  if (coverIdx <= 0) return 1;
+  if (coverIdx >= panelCount - 1) return panelCount - 2;
+  return coverIdx - 1;
+}
+
+/**
+ * Compute cumulative Y-rotation for each spread when fully folded.
+ * Returns a map: spreadIndex → degrees of rotation.
+ * A panel whose |rotation % 360| ≈ 0 shows its front face to the viewer;
+ * |rotation % 360| ≈ 180 shows its back face.
+ */
+function computeFoldedRotations(
+  spreadCount: number,
+  pivot: number,
+  frontCreases: Crease[],
+): Record<number, number> {
+  const map: Record<number, number> = {};
+  map[pivot] = 0;
+
+  let cumulative = 0;
+  for (let i = pivot + 1; i < spreadCount; i++) {
+    const crease = frontCreases.find((c) => c.between_panel === i - 1);
+    const sign = crease?.fold_direction === 'backward' ? -1 : 1;
+    cumulative += sign * 180;
+    map[i] = cumulative;
+  }
+
+  cumulative = 0;
+  for (let i = pivot - 1; i >= 0; i--) {
+    const crease = frontCreases.find((c) => c.between_panel === i);
+    const sign = crease?.fold_direction === 'backward' ? 1 : -1;
+    cumulative += sign * 180;
+    map[i] = cumulative;
+  }
+
+  return map;
+}
+
+function isFrontFaceVisible(rotation: number): boolean {
+  const norm = ((rotation % 360) + 360) % 360;
+  return norm < 45 || norm > 315;
+}
+
+function isBackFaceVisible(rotation: number): boolean {
+  const norm = ((rotation % 360) + 360) % 360;
+  return norm > 135 && norm < 225;
+}
+
 /**
  * Generate a 1200x1200 OG image as a JPEG Blob.
  *
- * Layout: flat perspective—gray background, solid offset shadow.
- * All panels on the cover side are drawn back-to-front so that
- * any panel larger than the cover peeks out from behind it.
+ * Layout: straight-on view of the folded card. Uses crease data to compute
+ * which panels are visible from the cover side, then draws them side-by-side.
  */
 export async function generateOgImage(
   input: OgImageInput
 ): Promise<Blob> {
-  const { panels, cover, displayUrls } = input;
+  const { panels, creases, cover, pivotIndex, displayUrls } = input;
 
-  // Gather all panels on the cover side, sorted by index
   const coverSidePanels = panels
     .filter((p) => p.side === cover.side)
     .sort((a, b) => a.panel_index - b.panel_index);
 
   if (coverSidePanels.length === 0) throw new Error('No panels on cover side');
 
-  // Load all panel images
   const loaded: LoadedPanel[] = [];
   for (const p of coverSidePanels) {
     const url = displayUrls[p.id] || p.thumbnail_url;
@@ -62,6 +110,26 @@ export async function generateOgImage(
   }
   if (loaded.length === 0) throw new Error('No panel images could be loaded');
 
+  const spreadCount = Math.max(...coverSidePanels.map((p) => p.panel_index)) + 1;
+  const frontCreases = creases
+    .filter((c) => c.side === 'front')
+    .sort((a, b) => a.between_panel - b.between_panel);
+  const pivot = pivotIndex ?? defaultPivot(cover.spreadIndex, spreadCount);
+
+  const rotations = computeFoldedRotations(spreadCount, pivot, frontCreases);
+
+  const visibleCheck = cover.side === 'front' ? isFrontFaceVisible : isBackFaceVisible;
+  const visible = loaded.filter((l) => visibleCheck(rotations[l.panel.panel_index] ?? 0));
+
+  if (visible.length === 0) {
+    // Fallback: if fold math hides everything, just show the cover panel
+    const coverPanel = loaded.find((l) => l.panel.panel_index === cover.spreadIndex);
+    if (coverPanel) visible.push(coverPanel);
+    else visible.push(loaded[0]);
+  }
+
+  visible.sort((a, b) => a.panel.panel_index - b.panel.panel_index);
+
   const canvas = document.createElement('canvas');
   canvas.width = OG_SIZE;
   canvas.height = OG_SIZE;
@@ -70,54 +138,31 @@ export async function generateOgImage(
   ctx.fillStyle = BG_COLOR;
   ctx.fillRect(0, 0, OG_SIZE, OG_SIZE);
 
-  const coverIdx = cover.spreadIndex;
+  // Scale each panel individually so they all render at the same height
+  const targetH = 900;
+  const panelWidths = visible.map((l) => l.img.naturalWidth * (targetH / l.img.naturalHeight));
+  const totalW = panelWidths.reduce((sum, w) => sum + w, 0);
 
-  // Scale all panels to a uniform height
-  const maxNatW = Math.max(...loaded.map((l) => l.img.naturalWidth));
-  const maxNatH = Math.max(...loaded.map((l) => l.img.naturalHeight));
-  const envelopeH = 900;
-  const scale = envelopeH / maxNatH;
-  const envelopeW = maxNatW * scale;
+  const maxW = OG_SIZE - 2 * SHADOW_OFFSET_X;
+  const downscale = totalW > maxW ? maxW / totalW : 1;
+  const stripH = targetH * downscale;
+  const stripW = totalW * downscale;
 
-  // Fan: all non-cover panels offset to the LEFT of the cover, ordered
-  // by distance from cover (farthest = most offset). This mimics holding
-  // a folded card where inner panels peek out from one side.
-  const maxDist = Math.max(0, ...loaded.map((l) => Math.abs(l.panel.panel_index - coverIdx)));
-  const totalFanExtent = maxDist * FAN_OFFSET;
-
-  // Center the cover horizontally; account for the fan extending to the left
-  const combinedH = SHADOW_OFFSET_Y + envelopeH;
-  const coverCenterX = OG_SIZE / 2;
+  const combinedH = SHADOW_OFFSET_Y + stripH;
+  const originX = OG_SIZE / 2 - stripW / 2;
   const originY = OG_SIZE / 2 - combinedH / 2;
 
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = 'high';
 
-  // Shadow spans the full fanned extent
-  const shadowW = envelopeW + totalFanExtent;
   ctx.fillStyle = SHADOW_COLOR;
-  ctx.fillRect(
-    coverCenterX - envelopeW / 2 - totalFanExtent + SHADOW_OFFSET_X,
-    originY + SHADOW_OFFSET_Y,
-    shadowW,
-    envelopeH,
-  );
+  ctx.fillRect(originX + SHADOW_OFFSET_X, originY + SHADOW_OFFSET_Y, stripW, stripH);
 
-  // Draw panels back-to-front: farthest from cover first, cover last on top
-  const sorted = [...loaded].sort((a, b) => {
-    const distA = Math.abs(a.panel.panel_index - coverIdx);
-    const distB = Math.abs(b.panel.panel_index - coverIdx);
-    return distB - distA;
-  });
-
-  for (const { panel, img } of sorted) {
-    const w = img.naturalWidth * scale;
-    const h = img.naturalHeight * scale;
-    const dist = Math.abs(panel.panel_index - coverIdx);
-    const fanX = -dist * FAN_OFFSET;
-    const px = coverCenterX - envelopeW / 2 + (envelopeW - w) / 2 + fanX;
-    const py = originY + (envelopeH - h) / 2;
-    ctx.drawImage(img, px, py, w, h);
+  let cursorX = originX;
+  for (let i = 0; i < visible.length; i++) {
+    const w = panelWidths[i] * downscale;
+    ctx.drawImage(visible[i].img, cursorX, originY, w, stripH);
+    cursorX += w;
   }
 
   return new Promise((resolve, reject) => {
