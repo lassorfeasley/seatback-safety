@@ -223,11 +223,11 @@ export const CardVisualizer3D: React.FC<CardVisualizer3DProps> = ({
 
   const totalWidth = measuredWidth || spreads.length * PANEL_WIDTH_FALLBACK;
   const singlePanelWidth = spreads.length > 0 ? totalWidth / spreads.length : PANEL_WIDTH_FALLBACK;
-  const pivotCenterFlat = (pivot + 0.5) * singlePanelWidth;
-  const pivotCenterFolded = singlePanelWidth / 2;
-  const centerX = pivotCenterFolded + (pivotCenterFlat - pivotCenterFolded) * (1 - overallFoldProgress);
+  const flatCenter = totalWidth / 2;
+  const foldedCenter = (pivot + 0.5) * singlePanelWidth;
+  const centerX = foldedCenter + (flatCenter - foldedCenter) * (1 - overallFoldProgress);
   const centerY = PANEL_HEIGHT / 2;
-  const staticFlipY = coverDesignation.side === 'back' ? 180 : 0;
+  const staticFlipY = coverDesignation.side === 'front' ? 180 : 0;
   const foldTransition = isSliderActive
     ? 'none'
     : `transform ${FOLD_DURATION}ms cubic-bezier(0.4, 0, 0.2, 1)`;
@@ -295,10 +295,13 @@ export const CardVisualizer3D: React.FC<CardVisualizer3DProps> = ({
     );
   };
 
-  // Z-stacking: cover chain pushes toward viewer, other chain behind.
+  // Z-stacking: chain-level offsets applied OUTSIDE the hinge rotation push
+  // each chain clear of the pivot's face thickness. Cover chain gets a larger
+  // offset so it renders in front. In local coords, -z = toward viewer after
+  // staticFlipY(180°). Offsets scale with fold progress to stay flush when flat.
   const coverOnRight = coverDesignation.spreadIndex > pivot;
-  const rightZSign = coverOnRight ? 1 : -1;
-  const leftZSign = coverOnRight ? -1 : 1;
+  const rightChainDepth = coverOnRight ? 2 : 1;
+  const leftChainDepth = coverOnRight ? 1 : 2;
 
   // ─── Right chain: pivot+1 → last, hinges on LEFT edge ────────
 
@@ -313,8 +316,6 @@ export const CardVisualizer3D: React.FC<CardVisualizer3DProps> = ({
     const angle = crease
       ? (crease.fold_direction === 'forward' ? -1 : 1) * amount * 180
       : 0;
-    const dist = Math.abs(idx - pivot);
-    const zShift = rightZSign * (PAPER_THICKNESS + dist * 0.5) * amount;
 
     return (
       <div
@@ -326,11 +327,9 @@ export const CardVisualizer3D: React.FC<CardVisualizer3DProps> = ({
           transform: `rotateY(${angle}deg)`,
         }}
       >
-        <div style={{ transformStyle: 'preserve-3d', transform: `translateZ(${zShift}px)`, transition: foldTransition }}>
-          <div className="flex" style={{ transformStyle: 'preserve-3d' }}>
-            {renderPanelFaces(spread)}
-            {idx < spreads.length - 1 && renderRightChain(idx + 1)}
-          </div>
+        <div className="flex" style={{ transformStyle: 'preserve-3d' }}>
+          {renderPanelFaces(spread)}
+          {idx < spreads.length - 1 && renderRightChain(idx + 1)}
         </div>
       </div>
     );
@@ -349,8 +348,6 @@ export const CardVisualizer3D: React.FC<CardVisualizer3DProps> = ({
     const angle = crease
       ? (crease.fold_direction === 'forward' ? 1 : -1) * amount * 180
       : 0;
-    const dist = Math.abs(idx - pivot);
-    const zShift = leftZSign * (PAPER_THICKNESS + dist * 0.5) * amount;
 
     return (
       <div
@@ -362,11 +359,9 @@ export const CardVisualizer3D: React.FC<CardVisualizer3DProps> = ({
           transform: `rotateY(${angle}deg)`,
         }}
       >
-        <div style={{ transformStyle: 'preserve-3d', transform: `translateZ(${zShift}px)`, transition: foldTransition }}>
-          <div className="flex" style={{ transformStyle: 'preserve-3d' }}>
-            {idx > 0 && renderLeftChain(idx - 1)}
-            {renderPanelFaces(spread)}
-          </div>
+        <div className="flex" style={{ transformStyle: 'preserve-3d' }}>
+          {idx > 0 && renderLeftChain(idx - 1)}
+          {renderPanelFaces(spread)}
         </div>
       </div>
     );
@@ -455,12 +450,25 @@ export const CardVisualizer3D: React.FC<CardVisualizer3DProps> = ({
             }}
           >
             <div ref={cardRef} className="inline-flex" style={{ transformStyle: 'preserve-3d' }}>
-              {/* Left chain: panels left of pivot */}
-              {pivot > 0 && renderLeftChain(pivot - 1)}
-              {/* Pivot panel: stationary spine */}
+              {pivot > 0 && (
+                <div style={{
+                  transformStyle: 'preserve-3d',
+                  transform: `translateZ(${-leftChainDepth * PAPER_THICKNESS * overallFoldProgress}px)`,
+                  transition: foldTransition,
+                }}>
+                  {renderLeftChain(pivot - 1)}
+                </div>
+              )}
               {spreads[pivot] && renderPanelFaces(spreads[pivot])}
-              {/* Right chain: panels right of pivot */}
-              {pivot < spreads.length - 1 && renderRightChain(pivot + 1)}
+              {pivot < spreads.length - 1 && (
+                <div style={{
+                  transformStyle: 'preserve-3d',
+                  transform: `translateZ(${-rightChainDepth * PAPER_THICKNESS * overallFoldProgress}px)`,
+                  transition: foldTransition,
+                }}>
+                  {renderRightChain(pivot + 1)}
+                </div>
+              )}
             </div>
           </div>
         </div>
