@@ -19,18 +19,21 @@ interface Spread {
 
 const FOLD_DURATION = 600;
 const FOLD_STAGGER = 100;
-const PAPER_THICKNESS = 3;
+const PAPER_THICKNESS = 0.6;
 const PANEL_HEIGHT = 250;
 const PANEL_WIDTH_FALLBACK = 180;
 
 export const CardVisualizer3D: React.FC<CardVisualizer3DProps> = ({ panels, creases, cover }) => {
   const [targetFoldState, setTargetFoldState] = useState<0 | 1>(1);
-  const [rotation, setRotation] = useState({ x: 15, y: -20 });
+  const [rotation, setRotation] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
   const [isSliderActive, setIsSliderActive] = useState(false);
   const dragStart = useRef({ x: 0, y: 0 });
   const rotationStart = useRef({ x: 0, y: 0 });
   const animationTimeouts = useRef<NodeJS.Timeout[]>([]);
+  const cardRef = useRef<HTMLDivElement>(null);
+  const [measuredWidth, setMeasuredWidth] = useState(0);
+  const [settled, setSettled] = useState(false);
 
   const coverDesignation: CoverDesignation = cover || { spreadIndex: 0, side: 'front' };
 
@@ -71,7 +74,13 @@ export const CardVisualizer3D: React.FC<CardVisualizer3DProps> = ({ panels, crea
     );
   }, [frontCreases]);
 
-  const [creaseFolds, setCreaseFolds] = useState<Record<number, number>>({});
+  const [creaseFolds, setCreaseFolds] = useState<Record<number, number>>(() => {
+    const initial: Record<number, number> = {};
+    creases.filter((c) => c.side === 'front').forEach((c) => {
+      initial[c.between_panel] = 1;
+    });
+    return initial;
+  });
 
   useEffect(() => {
     setCreaseFolds((prev) => {
@@ -85,6 +94,27 @@ export const CardVisualizer3D: React.FC<CardVisualizer3DProps> = ({ panels, crea
 
   useEffect(() => () => { animationTimeouts.current.forEach(clearTimeout); }, []);
 
+  useEffect(() => {
+    const el = cardRef.current;
+    if (!el) return;
+    let rafId: number;
+    const measure = () => {
+      const w = el.scrollWidth;
+      if (w > 0) {
+        setMeasuredWidth(w);
+        if (!settled) {
+          rafId = requestAnimationFrame(() => {
+            requestAnimationFrame(() => setSettled(true));
+          });
+        }
+      }
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => { observer.disconnect(); cancelAnimationFrame(rafId); };
+  }, [settled]);
+
   const overallFoldProgress = useMemo(() => {
     const values = Object.values(creaseFolds);
     if (values.length === 0) return 0;
@@ -96,7 +126,7 @@ export const CardVisualizer3D: React.FC<CardVisualizer3DProps> = ({ panels, crea
   const handleReset = useCallback(() => {
     animationTimeouts.current.forEach(clearTimeout);
     animationTimeouts.current = [];
-    setRotation({ x: 15, y: -20 });
+    setRotation({ x: 0, y: 0 });
     setTargetFoldState(1);
     const newFolds: Record<number, number> = {};
     frontCreases.forEach((c) => { newFolds[c.between_panel] = 1; });
@@ -170,12 +200,12 @@ export const CardVisualizer3D: React.FC<CardVisualizer3DProps> = ({ panels, crea
   );
 
   const moveDrag = useCallback(
-    (x: number, _y: number) => {
+    (x: number, y: number) => {
       if (!isDragging) return;
-      setRotation((prev) => ({
-        x: prev.x,
+      setRotation({
+        x: rotationStart.current.x - (y - dragStart.current.y) * 0.5,
         y: rotationStart.current.y + (x - dragStart.current.x) * 0.5,
-      }));
+      });
     },
     [isDragging]
   );
@@ -184,10 +214,11 @@ export const CardVisualizer3D: React.FC<CardVisualizer3DProps> = ({ panels, crea
 
   // ─── Layout math ──────────────────────────────────────────────
 
-  const totalWidth = spreads.length * PANEL_WIDTH_FALLBACK;
-  const currentWidth = totalWidth - (totalWidth - PANEL_WIDTH_FALLBACK) * overallFoldProgress;
-  const offsetX = -currentWidth / 2;
-  const offsetY = -PANEL_HEIGHT / 2;
+  const totalWidth = measuredWidth || spreads.length * PANEL_WIDTH_FALLBACK;
+  const singlePanelWidth = spreads.length > 0 ? totalWidth / spreads.length : PANEL_WIDTH_FALLBACK;
+  const currentWidth = totalWidth - (totalWidth - singlePanelWidth) * overallFoldProgress;
+  const centerX = currentWidth / 2;
+  const centerY = PANEL_HEIGHT / 2;
   const staticFlipY = coverDesignation.side === 'back' ? 180 : 0;
   const foldTransition = isSliderActive
     ? 'none'
@@ -205,8 +236,9 @@ export const CardVisualizer3D: React.FC<CardVisualizer3DProps> = ({ panels, crea
     const angle = crease
       ? (crease.fold_direction === 'forward' ? -1 : 1) * amount * 180
       : 0;
+    const stacking = PAPER_THICKNESS + (spreads.length - 1 - idx) * 0.5;
     const zShift = crease
-      ? (crease.fold_direction === 'forward' ? 1 : -1) * PAPER_THICKNESS * amount
+      ? (crease.fold_direction === 'forward' ? 1 : -1) * stacking * amount
       : 0;
 
     const hasFront = spread.frontPanel && spread.frontPanel.thumbnail_url;
@@ -355,36 +387,23 @@ export const CardVisualizer3D: React.FC<CardVisualizer3DProps> = ({ panels, crea
           onTouchMove={(e) => { if (e.touches.length === 1) moveDrag(e.touches[0].clientX, e.touches[0].clientY); }}
           onTouchEnd={endDrag}
         >
-          {/*
-           * Anchor: positioned at the exact center of the canvas.
-           * This zero-size point is where all rotation happens, so drag
-           * always rotates around the visual center of the card.
-           */}
           <div
             style={{
               position: 'absolute',
-              left: '50%',
-              top: '50%',
+              left: `calc(50% - ${centerX}px)`,
+              top: `calc(50% - ${centerY}px)`,
               transformStyle: 'preserve-3d',
-              transition: isDragging ? 'none' : 'transform 300ms ease-out',
+              transformOrigin: `${centerX}px ${centerY}px`,
+              transition: !settled ? 'none' : ([
+                isDragging ? null : 'transform 300ms ease-out',
+                isSliderActive ? null : `left ${FOLD_DURATION}ms cubic-bezier(0.4, 0, 0.2, 1)`,
+                isSliderActive ? null : `transform-origin ${FOLD_DURATION}ms cubic-bezier(0.4, 0, 0.2, 1)`,
+              ].filter(Boolean).join(', ') || 'none'),
               transform: `rotateX(${rotation.x}deg) rotateY(${rotation.y + staticFlipY}deg)`,
             }}
           >
-            {/*
-             * Card content: translated so its visual center sits on the
-             * rotation anchor. offsetX shifts left by half the current
-             * visual width; offsetY shifts up by half the panel height.
-             */}
-            <div
-              style={{
-                transformStyle: 'preserve-3d',
-                transition: foldTransition,
-                transform: `translate(${offsetX}px, ${offsetY}px)`,
-              }}
-            >
-              <div className="inline-flex" style={{ transformStyle: 'preserve-3d' }}>
-                {renderSpread(0)}
-              </div>
+            <div ref={cardRef} className="inline-flex" style={{ transformStyle: 'preserve-3d' }}>
+              {renderSpread(0)}
             </div>
           </div>
         </div>

@@ -30,6 +30,7 @@ export const CropStep: React.FC<CropStepProps> = ({
   onSetCropDimensions,
   onBack,
   onContinue,
+  continueLabel,
 }) => {
   const filledCount = slots.filter((s) => s.cropRegion !== null).length;
   const totalCount = slots.length;
@@ -136,7 +137,7 @@ export const CropStep: React.FC<CropStepProps> = ({
         </div>
 
         <Button size="sm" onClick={onContinue} disabled={!allFilled} className="h-8 gap-1.5 px-2.5">
-          Continue
+          {continueLabel ?? 'Continue'}
           <ArrowRight className="h-3.5 w-3.5" />
         </Button>
       </div>

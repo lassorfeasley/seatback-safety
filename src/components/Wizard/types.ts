@@ -149,6 +149,7 @@ export interface CropStepProps {
   onSetCropDimensions: (width: number, height: number) => void;
   onBack: () => void;
   onContinue: () => void;
+  continueLabel?: string;
 }
 
 export interface FoldStepProps {
@@ -164,6 +165,8 @@ export interface FoldStepProps {
   onSave: () => void;
   isSaving?: boolean;
   saveProgress?: string;
+  saveLabel?: string;
+  hideExport?: boolean;
 }
 
 export interface StepIndicatorProps {

@@ -1,17 +1,24 @@
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import { StepIndicator } from './StepIndicator';
 import { CardInfoStep } from './CardInfoStep';
 import { ImageLibraryStep } from './ImageLibraryStep';
 import { CropStep } from './CropStep';
 import { FoldStep } from './FoldStep';
 import { extractCropWithRotation } from '@/components/PanelCropper/utils';
-import { saveCardToLibrary } from '@/lib/safetyCardService';
+import {
+  saveCardToLibrary,
+  fetchCardDetail,
+  fetchCardForCropEditing,
+  updateCardFolds,
+  updateCardPanels,
+} from '@/lib/safetyCardService';
 import type { WizardState, PanelSlot, PanelSide, LibraryImage, CardMetadata } from './types';
 import { EMPTY_METADATA } from './types';
 import type { CropRegion } from '@/components/PanelCropper/types';
 import type { Crease, Side, FoldDirection } from '@/components/FoldEditor/types';
 import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
+import { Loader2 } from 'lucide-react';
 
 const generateId = () => `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 
@@ -48,14 +55,20 @@ function generateSlots(panelCount: number): PanelSlot[] {
 interface SafetyCardWizardProps {
   onSaveComplete?: (cardId: string) => void;
   onBackToLibrary?: () => void;
+  editCardId?: string;
+  initialStep?: 3 | 4;
 }
 
 export const SafetyCardWizard: React.FC<SafetyCardWizardProps> = ({
   onSaveComplete,
   onBackToLibrary,
+  editCardId,
+  initialStep,
 }) => {
+  const isEditMode = !!editCardId;
+
   const [state, setState] = useState<WizardState>({
-    currentStep: 1,
+    currentStep: initialStep ?? 1,
     metadata: { ...EMPTY_METADATA },
     panelCount: 0,
     images: [],
@@ -68,8 +81,99 @@ export const SafetyCardWizard: React.FC<SafetyCardWizardProps> = ({
     selectedImageId: null,
   });
 
+  const [editLoading, setEditLoading] = useState(isEditMode);
+  const [editSideIds, setEditSideIds] = useState<Record<string, string>>({});
   const [isSaving, setIsSaving] = useState(false);
   const [saveProgress, setSaveProgress] = useState('');
+
+  // ─── Load existing card data for edit mode ─────────────────────
+
+  useEffect(() => {
+    if (!editCardId) return;
+
+    const load = async () => {
+      if (initialStep === 4) {
+        const card = await fetchCardDetail(editCardId);
+        if (!card) { setEditLoading(false); return; }
+
+        const panelCount = card.panel_count ?? 0;
+        const slots: PanelSlot[] = [];
+        for (let i = 0; i < panelCount; i++) {
+          const fp = card.panels.find((p) => p.side === 'front' && p.panel_index === i);
+          const bp = card.panels.find((p) => p.side === 'back' && p.panel_index === i);
+          slots.push({ panelIndex: i, side: 'front', imageId: null, cropRegion: null, thumbnailUrl: fp?.thumbnail_url ?? null });
+          slots.push({ panelIndex: i, side: 'back', imageId: null, cropRegion: null, thumbnailUrl: bp?.thumbnail_url ?? null });
+        }
+
+        setState((prev) => ({
+          ...prev,
+          currentStep: 4,
+          panelCount,
+          slots,
+          creases: card.creases,
+          cover: card.cover,
+        }));
+      } else if (initialStep === 3) {
+        const editData = await fetchCardForCropEditing(editCardId);
+        if (!editData) { setEditLoading(false); return; }
+
+        setEditSideIds(editData.sideIds);
+
+        const images: LibraryImage[] = [];
+        for (const scan of editData.scans) {
+          try {
+            const response = await fetch(scan.downloadUrl);
+            const blob = await response.blob();
+            const file = new File([blob], scan.originalFilename, { type: scan.mimeType });
+            images.push({
+              id: scan.id,
+              imageFile: file,
+              imageUrl: URL.createObjectURL(blob),
+              imageDimensions: null,
+              label: scan.originalFilename,
+              rotation: 0,
+            });
+          } catch (e) {
+            console.error('Failed to download scan', scan.id, e);
+          }
+        }
+
+        const slots: PanelSlot[] = [];
+        for (let i = 0; i < editData.panelCount; i++) {
+          for (const side of ['front', 'back'] as PanelSide[]) {
+            const panelData = editData.panels.find((p) => p.panelIndex === i && p.side === side);
+            if (panelData) {
+              const img = images.find((im) => im.id === panelData.scanId);
+              if (img) img.rotation = panelData.rotationDeg;
+              slots.push({
+                panelIndex: i,
+                side,
+                imageId: panelData.scanId,
+                cropRegion: { id: `crop-${i}-${side}`, x: panelData.cropX, y: panelData.cropY, width: panelData.cropWidth, height: panelData.cropHeight },
+                thumbnailUrl: panelData.thumbnailUrl,
+              });
+            } else {
+              slots.push({ panelIndex: i, side, imageId: null, cropRegion: null, thumbnailUrl: null });
+            }
+          }
+        }
+
+        setState((prev) => ({
+          ...prev,
+          currentStep: 3,
+          panelCount: editData.panelCount,
+          images,
+          slots,
+          cropWidth: editData.cropWidth,
+          cropHeight: editData.cropHeight,
+        }));
+      }
+
+      setEditLoading(false);
+    };
+
+    load();
+  }, [editCardId, initialStep]);
 
   // ─── Derived data ──────────────────────────────────────────────
 
@@ -378,6 +482,32 @@ export const SafetyCardWizard: React.FC<SafetyCardWizardProps> = ({
     setIsSaving(true);
     setSaveProgress('Starting...');
 
+    if (editCardId && initialStep === 4) {
+      const result = await updateCardFolds(editCardId, state.creases, state.cover);
+      setIsSaving(false);
+      setSaveProgress('');
+      if (result.success) {
+        onSaveComplete?.(editCardId);
+      } else {
+        alert(`Save failed: ${result.error}`);
+      }
+      return;
+    }
+
+    if (editCardId && initialStep === 3) {
+      const result = await updateCardPanels(editCardId, state, editSideIds, (p) => {
+        setSaveProgress(`${p.stage} (${p.current}/${p.total})`);
+      });
+      setIsSaving(false);
+      setSaveProgress('');
+      if (result.success) {
+        onSaveComplete?.(editCardId);
+      } else {
+        alert(`Save failed: ${result.error}`);
+      }
+      return;
+    }
+
     const result = await saveCardToLibrary(state, (p) => {
       setSaveProgress(`${p.stage} (${p.current}/${p.total})`);
     });
@@ -394,9 +524,20 @@ export const SafetyCardWizard: React.FC<SafetyCardWizardProps> = ({
     } else {
       alert(`Save failed: ${result.error}`);
     }
-  }, [state, onSaveComplete]);
+  }, [state, editCardId, initialStep, editSideIds, onSaveComplete]);
 
   // ─── Render ────────────────────────────────────────────────────
+
+  if (editLoading) {
+    return (
+      <div className="h-dvh flex items-center justify-center bg-background">
+        <div className="flex flex-col items-center gap-3">
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+          <p className="text-sm text-muted-foreground">Loading card data...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="h-dvh flex flex-col bg-background overflow-hidden">
@@ -407,23 +548,32 @@ export const SafetyCardWizard: React.FC<SafetyCardWizardProps> = ({
               onClick={onBackToLibrary}
               className="px-4 py-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
             >
-              &larr; Library
+              &larr; {isEditMode ? 'Back to Card' : 'Library'}
             </button>
           )}
-          <StepIndicator
-            currentStep={state.currentStep}
-            panelCount={state.panelCount}
-            imageCount={state.images.length}
-            filledSlots={filledSlots}
-            totalSlots={totalSlots}
-            onStepClick={goToStep}
-          />
+          {!isEditMode && (
+            <StepIndicator
+              currentStep={state.currentStep}
+              panelCount={state.panelCount}
+              imageCount={state.images.length}
+              filledSlots={filledSlots}
+              totalSlots={totalSlots}
+              onStepClick={goToStep}
+            />
+          )}
+          {isEditMode && (
+            <div className="flex-1 flex items-center justify-center py-2">
+              <span className="text-sm font-medium text-muted-foreground">
+                Editing {initialStep === 3 ? 'Crops' : 'Folds'}
+              </span>
+            </div>
+          )}
         </div>
       </div>
 
       {/* Step content — fills remaining height */}
       <div className="flex-1 min-h-0 max-w-7xl w-full mx-auto">
-        {state.currentStep === 1 && (
+        {state.currentStep === 1 && !isEditMode && (
           <ImageLibraryStep
             images={state.images}
             onAddImages={handleAddImages}
@@ -433,7 +583,7 @@ export const SafetyCardWizard: React.FC<SafetyCardWizardProps> = ({
           />
         )}
 
-        {state.currentStep === 2 && (
+        {state.currentStep === 2 && !isEditMode && (
           <CardInfoStep
             metadata={state.metadata}
             panelCount={state.panelCount}
@@ -460,8 +610,9 @@ export const SafetyCardWizard: React.FC<SafetyCardWizardProps> = ({
             onConfirmCrop={handleConfirmCrop}
             onClearSlot={handleClearSlot}
             onSetCropDimensions={handleSetCropDimensions}
-            onBack={() => goToStep(2)}
-            onContinue={() => goToStep(4)}
+            onBack={isEditMode ? (onBackToLibrary ?? (() => {})) : () => goToStep(2)}
+            onContinue={isEditMode ? handleSave : () => goToStep(4)}
+            continueLabel={isEditMode ? (isSaving ? 'Saving...' : 'Save Changes') : undefined}
           />
         )}
 
@@ -474,11 +625,13 @@ export const SafetyCardWizard: React.FC<SafetyCardWizardProps> = ({
             onCreaseChange={handleCreaseChange}
             onSequenceChange={handleSequenceChange}
             onCoverChange={handleCoverChange}
-            onBack={() => goToStep(3)}
+            onBack={isEditMode ? (onBackToLibrary ?? (() => {})) : () => goToStep(3)}
             onExport={handleExport}
             onSave={handleSave}
             isSaving={isSaving}
             saveProgress={saveProgress}
+            saveLabel={isEditMode ? 'Save Changes' : undefined}
+            hideExport={isEditMode}
           />
         )}
       </div>

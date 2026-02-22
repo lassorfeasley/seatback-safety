@@ -19,6 +19,8 @@ export const FoldStep: React.FC<FoldStepProps> = ({
   onSave,
   isSaving,
   saveProgress,
+  saveLabel,
+  hideExport,
 }) => {
   const panels: Panel[] = useMemo(() => {
     return slots.map((slot) => ({
@@ -199,17 +201,19 @@ export const FoldStep: React.FC<FoldStepProps> = ({
           {isSaving && saveProgress && (
             <span className="text-xs text-muted-foreground">{saveProgress}</span>
           )}
-          <Button variant="outline" onClick={onExport} disabled={isSaving} className="gap-2">
-            <Download className="h-4 w-4" />
-            Export ZIP
-          </Button>
+          {!hideExport && (
+            <Button variant="outline" onClick={onExport} disabled={isSaving} className="gap-2">
+              <Download className="h-4 w-4" />
+              Export ZIP
+            </Button>
+          )}
           <Button onClick={onSave} disabled={isSaving} className="gap-2">
             {isSaving ? (
               <Loader2 className="h-4 w-4 animate-spin" />
             ) : (
               <Save className="h-4 w-4" />
             )}
-            {isSaving ? 'Saving...' : 'Save to Library'}
+            {isSaving ? 'Saving...' : (saveLabel ?? 'Save to Library')}
           </Button>
         </div>
       </div>

@@ -4,17 +4,23 @@ import { LibraryPage, CardDetail } from './components/Library';
 
 type Page =
   | { view: 'library' }
-  | { view: 'wizard' }
+  | { view: 'wizard'; editCardId?: string; editStep?: 3 | 4 }
   | { view: 'detail'; cardId: string };
 
 function App() {
   const [page, setPage] = useState<Page>({ view: 'library' });
 
   if (page.view === 'wizard') {
+    const returnTo = page.editCardId
+      ? () => setPage({ view: 'detail', cardId: page.editCardId! })
+      : () => setPage({ view: 'library' });
+
     return (
       <SafetyCardWizard
         onSaveComplete={(cardId: string) => setPage({ view: 'detail', cardId })}
-        onBackToLibrary={() => setPage({ view: 'library' })}
+        onBackToLibrary={returnTo}
+        editCardId={page.editCardId}
+        initialStep={page.editStep}
       />
     );
   }
@@ -24,6 +30,8 @@ function App() {
       <CardDetail
         cardId={page.cardId}
         onBack={() => setPage({ view: 'library' })}
+        onEditCrops={() => setPage({ view: 'wizard', editCardId: page.cardId, editStep: 3 })}
+        onEditFolds={() => setPage({ view: 'wizard', editCardId: page.cardId, editStep: 4 })}
       />
     );
   }

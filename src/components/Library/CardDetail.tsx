@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
@@ -17,12 +17,25 @@ import {
   X as XIcon,
   Plus,
   Save,
+  Scissors,
+  FoldVertical,
+  ImageIcon,
+  Sparkles,
+  Check,
 } from 'lucide-react';
 import { CardVisualizer3D } from '@/components/FoldEditor/CardVisualizer3D';
+import { generateAndUploadOgImage } from '@/lib/ogImageGenerator';
+import { analyzeCardScans, type CardSuggestions } from '@/lib/aiService';
+import { supabase } from '@/lib/supabase';
 import {
   fetchCardDetail,
   deleteCard,
   updateCardMetadata,
+  addProvenanceEntry,
+  deleteProvenanceEntry,
+  addPriceObservation,
+  deletePriceObservation,
+  type AddDocumentInput,
   type CardDetailData,
   type CardMetadataUpdate,
   type ScanInfo,
@@ -45,6 +58,8 @@ import type { Panel } from '@/components/FoldEditor/types';
 interface CardDetailProps {
   cardId: string;
   onBack: () => void;
+  onEditCrops?: () => void;
+  onEditFolds?: () => void;
 }
 
 function formatBytes(bytes: number): string {
@@ -53,7 +68,7 @@ function formatBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-export const CardDetail: React.FC<CardDetailProps> = ({ cardId, onBack }) => {
+export const CardDetail: React.FC<CardDetailProps> = ({ cardId, onBack, onEditCrops, onEditFolds }) => {
   const [card, setCard] = useState<CardDetailData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -62,6 +77,13 @@ export const CardDetail: React.FC<CardDetailProps> = ({ cardId, onBack }) => {
   const [showScans, setShowScans] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [showAddProvenance, setShowAddProvenance] = useState(false);
+  const [showAddPrice, setShowAddPrice] = useState(false);
+
+  const refreshCard = useCallback(async () => {
+    const data = await fetchCardDetail(cardId);
+    if (data) setCard(data);
+  }, [cardId]);
 
   useEffect(() => {
     setLoading(true);
@@ -89,6 +111,38 @@ export const CardDetail: React.FC<CardDetailProps> = ({ cardId, onBack }) => {
     }
     setSaving(false);
   }, [cardId]);
+
+  const [generatingOg, setGeneratingOg] = useState(false);
+  const [ogImageUrl, setOgImageUrl] = useState<string | null>(() => {
+    const { data } = supabase.storage.from('derivatives').getPublicUrl(`${cardId}/og.jpg`);
+    return data.publicUrl;
+  });
+  const [ogExists, setOgExists] = useState(false);
+
+  useEffect(() => {
+    if (!ogImageUrl) return;
+    const img = new Image();
+    img.onload = () => setOgExists(true);
+    img.onerror = () => setOgExists(false);
+    img.src = ogImageUrl;
+  }, [ogImageUrl]);
+
+  const handleGenerateOg = useCallback(async () => {
+    if (!card) return;
+    setGeneratingOg(true);
+    const result = await generateAndUploadOgImage(cardId, {
+      panels: card.panels,
+      cover: card.cover,
+      displayUrls: card.displayUrls,
+    });
+    setGeneratingOg(false);
+    if (result.success && result.url) {
+      setOgImageUrl(result.url + '?t=' + Date.now());
+      setOgExists(true);
+    } else {
+      alert(`OG image failed: ${result.error}`);
+    }
+  }, [card, cardId]);
 
   const handleDelete = async () => {
     if (!confirm('Delete this card and all its images? This cannot be undone.')) return;
@@ -167,13 +221,33 @@ export const CardDetail: React.FC<CardDetailProps> = ({ cardId, onBack }) => {
               <Button
                 variant={isEditing ? 'secondary' : 'outline'}
                 size="sm"
-                onClick={() => setIsEditing(!isEditing)}
+                onClick={() => {
+                  const next = !isEditing;
+                  setIsEditing(next);
+                  if (!next) { setShowAddProvenance(false); setShowAddPrice(false); }
+                }}
                 disabled={saving}
                 className="gap-1.5"
               >
                 {isEditing ? <XIcon className="h-4 w-4" /> : <Pencil className="h-4 w-4" />}
                 {isEditing ? 'Cancel' : 'Edit'}
               </Button>
+              {card.panels.length > 0 && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleGenerateOg}
+                  disabled={generatingOg || isEditing}
+                  className="gap-1.5"
+                >
+                  {generatingOg ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <ImageIcon className="h-4 w-4" />
+                  )}
+                  {generatingOg ? 'Generating...' : 'OG Image'}
+                </Button>
+              )}
               <Button
                 variant="ghost"
                 size="sm"
@@ -196,7 +270,7 @@ export const CardDetail: React.FC<CardDetailProps> = ({ cardId, onBack }) => {
       <main className="flex-1 min-h-0 overflow-auto">
         <div className="max-w-6xl mx-auto px-6 py-6 flex flex-col gap-8">
           <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_340px] gap-8">
-            <div className="min-w-0">
+            <div className="min-w-0 flex flex-col gap-6">
               {hasPanels ? (
                 <CardVisualizer3D
                   panels={card.panels}
@@ -219,6 +293,58 @@ export const CardDetail: React.FC<CardDetailProps> = ({ cardId, onBack }) => {
                   </div>
                 </div>
               )}
+
+              {hasPanels && (
+                <section>
+                  <div className="flex items-center justify-between mb-4">
+                    <SectionHeading noMargin>Panel Spreads</SectionHeading>
+                    <div className="flex items-center gap-1.5">
+                      {onEditCrops && (
+                        <Button variant="outline" size="sm" onClick={onEditCrops} className="gap-1.5">
+                          <Scissors className="h-3.5 w-3.5" />
+                          Edit Crops
+                        </Button>
+                      )}
+                      {onEditFolds && (
+                        <Button variant="outline" size="sm" onClick={onEditFolds} className="gap-1.5">
+                          <FoldVertical className="h-3.5 w-3.5" />
+                          Edit Folds
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                  <SpreadRow
+                    label="Front"
+                    panels={frontPanels}
+                    expectedCount={panelsPerSide}
+                    displayUrls={card.displayUrls}
+                    fullUrls={card.fullUrls}
+                    onZoom={setLightboxUrl}
+                  />
+                  <div className="my-4" />
+                  <SpreadRow
+                    label="Back"
+                    panels={backPanels}
+                    expectedCount={panelsPerSide}
+                    displayUrls={card.displayUrls}
+                    fullUrls={card.fullUrls}
+                    onZoom={setLightboxUrl}
+                  />
+                </section>
+              )}
+
+              {ogExists && ogImageUrl && (
+                <section>
+                  <SectionHeading>OG Image</SectionHeading>
+                  <div className="rounded-lg border bg-card overflow-hidden">
+                    <img
+                      src={ogImageUrl}
+                      alt="Generated Open Graph image"
+                      className="w-full h-auto"
+                    />
+                  </div>
+                </section>
+              )}
             </div>
 
             <div className="flex flex-col gap-5">
@@ -228,6 +354,7 @@ export const CardDetail: React.FC<CardDetailProps> = ({ cardId, onBack }) => {
                   onSave={handleSaveMetadata}
                   onCancel={() => setIsEditing(false)}
                   saving={saving}
+                  scanUrls={Object.values(card.displayUrls)}
                 />
               ) : (
                 <>
@@ -256,27 +383,81 @@ export const CardDetail: React.FC<CardDetailProps> = ({ cardId, onBack }) => {
                 </>
               )}
 
-              {card.provenance.length > 0 && (
-                <div>
-                  <p className="text-xs font-medium text-muted-foreground mb-2">Provenance</p>
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-xs font-medium text-muted-foreground">Provenance</p>
+                  {isEditing && !showAddProvenance && (
+                    <button
+                      type="button"
+                      onClick={() => setShowAddProvenance(true)}
+                      className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                    >
+                      <Plus className="h-3 w-3" /> Add
+                    </button>
+                  )}
+                </div>
+                {isEditing && showAddProvenance && (
+                  <AddProvenanceForm
+                    cardId={cardId}
+                    onSaved={() => { setShowAddProvenance(false); refreshCard(); }}
+                    onCancel={() => setShowAddProvenance(false)}
+                  />
+                )}
+                {card.provenance.length > 0 ? (
                   <div className="flex flex-col gap-2">
                     {card.provenance.map((entry) => (
-                      <ProvenanceCard key={entry.id} entry={entry} />
+                      <ProvenanceCard
+                        key={entry.id}
+                        entry={entry}
+                        onDelete={isEditing ? async () => {
+                          await deleteProvenanceEntry(entry.id);
+                          refreshCard();
+                        } : undefined}
+                      />
                     ))}
                   </div>
-                </div>
-              )}
+                ) : (
+                  <p className="text-xs text-muted-foreground/60 italic">No provenance recorded</p>
+                )}
+              </div>
 
-              {card.priceObservations.length > 0 && (
-                <div>
-                  <p className="text-xs font-medium text-muted-foreground mb-2">Price History</p>
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-xs font-medium text-muted-foreground">Price History</p>
+                  {isEditing && !showAddPrice && (
+                    <button
+                      type="button"
+                      onClick={() => setShowAddPrice(true)}
+                      className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                    >
+                      <Plus className="h-3 w-3" /> Add
+                    </button>
+                  )}
+                </div>
+                {isEditing && showAddPrice && (
+                  <AddPriceForm
+                    cardId={cardId}
+                    onSaved={() => { setShowAddPrice(false); refreshCard(); }}
+                    onCancel={() => setShowAddPrice(false)}
+                  />
+                )}
+                {card.priceObservations.length > 0 ? (
                   <div className="flex flex-col gap-2">
                     {card.priceObservations.map((obs) => (
-                      <PriceObservationCard key={obs.id} observation={obs} />
+                      <PriceObservationCard
+                        key={obs.id}
+                        observation={obs}
+                        onDelete={isEditing ? async () => {
+                          await deletePriceObservation(obs.id);
+                          refreshCard();
+                        } : undefined}
+                      />
                     ))}
                   </div>
-                </div>
-              )}
+                ) : (
+                  <p className="text-xs text-muted-foreground/60 italic">No price history recorded</p>
+                )}
+              </div>
 
               {card.scans.length > 0 && (
                 <div>
@@ -294,29 +475,6 @@ export const CardDetail: React.FC<CardDetailProps> = ({ cardId, onBack }) => {
               )}
             </div>
           </div>
-
-          {hasPanels && (
-            <section>
-              <SectionHeading>Panel Spreads</SectionHeading>
-              <SpreadRow
-                label="Front"
-                panels={frontPanels}
-                expectedCount={panelsPerSide}
-                displayUrls={card.displayUrls}
-                fullUrls={card.fullUrls}
-                onZoom={setLightboxUrl}
-              />
-              <div className="my-4" />
-              <SpreadRow
-                label="Back"
-                panels={backPanels}
-                expectedCount={panelsPerSide}
-                displayUrls={card.displayUrls}
-                fullUrls={card.fullUrls}
-                onZoom={setLightboxUrl}
-              />
-            </section>
-          )}
         </div>
       </main>
 
@@ -363,9 +521,10 @@ interface MetadataEditorProps {
   onSave: (update: CardMetadataUpdate) => void;
   onCancel: () => void;
   saving: boolean;
+  scanUrls: string[];
 }
 
-const MetadataEditor: React.FC<MetadataEditorProps> = ({ card, onSave, onCancel, saving }) => {
+const MetadataEditor: React.FC<MetadataEditorProps> = ({ card, onSave, onCancel, saving, scanUrls }) => {
   const [title, setTitle] = useState(card.title ?? '');
   const [airlineId, setAirlineId] = useState<string | null>(card.airline_id);
   const [manufacturerId, setManufacturerId] = useState<string | null>(
@@ -388,6 +547,43 @@ const MetadataEditor: React.FC<MetadataEditorProps> = ({ card, onSave, onCancel,
   );
   const [revision, setRevision] = useState(card.revision ?? '');
   const [notes, setNotes] = useState(card.notes ?? '');
+
+  const [analyzing, setAnalyzing] = useState(false);
+  const [suggestions, setSuggestions] = useState<CardSuggestions | null>(null);
+  const [acceptedFields, setAcceptedFields] = useState<Set<string>>(new Set());
+
+  const handleAnalyze = useCallback(async () => {
+    if (scanUrls.length === 0) return;
+    setAnalyzing(true);
+    setSuggestions(null);
+    setAcceptedFields(new Set());
+    const result = await analyzeCardScans(scanUrls);
+    setAnalyzing(false);
+    if (result.suggestions) {
+      setSuggestions(result.suggestions);
+    } else {
+      alert(`AI analysis failed: ${result.error}`);
+    }
+  }, [scanUrls]);
+
+  const acceptField = useCallback((field: string) => {
+    if (!suggestions) return;
+    setAcceptedFields((prev) => new Set(prev).add(field));
+    switch (field) {
+      case 'title':
+        if (suggestions.suggested_title) setTitle(suggestions.suggested_title);
+        break;
+      case 'languages':
+        if (suggestions.languages?.length) setLanguages(suggestions.languages);
+        break;
+      case 'published_year':
+        if (suggestions.published_year) setPublishedYear(String(suggestions.published_year));
+        break;
+      case 'revision':
+        if (suggestions.revision) setRevision(suggestions.revision);
+        break;
+    }
+  }, [suggestions]);
 
   const [airlines, setAirlines] = useState<ComboboxOption[]>([]);
   const [manufacturers, setManufacturers] = useState<ComboboxOption[]>([]);
@@ -454,11 +650,100 @@ const MetadataEditor: React.FC<MetadataEditorProps> = ({ card, onSave, onCancel,
     });
   };
 
+  const acceptAirline = useCallback(async () => {
+    if (!suggestions?.airline) return;
+    const match = airlines.find((a) => a.label.toLowerCase() === suggestions.airline!.toLowerCase());
+    if (match) {
+      setAirlineId(match.value);
+    } else {
+      const item = await createAirline(suggestions.airline);
+      setAirlines((prev) => [...prev, { value: item.id, label: item.name }]);
+      setAirlineId(item.id);
+    }
+    setAcceptedFields((prev) => new Set(prev).add('airline'));
+  }, [suggestions, airlines]);
+
+  const acceptAircraft = useCallback(async () => {
+    if (!suggestions?.aircraft?.length) return;
+    const firstMfr = suggestions.aircraft.find((a) => a.manufacturer)?.manufacturer;
+    if (firstMfr) {
+      const mfrMatch = manufacturers.find((m) => m.label.toLowerCase() === firstMfr.toLowerCase());
+      let mfrId: string;
+      if (mfrMatch) {
+        mfrId = mfrMatch.value;
+      } else {
+        const item = await createManufacturer(firstMfr);
+        setManufacturers((prev) => [...prev, { value: item.id, label: item.name }]);
+        mfrId = item.id;
+      }
+      setManufacturerId(mfrId);
+
+      const rows: typeof aircraftRows = [];
+      for (const a of suggestions.aircraft) {
+        if (!a.model) continue;
+        const modelMatch = models.find((m) => m.label.toLowerCase() === a.model!.toLowerCase());
+        let modelId: string;
+        let modelName: string;
+        if (modelMatch) {
+          modelId = modelMatch.value;
+          modelName = modelMatch.label;
+        } else {
+          const item = await createModel(mfrId, a.model);
+          setModels((prev) => [...prev, { value: item.id, label: item.name }]);
+          modelId = item.id;
+          modelName = item.name;
+        }
+        rows.push({ modelId, modelName, variantId: null, variantName: '' });
+      }
+      if (rows.length > 0) setAircraftRows(rows);
+    }
+    setAcceptedFields((prev) => new Set(prev).add('aircraft'));
+  }, [suggestions, manufacturers, models, aircraftRows]);
+
   return (
     <div className="flex flex-col gap-4">
+      {scanUrls.length > 0 && (
+        <div className="flex items-center gap-2">
+          {!suggestions && !analyzing && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleAnalyze}
+              className="w-full gap-1.5"
+            >
+              <Sparkles className="h-3.5 w-3.5" />
+              Analyze with AI
+            </Button>
+          )}
+          {analyzing && (
+            <div className="flex items-center justify-center gap-2 rounded-lg border border-dashed p-3 w-full">
+              <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+              <span className="text-sm text-muted-foreground">Analyzing card scans...</span>
+            </div>
+          )}
+          {suggestions && (
+            <div className="flex items-center justify-between w-full rounded-lg border bg-muted/30 px-3 py-2">
+              <p className="text-xs font-medium text-muted-foreground flex items-center gap-1">
+                <Sparkles className="h-3 w-3" /> AI suggestions shown below
+              </p>
+              <button
+                onClick={() => setSuggestions(null)}
+                className="text-xs text-muted-foreground hover:text-foreground"
+              >
+                Dismiss
+              </button>
+            </div>
+          )}
+        </div>
+      )}
       <div className="flex flex-col gap-3">
         <EditorField label="Title">
           <input className={INPUT_CLASS} value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Card title" />
+          <InlineSuggestion
+            value={suggestions?.suggested_title}
+            accepted={acceptedFields.has('title')}
+            onAccept={() => acceptField('title')}
+          />
         </EditorField>
 
         <EditorField label="Airline">
@@ -473,6 +758,11 @@ const MetadataEditor: React.FC<MetadataEditorProps> = ({ card, onSave, onCancel,
             }}
             placeholder="Select airline..."
             searchPlaceholder="Search airlines..."
+          />
+          <InlineSuggestion
+            value={suggestions?.airline}
+            accepted={acceptedFields.has('airline')}
+            onAccept={acceptAirline}
           />
         </EditorField>
 
@@ -491,6 +781,13 @@ const MetadataEditor: React.FC<MetadataEditorProps> = ({ card, onSave, onCancel,
             }}
             placeholder="Select manufacturer..."
             searchPlaceholder="Search manufacturers..."
+          />
+          <InlineSuggestion
+            value={suggestions?.aircraft?.length
+              ? suggestions.aircraft.map((a) => [a.manufacturer, a.model, a.variant].filter(Boolean).join(' ')).join(', ')
+              : undefined}
+            accepted={acceptedFields.has('aircraft')}
+            onAccept={acceptAircraft}
           />
         </EditorField>
 
@@ -575,14 +872,29 @@ const MetadataEditor: React.FC<MetadataEditorProps> = ({ card, onSave, onCancel,
               <Plus className="h-3.5 w-3.5" />
             </Button>
           </div>
+          <InlineSuggestion
+            value={suggestions?.languages?.length ? suggestions.languages.join(', ') : undefined}
+            accepted={acceptedFields.has('languages')}
+            onAccept={() => acceptField('languages')}
+          />
         </EditorField>
 
         <div className="grid grid-cols-2 gap-3">
           <EditorField label="Year">
             <input type="number" className={INPUT_CLASS} value={publishedYear} onChange={(e) => setPublishedYear(e.target.value)} placeholder="e.g. 2024" />
+            <InlineSuggestion
+              value={suggestions?.published_year ? String(suggestions.published_year) : undefined}
+              accepted={acceptedFields.has('published_year')}
+              onAccept={() => acceptField('published_year')}
+            />
           </EditorField>
           <EditorField label="Revision">
             <input className={INPUT_CLASS} value={revision} onChange={(e) => setRevision(e.target.value)} placeholder="e.g. Rev C" />
+            <InlineSuggestion
+              value={suggestions?.revision}
+              accepted={acceptedFields.has('revision')}
+              onAccept={() => acceptField('revision')}
+            />
           </EditorField>
         </div>
 
@@ -611,10 +923,40 @@ const EditorField: React.FC<{ label: string; children: React.ReactNode }> = ({ l
   </div>
 );
 
+const InlineSuggestion: React.FC<{
+  value: string | null | undefined;
+  label?: string;
+  accepted: boolean;
+  onAccept: () => void;
+}> = ({ value, label, accepted, onAccept }) => {
+  if (!value) return null;
+  return (
+    <div className="flex items-center gap-1.5 mt-1 rounded-md bg-primary/5 border border-primary/15 px-2 py-1">
+      <Sparkles className="h-3 w-3 text-primary/60 flex-shrink-0" />
+      <span className="text-xs text-foreground/80 truncate flex-1">
+        {label ? `${label}: ` : ''}{value}
+      </span>
+      {accepted ? (
+        <span className="flex items-center gap-0.5 text-xs text-emerald-600 flex-shrink-0">
+          <Check className="h-3 w-3" /> Applied
+        </span>
+      ) : (
+        <button
+          type="button"
+          onClick={onAccept}
+          className="flex items-center gap-0.5 text-xs text-primary hover:underline flex-shrink-0 font-medium"
+        >
+          Apply
+        </button>
+      )}
+    </div>
+  );
+};
+
 // ─── Shared Section Components ───────────────────────────────────
 
-const SectionHeading: React.FC<{ children: React.ReactNode }> = ({ children }) => (
-  <h2 className="text-base font-medium text-muted-foreground mb-4">{children}</h2>
+const SectionHeading: React.FC<{ children: React.ReactNode; noMargin?: boolean }> = ({ children, noMargin }) => (
+  <h2 className={`text-base font-medium text-muted-foreground ${noMargin ? '' : 'mb-4'}`}>{children}</h2>
 );
 
 const CollapsibleHeading: React.FC<{
@@ -769,9 +1111,28 @@ const DocumentLinks: React.FC<{ documents: DetailDocumentInfo[] }> = ({ document
 
 // ─── Provenance Display ──────────────────────────────────────────
 
-const ProvenanceCard: React.FC<{ entry: DetailProvenanceEntry }> = ({ entry }) => {
+const ProvenanceCard: React.FC<{ entry: DetailProvenanceEntry; onDelete?: () => void }> = ({ entry, onDelete }) => {
+  const [confirming, setConfirming] = useState(false);
   return (
-    <div className="p-4 rounded-lg bg-muted/40">
+    <div className="p-4 rounded-lg bg-muted/40 group relative">
+      {onDelete && (
+        <div className="absolute top-2 right-2">
+          {confirming ? (
+            <div className="flex items-center gap-1">
+              <button onClick={onDelete} className="text-[10px] text-destructive hover:underline">Remove</button>
+              <span className="text-[10px] text-muted-foreground">/</span>
+              <button onClick={() => setConfirming(false)} className="text-[10px] text-muted-foreground hover:underline">Cancel</button>
+            </div>
+          ) : (
+            <button
+              onClick={() => setConfirming(true)}
+              className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </button>
+          )}
+        </div>
+      )}
       <p className="text-sm font-medium">{entry.source || 'Unknown source'}</p>
       {entry.acquired_date && (
         <p className="text-xs text-muted-foreground mt-1">
@@ -800,13 +1161,32 @@ const PRICE_TYPE_LABELS: Record<string, string> = {
   estimate: 'Estimate',
 };
 
-const PriceObservationCard: React.FC<{ observation: DetailPriceObservation }> = ({ observation }) => {
+const PriceObservationCard: React.FC<{ observation: DetailPriceObservation; onDelete?: () => void }> = ({ observation, onDelete }) => {
   const formattedPrice = observation.price_usd != null
     ? new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(observation.price_usd)
     : '—';
 
+  const [confirming, setConfirming] = useState(false);
   return (
-    <div className="p-4 rounded-lg bg-muted/40">
+    <div className="p-4 rounded-lg bg-muted/40 group relative">
+      {onDelete && (
+        <div className="absolute top-2 right-2">
+          {confirming ? (
+            <div className="flex items-center gap-1">
+              <button onClick={onDelete} className="text-[10px] text-destructive hover:underline">Remove</button>
+              <span className="text-[10px] text-muted-foreground">/</span>
+              <button onClick={() => setConfirming(false)} className="text-[10px] text-muted-foreground hover:underline">Cancel</button>
+            </div>
+          ) : (
+            <button
+              onClick={() => setConfirming(true)}
+              className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </button>
+          )}
+        </div>
+      )}
       <div className="flex items-baseline gap-2">
         <p className="text-sm font-medium">{formattedPrice}</p>
         {observation.price_type && (
@@ -830,6 +1210,208 @@ const PriceObservationCard: React.FC<{ observation: DetailPriceObservation }> = 
           .join(' · ')}
       </p>
       <DocumentLinks documents={observation.documents} />
+    </div>
+  );
+};
+
+// ─── Inline Add Forms ────────────────────────────────────────────
+
+const INLINE_INPUT =
+  'w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 placeholder:text-muted-foreground/40';
+
+function fileToDocInput(file: File): AddDocumentInput {
+  return {
+    file,
+    originalFilename: file.name,
+    mimeType: file.type || 'application/octet-stream',
+    fileSizeBytes: file.size,
+  };
+}
+
+const AttachmentPicker: React.FC<{
+  files: AddDocumentInput[];
+  onChange: (files: AddDocumentInput[]) => void;
+}> = ({ files, onChange }) => {
+  const inputRef = useRef<HTMLInputElement>(null);
+  return (
+    <div>
+      <input
+        ref={inputRef}
+        type="file"
+        multiple
+        className="hidden"
+        onChange={(e) => {
+          if (!e.target.files) return;
+          onChange([...files, ...Array.from(e.target.files).map(fileToDocInput)]);
+          e.target.value = '';
+        }}
+      />
+      <button
+        type="button"
+        onClick={() => inputRef.current?.click()}
+        className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+      >
+        <Paperclip className="h-3 w-3" /> Attach files
+      </button>
+      {files.length > 0 && (
+        <div className="flex flex-col gap-1 mt-1.5">
+          {files.map((f, i) => (
+            <div key={i} className="flex items-center gap-1.5 text-xs text-muted-foreground bg-muted/40 rounded px-2 py-1">
+              <Paperclip className="h-3 w-3 flex-shrink-0" />
+              <span className="truncate flex-1">{f.originalFilename}</span>
+              <button
+                type="button"
+                onClick={() => onChange(files.filter((_, j) => j !== i))}
+                className="text-muted-foreground hover:text-destructive flex-shrink-0"
+              >
+                <XIcon className="h-3 w-3" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+const AddProvenanceForm: React.FC<{
+  cardId: string;
+  onSaved: () => void;
+  onCancel: () => void;
+}> = ({ cardId, onSaved, onCancel }) => {
+  const [source, setSource] = useState('');
+  const [acquiredDate, setAcquiredDate] = useState('');
+  const [notes, setNotes] = useState('');
+  const [docs, setDocs] = useState<AddDocumentInput[]>([]);
+  const [saving, setSaving] = useState(false);
+
+  const handleSubmit = async () => {
+    setSaving(true);
+    const result = await addProvenanceEntry(cardId, {
+      source: source.trim() || null,
+      acquiredDate: acquiredDate || null,
+      notes: notes.trim() || null,
+    }, docs);
+    setSaving(false);
+    if (result.success) onSaved();
+    else alert(`Failed: ${result.error}`);
+  };
+
+  return (
+    <div className="rounded-lg border p-3 mb-2 flex flex-col gap-2">
+      <input
+        className={INLINE_INPUT}
+        placeholder="Source (e.g. eBay, gift, estate sale)"
+        value={source}
+        onChange={(e) => setSource(e.target.value)}
+        autoFocus
+      />
+      <input
+        type="date"
+        className={INLINE_INPUT}
+        value={acquiredDate}
+        onChange={(e) => setAcquiredDate(e.target.value)}
+      />
+      <textarea
+        className={`${INLINE_INPUT} min-h-[60px] resize-y`}
+        placeholder="Notes (optional)"
+        value={notes}
+        onChange={(e) => setNotes(e.target.value)}
+      />
+      <AttachmentPicker files={docs} onChange={setDocs} />
+      <div className="flex gap-1.5">
+        <Button size="sm" onClick={handleSubmit} disabled={saving || !source.trim()} className="flex-1 gap-1.5">
+          {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
+          {saving ? 'Saving...' : 'Add'}
+        </Button>
+        <Button variant="outline" size="sm" onClick={onCancel} disabled={saving}>
+          Cancel
+        </Button>
+      </div>
+    </div>
+  );
+};
+
+const PRICE_TYPE_OPTIONS = [
+  { value: 'purchase', label: 'Purchase' },
+  { value: 'asking', label: 'Asking' },
+  { value: 'auction_result', label: 'Auction Result' },
+  { value: 'estimate', label: 'Estimate' },
+];
+
+const AddPriceForm: React.FC<{
+  cardId: string;
+  onSaved: () => void;
+  onCancel: () => void;
+}> = ({ cardId, onSaved, onCancel }) => {
+  const [priceUsd, setPriceUsd] = useState('');
+  const [priceType, setPriceType] = useState('purchase');
+  const [source, setSource] = useState('');
+  const [observedDate, setObservedDate] = useState('');
+  const [docs, setDocs] = useState<AddDocumentInput[]>([]);
+  const [saving, setSaving] = useState(false);
+
+  const handleSubmit = async () => {
+    setSaving(true);
+    const parsed = parseFloat(priceUsd);
+    const result = await addPriceObservation(cardId, {
+      priceUsd: isNaN(parsed) ? null : parsed,
+      priceType: priceType || null,
+      source: source.trim() || null,
+      observedDate: observedDate || null,
+    }, docs);
+    setSaving(false);
+    if (result.success) onSaved();
+    else alert(`Failed: ${result.error}`);
+  };
+
+  return (
+    <div className="rounded-lg border p-3 mb-2 flex flex-col gap-2">
+      <div className="flex gap-2">
+        <div className="relative flex-1">
+          <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">$</span>
+          <input
+            type="number"
+            step="0.01"
+            className={`${INLINE_INPUT} pl-6`}
+            placeholder="0.00"
+            value={priceUsd}
+            onChange={(e) => setPriceUsd(e.target.value)}
+            autoFocus
+          />
+        </div>
+        <select
+          className={`${INLINE_INPUT} w-auto`}
+          value={priceType}
+          onChange={(e) => setPriceType(e.target.value)}
+        >
+          {PRICE_TYPE_OPTIONS.map((opt) => (
+            <option key={opt.value} value={opt.value}>{opt.label}</option>
+          ))}
+        </select>
+      </div>
+      <input
+        className={INLINE_INPUT}
+        placeholder="Source (e.g. eBay listing, dealer)"
+        value={source}
+        onChange={(e) => setSource(e.target.value)}
+      />
+      <input
+        type="date"
+        className={INLINE_INPUT}
+        value={observedDate}
+        onChange={(e) => setObservedDate(e.target.value)}
+      />
+      <AttachmentPicker files={docs} onChange={setDocs} />
+      <div className="flex gap-1.5">
+        <Button size="sm" onClick={handleSubmit} disabled={saving || !priceUsd} className="flex-1 gap-1.5">
+          {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
+          {saving ? 'Saving...' : 'Add'}
+        </Button>
+        <Button variant="outline" size="sm" onClick={onCancel} disabled={saving}>
+          Cancel
+        </Button>
+      </div>
     </div>
   );
 };

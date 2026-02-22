@@ -27,6 +27,8 @@ export interface ScanInfo {
   original_filename: string | null;
   mime_type: string | null;
   file_size_bytes: number | null;
+  file_path: string | null;
+  url: string | null;
 }
 
 export interface DetailDocumentInfo {
@@ -662,7 +664,7 @@ export async function fetchCardDetail(cardId: string): Promise<CardDetailData | 
       .single(),
     supabase
       .from('card_scans')
-      .select('id, side, dpi, width_px, height_px, original_filename, mime_type, file_size_bytes')
+      .select('id, side, dpi, width_px, height_px, original_filename, mime_type, file_size_bytes, file_path')
       .eq('card_id', cardId),
     supabase
       .from('card_provenance')
@@ -685,16 +687,24 @@ export async function fetchCardDetail(cardId: string): Promise<CardDetailData | 
   const { data: card, error } = cardResult;
   if (error || !card) return null;
 
-  const scans: ScanInfo[] = (scansResult.data ?? []).map((s: Record<string, unknown>) => ({
-    id: s.id as string,
-    side: s.side as string | null,
-    dpi: s.dpi as number,
-    width_px: s.width_px as number,
-    height_px: s.height_px as number,
-    original_filename: s.original_filename as string | null,
-    mime_type: s.mime_type as string | null,
-    file_size_bytes: s.file_size_bytes as number | null,
-  }));
+  const scans: ScanInfo[] = (scansResult.data ?? []).map((s: Record<string, unknown>) => {
+    const filePath = s.file_path as string | null;
+    const url = filePath
+      ? supabase.storage.from('scans').getPublicUrl(filePath).data.publicUrl
+      : null;
+    return {
+      id: s.id as string,
+      side: s.side as string | null,
+      dpi: s.dpi as number,
+      width_px: s.width_px as number,
+      height_px: s.height_px as number,
+      original_filename: s.original_filename as string | null,
+      mime_type: s.mime_type as string | null,
+      file_size_bytes: s.file_size_bytes as number | null,
+      file_path: filePath,
+      url,
+    };
+  });
 
   const sides = (card.card_sides ?? []) as Array<{
     id: string;
@@ -985,6 +995,300 @@ export async function updateCardMetadata(
   return { success: true };
 }
 
+// ─── Update Card Folds ────────────────────────────────────────────
+
+export async function updateCardFolds(
+  cardId: string,
+  creases: Crease[],
+  cover: { spreadIndex: number; side: Side }
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const { error: cardErr } = await supabase
+      .from('safety_cards')
+      .update({
+        cover_spread_index: cover.spreadIndex,
+        cover_side: cover.side,
+      })
+      .eq('id', cardId);
+    if (cardErr) return { success: false, error: cardErr.message };
+
+    await supabase.from('card_creases').delete().eq('card_id', cardId);
+
+    if (creases.length > 0) {
+      const rows = creases.map((c) => ({
+        card_id: cardId,
+        between_panel: c.between_panel,
+        fold_direction: c.fold_direction,
+        side: c.side,
+        unfold_sequence: c.unfold_sequence,
+      }));
+      const { error: insErr } = await supabase.from('card_creases').insert(rows);
+      if (insErr) return { success: false, error: insErr.message };
+    }
+
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+// ─── Fetch Card For Crop Editing ──────────────────────────────────
+
+export interface CropEditScan {
+  id: string;
+  filePath: string;
+  downloadUrl: string;
+  originalFilename: string;
+  mimeType: string;
+}
+
+export interface CropEditPanel {
+  panelIndex: number;
+  side: string;
+  scanId: string;
+  cropX: number;
+  cropY: number;
+  cropWidth: number;
+  cropHeight: number;
+  rotationDeg: number;
+  thumbnailUrl: string;
+}
+
+export interface CropEditData {
+  panelCount: number;
+  cropWidth: number | null;
+  cropHeight: number | null;
+  scans: CropEditScan[];
+  panels: CropEditPanel[];
+  sideIds: Record<string, string>;
+}
+
+export async function fetchCardForCropEditing(cardId: string): Promise<CropEditData | null> {
+  const { data: card, error } = await supabase
+    .from('safety_cards')
+    .select(`
+      panel_count, crop_width, crop_height,
+      card_sides (
+        id, side,
+        card_panels (
+          panel_index,
+          panel_crops ( scan_id, x, y, width, height, rotation_deg ),
+          panel_images ( variant, file_path )
+        )
+      )
+    `)
+    .eq('id', cardId)
+    .single();
+
+  if (error || !card) return null;
+
+  const { data: scans } = await supabase
+    .from('card_scans')
+    .select('id, file_path, original_filename, mime_type')
+    .eq('card_id', cardId);
+
+  const scanEntries: CropEditScan[] = [];
+  for (const scan of (scans ?? []) as Array<{ id: string; file_path: string; original_filename: string | null; mime_type: string | null }>) {
+    const { data: signed } = await supabase.storage
+      .from('scans')
+      .createSignedUrl(scan.file_path, 3600);
+    scanEntries.push({
+      id: scan.id,
+      filePath: scan.file_path,
+      downloadUrl: signed?.signedUrl ?? '',
+      originalFilename: scan.original_filename ?? 'scan',
+      mimeType: scan.mime_type ?? 'image/jpeg',
+    });
+  }
+
+  const sideIds: Record<string, string> = {};
+  const panels: CropEditPanel[] = [];
+
+  for (const side of (card.card_sides ?? []) as Array<{
+    id: string;
+    side: string;
+    card_panels: Array<{
+      panel_index: number;
+      panel_crops: Array<{ scan_id: string; x: number; y: number; width: number; height: number; rotation_deg: number }>;
+      panel_images: Array<{ variant: string; file_path: string }>;
+    }>;
+  }>) {
+    sideIds[side.side] = side.id;
+    for (const panel of side.card_panels ?? []) {
+      const crop = panel.panel_crops?.[0];
+      if (!crop) continue;
+      const thumb = panel.panel_images?.find((i) => i.variant === 'thumbnail');
+      panels.push({
+        panelIndex: panel.panel_index,
+        side: side.side,
+        scanId: crop.scan_id,
+        cropX: crop.x,
+        cropY: crop.y,
+        cropWidth: crop.width,
+        cropHeight: crop.height,
+        rotationDeg: crop.rotation_deg,
+        thumbnailUrl: thumb ? derivativePublicUrl(thumb.file_path) : '',
+      });
+    }
+  }
+
+  return {
+    panelCount: card.panel_count as number ?? 0,
+    cropWidth: card.crop_width as number | null,
+    cropHeight: card.crop_height as number | null,
+    scans: scanEntries,
+    panels,
+    sideIds,
+  };
+}
+
+// ─── Update Card Panels (Crop Editing) ────────────────────────────
+
+export async function updateCardPanels(
+  cardId: string,
+  state: WizardState,
+  sideIds: Record<string, string>,
+  onProgress?: ProgressCallback
+): Promise<{ success: boolean; error?: string }> {
+  const report = (stage: string, current: number, total: number) =>
+    onProgress?.({ stage, current, total });
+
+  try {
+    report('Cleaning up old panels', 0, 1);
+
+    const { data: existingPanelImages } = await supabase
+      .from('panel_images')
+      .select('file_path, panel_id, card_panels!inner( side_id, card_sides!inner( card_id ) )')
+      .eq('card_panels.card_sides.card_id', cardId);
+
+    if (existingPanelImages) {
+      const paths = (existingPanelImages as Array<{ file_path: string }>).map((i) => i.file_path);
+      if (paths.length > 0) {
+        await supabase.storage.from('derivatives').remove(paths);
+      }
+    }
+
+    const { data: existingSides } = await supabase
+      .from('card_sides')
+      .select('id, card_panels ( id )')
+      .eq('card_id', cardId);
+
+    if (existingSides) {
+      for (const side of existingSides as Array<{ id: string; card_panels: Array<{ id: string }> }>) {
+        for (const panel of side.card_panels ?? []) {
+          await supabase.from('panel_images').delete().eq('panel_id', panel.id);
+          await supabase.from('panel_crops').delete().eq('panel_id', panel.id);
+          await supabase.from('card_panels').delete().eq('id', panel.id);
+        }
+      }
+    }
+
+    const filledSlots = state.slots.filter((s) => s.cropRegion && s.imageId);
+    const panelImageRows: Array<{
+      panel_id: string;
+      variant: string;
+      width_px: number;
+      height_px: number;
+      file_path: string;
+    }> = [];
+
+    for (let idx = 0; idx < filledSlots.length; idx++) {
+      const slot = filledSlots[idx];
+      report('Processing panels', idx + 1, filledSlots.length);
+
+      const sideId = sideIds[slot.side];
+      const image = state.images.find((i) => i.id === slot.imageId);
+      if (!sideId || !image || !slot.cropRegion) continue;
+
+      const { data: panel, error: panelErr } = await supabase
+        .from('card_panels')
+        .insert({ side_id: sideId, panel_index: slot.panelIndex })
+        .select('id')
+        .single();
+
+      if (panelErr || !panel) {
+        return { success: false, error: `Failed to create panel: ${panelErr?.message}` };
+      }
+
+      const panelId = panel.id as string;
+
+      const { error: cropErr } = await supabase.from('panel_crops').insert({
+        panel_id: panelId,
+        scan_id: slot.imageId,
+        x: Math.round(slot.cropRegion.x),
+        y: Math.round(slot.cropRegion.y),
+        width: Math.round(slot.cropRegion.width),
+        height: Math.round(slot.cropRegion.height),
+        rotation_deg: image.rotation,
+        scale: 1,
+      });
+
+      if (cropErr) {
+        return { success: false, error: `Failed to save crop: ${cropErr.message}` };
+      }
+
+      const imgEl = await loadImage(image.imageUrl);
+
+      const fullBlob = await extractCropWithRotation(imgEl, slot.cropRegion, image.rotation, {
+        format: 'jpeg',
+        quality: 0.92,
+      });
+      const fullPath = `${cardId}/${panelId}_full.jpg`;
+      await supabase.storage.from('derivatives').upload(fullPath, fullBlob, {
+        contentType: 'image/jpeg',
+        upsert: true,
+      });
+      const fullDims = await blobDimensions(fullBlob);
+
+      const displayBlob = await extractCropWithRotation(imgEl, slot.cropRegion, image.rotation, {
+        targetWidth: 800,
+        format: 'jpeg',
+        quality: 0.85,
+      });
+      const displayPath = `${cardId}/${panelId}_display.jpg`;
+      await supabase.storage.from('derivatives').upload(displayPath, displayBlob, {
+        contentType: 'image/jpeg',
+        upsert: true,
+      });
+      const displayDims = await blobDimensions(displayBlob);
+
+      const thumbBlob = await extractCropWithRotation(imgEl, slot.cropRegion, image.rotation, {
+        targetWidth: 300,
+        format: 'jpeg',
+        quality: 0.8,
+      });
+      const thumbPath = `${cardId}/${panelId}_thumbnail.jpg`;
+      await supabase.storage.from('derivatives').upload(thumbPath, thumbBlob, {
+        contentType: 'image/jpeg',
+        upsert: true,
+      });
+      const thumbDims = await blobDimensions(thumbBlob);
+
+      panelImageRows.push(
+        { panel_id: panelId, variant: 'full', width_px: fullDims.width, height_px: fullDims.height, file_path: fullPath },
+        { panel_id: panelId, variant: 'display', width_px: displayDims.width, height_px: displayDims.height, file_path: displayPath },
+        { panel_id: panelId, variant: 'thumbnail', width_px: thumbDims.width, height_px: thumbDims.height, file_path: thumbPath },
+      );
+    }
+
+    if (panelImageRows.length > 0) {
+      const { error: imgErr } = await supabase.from('panel_images').insert(panelImageRows);
+      if (imgErr) return { success: false, error: `Failed to save panel images: ${imgErr.message}` };
+    }
+
+    await supabase
+      .from('safety_cards')
+      .update({ crop_width: state.cropWidth, crop_height: state.cropHeight })
+      .eq('id', cardId);
+
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+// ─── Delete Card ──────────────────────────────────────────────────
+
 export async function deleteCard(cardId: string): Promise<{ success: boolean; error?: string }> {
   // Delete storage objects first (documents, derivatives, then scans)
   const { data: docs } = await supabase
@@ -1024,6 +1328,106 @@ export async function deleteCard(cardId: string): Promise<{ success: boolean; er
   }
 
   const { error } = await supabase.from('safety_cards').delete().eq('id', cardId);
+  if (error) return { success: false, error: error.message };
+  return { success: true };
+}
+
+// ─── Add / Delete Provenance ──────────────────────────────────────
+
+export interface AddDocumentInput {
+  file: File;
+  originalFilename: string;
+  mimeType: string;
+  fileSizeBytes: number;
+  label?: string;
+}
+
+async function uploadDocuments(
+  cardId: string,
+  parentId: string,
+  parentField: 'provenance_id' | 'price_observation_id',
+  docs: AddDocumentInput[]
+): Promise<{ success: boolean; error?: string }> {
+  for (const doc of docs) {
+    const docId = crypto.randomUUID();
+    const ext = doc.originalFilename.split('.').pop()?.toLowerCase() || 'bin';
+    const docPath = `${cardId}/${docId}.${ext}`;
+
+    const { error: uploadErr } = await supabase.storage
+      .from('documents')
+      .upload(docPath, doc.file, { contentType: doc.mimeType || 'application/octet-stream' });
+    if (uploadErr) return { success: false, error: `Upload failed: ${uploadErr.message}` };
+
+    const { error: insertErr } = await supabase.from('card_documents').insert({
+      id: docId,
+      card_id: cardId,
+      [parentField]: parentId,
+      file_path: docPath,
+      original_filename: doc.originalFilename,
+      mime_type: doc.mimeType || null,
+      file_size_bytes: doc.fileSizeBytes,
+      label: doc.label || null,
+    });
+    if (insertErr) return { success: false, error: `Document record failed: ${insertErr.message}` };
+  }
+  return { success: true };
+}
+
+export async function addProvenanceEntry(
+  cardId: string,
+  entry: { source: string | null; acquiredDate: string | null; notes: string | null },
+  documents?: AddDocumentInput[]
+): Promise<{ success: boolean; error?: string }> {
+  const { data, error } = await supabase.from('card_provenance').insert({
+    card_id: cardId,
+    source: entry.source || null,
+    acquired_date: entry.acquiredDate || null,
+    notes: entry.notes || null,
+  }).select('id').single();
+  if (error || !data) return { success: false, error: error?.message ?? 'Insert failed' };
+
+  if (documents && documents.length > 0) {
+    const docResult = await uploadDocuments(cardId, data.id, 'provenance_id', documents);
+    if (!docResult.success) return docResult;
+  }
+  return { success: true };
+}
+
+export async function deleteProvenanceEntry(
+  id: string
+): Promise<{ success: boolean; error?: string }> {
+  const { error } = await supabase.from('card_provenance').delete().eq('id', id);
+  if (error) return { success: false, error: error.message };
+  return { success: true };
+}
+
+// ─── Add / Delete Price Observation ───────────────────────────────
+
+export async function addPriceObservation(
+  cardId: string,
+  obs: { priceUsd: number | null; priceType: string | null; source: string | null; observedDate: string | null },
+  documents?: AddDocumentInput[]
+): Promise<{ success: boolean; error?: string }> {
+  const { data, error } = await supabase.from('card_price_observations').insert({
+    card_id: cardId,
+    price_usd: obs.priceUsd,
+    price_type: obs.priceType || null,
+    source: obs.source || null,
+    observed_date: obs.observedDate || null,
+  }).select('id').single();
+  if (error || !data) return { success: false, error: error?.message ?? 'Insert failed' };
+
+  if (documents && documents.length > 0) {
+    const docResult = await uploadDocuments(cardId, data.id, 'price_observation_id', documents);
+    if (!docResult.success) return docResult;
+  }
+  return { success: true };
+}
+
+export async function deletePriceObservation(
+  id: string
+): Promise<{ success: boolean; error?: string }> {
+  const { error } = await supabase.from('card_price_observations').delete().eq('id', id);
   if (error) return { success: false, error: error.message };
   return { success: true };
 }
