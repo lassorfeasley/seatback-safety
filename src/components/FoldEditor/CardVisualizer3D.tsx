@@ -9,6 +9,7 @@ interface CardVisualizer3DProps {
   panels: Panel[];
   creases: Crease[];
   cover?: CoverDesignation;
+  pivotIndex?: number;
 }
 
 interface Spread {
@@ -23,7 +24,16 @@ const PAPER_THICKNESS = 0.6;
 const PANEL_HEIGHT = 250;
 const PANEL_WIDTH_FALLBACK = 180;
 
-export const CardVisualizer3D: React.FC<CardVisualizer3DProps> = ({ panels, creases, cover }) => {
+function defaultPivot(coverIdx: number, panelCount: number): number {
+  if (panelCount <= 1) return 0;
+  if (coverIdx <= 0) return 1;
+  if (coverIdx >= panelCount - 1) return panelCount - 2;
+  return coverIdx - 1;
+}
+
+export const CardVisualizer3D: React.FC<CardVisualizer3DProps> = ({
+  panels, creases, cover, pivotIndex,
+}) => {
   const [targetFoldState, setTargetFoldState] = useState<0 | 1>(1);
   const [rotation, setRotation] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
@@ -63,6 +73,8 @@ export const CardVisualizer3D: React.FC<CardVisualizer3DProps> = ({ panels, crea
     return result;
   }, [frontPanels, backPanels]);
 
+  const pivot = pivotIndex ?? defaultPivot(coverDesignation.spreadIndex, spreads.length);
+
   const frontCreases = useMemo(
     () => creases.filter((c) => c.side === 'front').sort((a, b) => a.between_panel - b.between_panel),
     [creases]
@@ -97,22 +109,17 @@ export const CardVisualizer3D: React.FC<CardVisualizer3DProps> = ({ panels, crea
   useEffect(() => {
     const el = cardRef.current;
     if (!el) return;
-    let rafId: number;
     const measure = () => {
       const w = el.scrollWidth;
       if (w > 0) {
         setMeasuredWidth(w);
-        if (!settled) {
-          rafId = requestAnimationFrame(() => {
-            requestAnimationFrame(() => setSettled(true));
-          });
-        }
+        if (!settled) setSettled(true);
       }
     };
     measure();
     const observer = new ResizeObserver(measure);
     observer.observe(el);
-    return () => { observer.disconnect(); cancelAnimationFrame(rafId); };
+    return () => { observer.disconnect(); };
   }, [settled]);
 
   const overallFoldProgress = useMemo(() => {
@@ -216,104 +223,151 @@ export const CardVisualizer3D: React.FC<CardVisualizer3DProps> = ({ panels, crea
 
   const totalWidth = measuredWidth || spreads.length * PANEL_WIDTH_FALLBACK;
   const singlePanelWidth = spreads.length > 0 ? totalWidth / spreads.length : PANEL_WIDTH_FALLBACK;
-  const currentWidth = totalWidth - (totalWidth - singlePanelWidth) * overallFoldProgress;
-  const centerX = currentWidth / 2;
+  const pivotCenterFlat = (pivot + 0.5) * singlePanelWidth;
+  const pivotCenterFolded = singlePanelWidth / 2;
+  const centerX = pivotCenterFolded + (pivotCenterFlat - pivotCenterFolded) * (1 - overallFoldProgress);
   const centerY = PANEL_HEIGHT / 2;
   const staticFlipY = coverDesignation.side === 'back' ? 180 : 0;
   const foldTransition = isSliderActive
     ? 'none'
     : `transform ${FOLD_DURATION}ms cubic-bezier(0.4, 0, 0.2, 1)`;
 
-  // ─── Recursive card rendering ─────────────────────────────────
+  // ─── Panel face rendering (shared by both chains) ─────────────
 
-  const renderSpread = (idx: number): React.ReactNode => {
-    const spread = spreads[idx];
-    if (!spread) return null;
-
-    const isLast = idx === spreads.length - 1;
-    const crease = frontCreases.find((c) => c.between_panel === idx);
-    const amount = creaseFolds[idx] ?? 0;
-    const angle = crease
-      ? (crease.fold_direction === 'forward' ? -1 : 1) * amount * 180
-      : 0;
-    const stacking = PAPER_THICKNESS + (spreads.length - 1 - idx) * 0.5;
-    const zShift = crease
-      ? (crease.fold_direction === 'forward' ? 1 : -1) * stacking * amount
-      : 0;
-
+  const renderPanelFaces = (spread: Spread) => {
     const hasFront = spread.frontPanel && spread.frontPanel.thumbnail_url;
     const hasBack = spread.backPanel && spread.backPanel.thumbnail_url;
 
     return (
-      <div key={spread.index} className="flex" style={{ transformStyle: 'preserve-3d' }}>
-        {/* Panel: a double-sided surface with front and back faces */}
-        <div className="relative flex-shrink-0" style={{ transformStyle: 'preserve-3d' }}>
-          {hasFront ? (
-            <img
-              src={spread.frontPanel!.thumbnail_url}
-              alt={`Front ${spread.index + 1}`}
-              className="w-auto object-contain pointer-events-none"
-              style={{
-                height: PANEL_HEIGHT,
-                backfaceVisibility: 'hidden',
-                transform: `translateZ(${PAPER_THICKNESS / 2}px)`,
-              }}
-              draggable={false}
-            />
-          ) : (
-            <div
-              className="flex items-center justify-center text-xs text-indigo-400 bg-indigo-500/10 border border-indigo-300/20 rounded-sm"
-              style={{
-                height: PANEL_HEIGHT,
-                width: PANEL_WIDTH_FALLBACK,
-                backfaceVisibility: 'hidden',
-                transform: `translateZ(${PAPER_THICKNESS / 2}px)`,
-              }}
-            >
-              F-S{spread.index + 1}
-            </div>
-          )}
-
-          {hasBack ? (
-            <img
-              src={spread.backPanel!.thumbnail_url}
-              alt={`Back ${spread.index + 1}`}
-              className="absolute inset-0 w-auto object-contain pointer-events-none"
-              style={{
-                height: PANEL_HEIGHT,
-                backfaceVisibility: 'hidden',
-                transform: `translateZ(${-PAPER_THICKNESS / 2}px) rotateY(180deg)`,
-              }}
-              draggable={false}
-            />
-          ) : (
-            <div
-              className="absolute inset-0 flex items-center justify-center text-xs text-violet-400 bg-violet-500/10 border border-violet-300/20 rounded-sm"
-              style={{
-                height: PANEL_HEIGHT,
-                width: PANEL_WIDTH_FALLBACK,
-                backfaceVisibility: 'hidden',
-                transform: `translateZ(${-PAPER_THICKNESS / 2}px) rotateY(180deg)`,
-              }}
-            >
-              B-S{spread.index + 1}
-            </div>
-          )}
-        </div>
-
-        {/* Hinge to next spread — nested inside current so the rotation cascades */}
-        {!isLast && (
-          <div
+      <div className="relative flex-shrink-0" style={{ transformStyle: 'preserve-3d' }}>
+        {hasFront ? (
+          <img
+            src={spread.frontPanel!.thumbnail_url}
+            alt={`Front ${spread.index + 1}`}
+            className="w-auto object-contain pointer-events-none"
             style={{
-              transformStyle: 'preserve-3d',
-              transformOrigin: 'left center',
-              transition: foldTransition,
-              transform: `translateZ(${zShift}px) rotateY(${angle}deg)`,
+              height: PANEL_HEIGHT,
+              backfaceVisibility: 'hidden',
+              transform: `translateZ(${PAPER_THICKNESS / 2}px)`,
+            }}
+            draggable={false}
+          />
+        ) : (
+          <div
+            className="flex items-center justify-center text-xs text-indigo-400 bg-indigo-500/10 border border-indigo-300/20 rounded-sm"
+            style={{
+              height: PANEL_HEIGHT,
+              width: PANEL_WIDTH_FALLBACK,
+              backfaceVisibility: 'hidden',
+              transform: `translateZ(${PAPER_THICKNESS / 2}px)`,
             }}
           >
-            {renderSpread(idx + 1)}
+            F-S{spread.index + 1}
           </div>
         )}
+
+        {hasBack ? (
+          <img
+            src={spread.backPanel!.thumbnail_url}
+            alt={`Back ${spread.index + 1}`}
+            className="absolute inset-0 w-auto object-contain pointer-events-none"
+            style={{
+              height: PANEL_HEIGHT,
+              backfaceVisibility: 'hidden',
+              transform: `translateZ(${-PAPER_THICKNESS / 2}px) rotateY(180deg)`,
+            }}
+            draggable={false}
+          />
+        ) : (
+          <div
+            className="absolute inset-0 flex items-center justify-center text-xs text-violet-400 bg-violet-500/10 border border-violet-300/20 rounded-sm"
+            style={{
+              height: PANEL_HEIGHT,
+              width: PANEL_WIDTH_FALLBACK,
+              backfaceVisibility: 'hidden',
+              transform: `translateZ(${-PAPER_THICKNESS / 2}px) rotateY(180deg)`,
+            }}
+          >
+            B-S{spread.index + 1}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  // Z-stacking: cover chain pushes toward viewer, other chain behind.
+  const coverOnRight = coverDesignation.spreadIndex > pivot;
+  const rightZSign = coverOnRight ? 1 : -1;
+  const leftZSign = coverOnRight ? -1 : 1;
+
+  // ─── Right chain: pivot+1 → last, hinges on LEFT edge ────────
+
+  const renderRightChain = (idx: number): React.ReactNode => {
+    if (idx >= spreads.length) return null;
+    const spread = spreads[idx];
+    if (!spread) return null;
+
+    const creaseIdx = idx - 1;
+    const crease = frontCreases.find((c) => c.between_panel === creaseIdx);
+    const amount = creaseFolds[creaseIdx] ?? 0;
+    const angle = crease
+      ? (crease.fold_direction === 'forward' ? -1 : 1) * amount * 180
+      : 0;
+    const dist = Math.abs(idx - pivot);
+    const zShift = rightZSign * (PAPER_THICKNESS + dist * 0.5) * amount;
+
+    return (
+      <div
+        key={`right-hinge-${creaseIdx}`}
+        style={{
+          transformStyle: 'preserve-3d',
+          transformOrigin: 'left center',
+          transition: foldTransition,
+          transform: `rotateY(${angle}deg)`,
+        }}
+      >
+        <div style={{ transformStyle: 'preserve-3d', transform: `translateZ(${zShift}px)`, transition: foldTransition }}>
+          <div className="flex" style={{ transformStyle: 'preserve-3d' }}>
+            {renderPanelFaces(spread)}
+            {idx < spreads.length - 1 && renderRightChain(idx + 1)}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // ─── Left chain: pivot-1 → 0, hinges on RIGHT edge ───────────
+
+  const renderLeftChain = (idx: number): React.ReactNode => {
+    if (idx < 0) return null;
+    const spread = spreads[idx];
+    if (!spread) return null;
+
+    const creaseIdx = idx;
+    const crease = frontCreases.find((c) => c.between_panel === creaseIdx);
+    const amount = creaseFolds[creaseIdx] ?? 0;
+    const angle = crease
+      ? (crease.fold_direction === 'forward' ? 1 : -1) * amount * 180
+      : 0;
+    const dist = Math.abs(idx - pivot);
+    const zShift = leftZSign * (PAPER_THICKNESS + dist * 0.5) * amount;
+
+    return (
+      <div
+        key={`left-hinge-${creaseIdx}`}
+        style={{
+          transformStyle: 'preserve-3d',
+          transformOrigin: 'right center',
+          transition: foldTransition,
+          transform: `rotateY(${angle}deg)`,
+        }}
+      >
+        <div style={{ transformStyle: 'preserve-3d', transform: `translateZ(${zShift}px)`, transition: foldTransition }}>
+          <div className="flex" style={{ transformStyle: 'preserve-3d' }}>
+            {idx > 0 && renderLeftChain(idx - 1)}
+            {renderPanelFaces(spread)}
+          </div>
+        </div>
       </div>
     );
   };
@@ -394,16 +448,19 @@ export const CardVisualizer3D: React.FC<CardVisualizer3DProps> = ({ panels, crea
               top: `calc(50% - ${centerY}px)`,
               transformStyle: 'preserve-3d',
               transformOrigin: `${centerX}px ${centerY}px`,
-              transition: !settled ? 'none' : ([
-                isDragging ? null : 'transform 300ms ease-out',
-                isSliderActive ? null : `left ${FOLD_DURATION}ms cubic-bezier(0.4, 0, 0.2, 1)`,
-                isSliderActive ? null : `transform-origin ${FOLD_DURATION}ms cubic-bezier(0.4, 0, 0.2, 1)`,
-              ].filter(Boolean).join(', ') || 'none'),
+              transition: !settled ? 'none' : (
+                isDragging ? 'none' : 'transform 300ms ease-out'
+              ),
               transform: `rotateX(${rotation.x}deg) rotateY(${rotation.y + staticFlipY}deg)`,
             }}
           >
             <div ref={cardRef} className="inline-flex" style={{ transformStyle: 'preserve-3d' }}>
-              {renderSpread(0)}
+              {/* Left chain: panels left of pivot */}
+              {pivot > 0 && renderLeftChain(pivot - 1)}
+              {/* Pivot panel: stationary spine */}
+              {spreads[pivot] && renderPanelFaces(spreads[pivot])}
+              {/* Right chain: panels right of pivot */}
+              {pivot < spreads.length - 1 && renderRightChain(pivot + 1)}
             </div>
           </div>
         </div>

@@ -77,6 +77,7 @@ export const SafetyCardWizard: React.FC<SafetyCardWizardProps> = ({
     cropHeight: null,
     creases: [],
     cover: { spreadIndex: 0, side: 'front' },
+    pivotIndex: null,
     activeSlot: null,
     selectedImageId: null,
   });
@@ -110,8 +111,9 @@ export const SafetyCardWizard: React.FC<SafetyCardWizardProps> = ({
           currentStep: 4,
           panelCount,
           slots,
-          creases: card.creases,
+          creases: card.creases.length > 0 ? card.creases : generateDefaultCreases(panelCount),
           cover: card.cover,
+          pivotIndex: card.pivotIndex,
         }));
       } else if (initialStep === 3) {
         const editData = await fetchCardForCropEditing(editCardId);
@@ -424,7 +426,15 @@ export const SafetyCardWizard: React.FC<SafetyCardWizardProps> = ({
   );
 
   const handleCoverChange = useCallback((spreadIndex: number, side: Side) => {
-    setState((prev) => ({ ...prev, cover: { spreadIndex, side } }));
+    setState((prev) => {
+      const next = { ...prev, cover: { spreadIndex, side } };
+      if (prev.pivotIndex === spreadIndex) next.pivotIndex = null;
+      return next;
+    });
+  }, []);
+
+  const handlePivotChange = useCallback((spreadIndex: number) => {
+    setState((prev) => ({ ...prev, pivotIndex: spreadIndex }));
   }, []);
 
   // ─── Export ────────────────────────────────────────────────────
@@ -483,7 +493,7 @@ export const SafetyCardWizard: React.FC<SafetyCardWizardProps> = ({
     setSaveProgress('Starting...');
 
     if (editCardId && initialStep === 4) {
-      const result = await updateCardFolds(editCardId, state.creases, state.cover);
+      const result = await updateCardFolds(editCardId, state.creases, state.cover, state.pivotIndex);
       setIsSaving(false);
       setSaveProgress('');
       if (result.success) {
@@ -610,6 +620,7 @@ export const SafetyCardWizard: React.FC<SafetyCardWizardProps> = ({
             onConfirmCrop={handleConfirmCrop}
             onClearSlot={handleClearSlot}
             onSetCropDimensions={handleSetCropDimensions}
+            onRotationChange={handleRotationChange}
             onBack={isEditMode ? (onBackToLibrary ?? (() => {})) : () => goToStep(2)}
             onContinue={isEditMode ? handleSave : () => goToStep(4)}
             continueLabel={isEditMode ? (isSaving ? 'Saving...' : 'Save Changes') : undefined}
@@ -622,9 +633,11 @@ export const SafetyCardWizard: React.FC<SafetyCardWizardProps> = ({
             slots={state.slots}
             creases={state.creases}
             cover={state.cover}
+            pivotIndex={state.pivotIndex}
             onCreaseChange={handleCreaseChange}
             onSequenceChange={handleSequenceChange}
             onCoverChange={handleCoverChange}
+            onPivotChange={handlePivotChange}
             onBack={isEditMode ? (onBackToLibrary ?? (() => {})) : () => goToStep(3)}
             onExport={handleExport}
             onSave={handleSave}

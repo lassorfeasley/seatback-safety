@@ -1,6 +1,6 @@
 import React, { useMemo, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
-import { ArrowLeft, Download, Save, Loader2, Star } from 'lucide-react';
+import { ArrowLeft, Download, Save, Loader2, Star, Anchor } from 'lucide-react';
 import { CreaseToggle } from '@/components/FoldEditor/CreaseToggle';
 import { CardVisualizer3D } from '@/components/FoldEditor/CardVisualizer3D';
 import type { FoldStepProps } from './types';
@@ -11,9 +11,11 @@ export const FoldStep: React.FC<FoldStepProps> = ({
   slots,
   creases,
   cover,
+  pivotIndex,
   onCreaseChange,
   onSequenceChange,
   onCoverChange,
+  onPivotChange,
   onBack,
   onExport,
   onSave,
@@ -22,6 +24,8 @@ export const FoldStep: React.FC<FoldStepProps> = ({
   saveLabel,
   hideExport,
 }) => {
+  const effectivePivot = pivotIndex ?? derivePivot(cover.spreadIndex, panelCount);
+
   const panels: Panel[] = useMemo(() => {
     return slots.map((slot) => ({
       id: `panel-${slot.side}-${slot.panelIndex}`,
@@ -48,7 +52,6 @@ export const FoldStep: React.FC<FoldStepProps> = ({
 
   const totalCreases = panelCount - 1;
 
-  // Compute per-panel aspect ratios from crop regions
   const getAspectRatio = useCallback(
     (panelIdx: number) => {
       const filledSlots = slots.filter((s) => s.cropRegion !== null);
@@ -75,6 +78,7 @@ export const FoldStep: React.FC<FoldStepProps> = ({
 
   const isCover = (panelIdx: number, side: Side) =>
     cover.spreadIndex === panelIdx && cover.side === side;
+  const isPivot = (panelIdx: number) => panelIdx === effectivePivot;
 
   return (
     <div className="flex flex-col h-full p-6 gap-4">
@@ -82,7 +86,7 @@ export const FoldStep: React.FC<FoldStepProps> = ({
         <div>
           <h3 className="text-2xl font-semibold tracking-tight">Fold Structure</h3>
           <p className="text-sm text-muted-foreground mt-1">
-            Define how the card folds. Click a panel to designate it as the cover.
+            Click a panel to set it as the cover or spine.
           </p>
         </div>
       </div>
@@ -102,6 +106,7 @@ export const FoldStep: React.FC<FoldStepProps> = ({
                   const crease = frontCreases.find((c) => c.between_panel === i);
                   const aspect = getAspectRatio(i);
                   const coverActive = isCover(i, 'front');
+                  const pivotActive = isPivot(i);
 
                   return (
                     <React.Fragment key={i}>
@@ -111,7 +116,9 @@ export const FoldStep: React.FC<FoldStepProps> = ({
                         thumbnailUrl={slot?.thumbnailUrl || null}
                         aspectRatio={aspect}
                         isCover={coverActive}
+                        isPivot={pivotActive}
                         onSetCover={() => onCoverChange(i, 'front')}
+                        onSetPivot={() => onPivotChange(i)}
                       />
                       {i < panelCount - 1 && crease && (
                         <div className="flex-shrink-0 flex items-center mx-1">
@@ -152,6 +159,7 @@ export const FoldStep: React.FC<FoldStepProps> = ({
                       : null;
                   const aspect = getAspectRatio(i);
                   const coverActive = isCover(i, 'back');
+                  const pivotActive = isPivot(i);
 
                   return (
                     <React.Fragment key={i}>
@@ -161,7 +169,9 @@ export const FoldStep: React.FC<FoldStepProps> = ({
                         thumbnailUrl={slot?.thumbnailUrl || null}
                         aspectRatio={aspect}
                         isCover={coverActive}
+                        isPivot={pivotActive}
                         onSetCover={() => onCoverChange(i, 'back')}
+                        onSetPivot={() => onPivotChange(i)}
                       />
                       {rawI < panelCount - 1 && crease && (
                         <div className="flex-shrink-0 flex items-center mx-1">
@@ -186,9 +196,9 @@ export const FoldStep: React.FC<FoldStepProps> = ({
           </div>
         </div>
 
-        {/* Right column: 3D preview (sticky so it stays visible while scrolling) */}
+        {/* Right column: 3D preview */}
         <div className="lg:sticky lg:top-4 lg:self-start">
-          <CardVisualizer3D panels={panels} creases={creases} cover={cover} />
+          <CardVisualizer3D panels={panels} creases={creases} cover={cover} pivotIndex={effectivePivot} />
         </div>
       </div>
 
@@ -221,6 +231,15 @@ export const FoldStep: React.FC<FoldStepProps> = ({
   );
 };
 
+// ─── Derive default pivot from cover position ─────────────────────
+
+function derivePivot(coverIdx: number, panelCount: number): number {
+  if (panelCount <= 1) return 0;
+  if (coverIdx <= 0) return 1;
+  if (coverIdx >= panelCount - 1) return panelCount - 2;
+  return coverIdx - 1;
+}
+
 // ─── FoldPanel ─────────────────────────────────────────────────────
 
 interface FoldPanelProps {
@@ -229,7 +248,9 @@ interface FoldPanelProps {
   thumbnailUrl: string | null;
   aspectRatio: number;
   isCover: boolean;
+  isPivot: boolean;
   onSetCover: () => void;
+  onSetPivot: () => void;
 }
 
 const FoldPanel: React.FC<FoldPanelProps> = ({
@@ -238,25 +259,25 @@ const FoldPanel: React.FC<FoldPanelProps> = ({
   thumbnailUrl,
   aspectRatio,
   isCover,
+  isPivot,
   onSetCover,
+  onSetPivot,
 }) => {
   const sideLabel = side === 'front' ? 'F' : 'B';
 
+  const borderClass = isCover
+    ? 'border-amber-400 ring-2 ring-amber-400/30'
+    : isPivot
+      ? 'border-emerald-400 ring-2 ring-emerald-400/30'
+      : 'border-muted hover:border-primary/40';
+
   return (
     <div
-      className="relative group cursor-pointer"
+      className="relative group"
       style={{ flex: `${aspectRatio} 0 0%`, minWidth: 80 }}
-      onClick={onSetCover}
-      title={isCover ? 'Cover panel' : 'Click to set as cover'}
     >
       <div
-        className={`
-          relative rounded-lg overflow-hidden border-2 transition-all
-          ${isCover
-            ? 'border-amber-400 ring-2 ring-amber-400/30'
-            : 'border-muted hover:border-primary/40'
-          }
-        `}
+        className={`relative rounded-lg overflow-hidden border-2 transition-all ${borderClass}`}
         style={{ aspectRatio: `${aspectRatio}` }}
       >
         {thumbnailUrl ? (
@@ -279,13 +300,35 @@ const FoldPanel: React.FC<FoldPanelProps> = ({
           </div>
         )}
 
-        {/* Hover overlay for non-cover panels */}
+        {/* Spine badge */}
+        {isPivot && !isCover && (
+          <div className="absolute top-1.5 left-1.5 flex items-center gap-1 bg-emerald-400 text-emerald-950 text-[10px] font-bold uppercase px-1.5 py-0.5 rounded-full shadow-sm">
+            <Anchor className="h-2.5 w-2.5" />
+            Spine
+          </div>
+        )}
+
+        {/* Hover overlay with two actions */}
         {!isCover && (
-          <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity rounded-lg">
-            <span className="text-white text-xs font-medium flex items-center gap-1">
-              <Star className="h-3 w-3" />
+          <div className="absolute inset-0 bg-black/50 flex flex-col items-center justify-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity rounded-lg">
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); onSetCover(); }}
+              className="text-white text-[10px] font-medium flex items-center gap-1 bg-white/20 hover:bg-white/30 rounded-full px-2 py-1 transition-colors"
+            >
+              <Star className="h-2.5 w-2.5" />
               Set as cover
-            </span>
+            </button>
+            {!isPivot && (
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); onSetPivot(); }}
+                className="text-white text-[10px] font-medium flex items-center gap-1 bg-white/20 hover:bg-white/30 rounded-full px-2 py-1 transition-colors"
+              >
+                <Anchor className="h-2.5 w-2.5" />
+                Set as spine
+              </button>
+            )}
           </div>
         )}
       </div>

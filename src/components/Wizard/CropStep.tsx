@@ -28,6 +28,7 @@ export const CropStep: React.FC<CropStepProps> = ({
   onConfirmCrop,
   onClearSlot,
   onSetCropDimensions,
+  onRotationChange,
   onBack,
   onContinue,
   continueLabel,
@@ -58,6 +59,7 @@ export const CropStep: React.FC<CropStepProps> = ({
         onCancelCrop={onCancelCrop}
         onConfirmCrop={onConfirmCrop}
         onSetCropDimensions={onSetCropDimensions}
+        onRotationChange={onRotationChange}
       />
     );
   }
@@ -326,6 +328,7 @@ interface CropSessionProps {
     thumbnailUrl: string
   ) => void;
   onSetCropDimensions: (width: number, height: number) => void;
+  onRotationChange: (imageId: string, rotation: number) => void;
 }
 
 const CropSession: React.FC<CropSessionProps> = ({
@@ -340,6 +343,7 @@ const CropSession: React.FC<CropSessionProps> = ({
   onCancelCrop,
   onConfirmCrop,
   onSetCropDimensions,
+  onRotationChange,
 }) => {
   // Local state for the crop region being drawn
   const [region, setRegion] = useState<CropRegion | null>(
@@ -438,6 +442,8 @@ const CropSession: React.FC<CropSessionProps> = ({
     // Every crop reports its dimensions; the wizard handler locks height on first call
     onSetCropDimensions(region.width, region.height);
 
+    onRotationChange(selectedImageId, localRotation);
+
     onConfirmCrop(
       activeSlot.panelIndex,
       activeSlot.side,
@@ -445,7 +451,7 @@ const CropSession: React.FC<CropSessionProps> = ({
       region,
       thumbnailUrl
     );
-  }, [region, selectedImageId, selectedImage, localRotation, activeSlot, onSetCropDimensions, onConfirmCrop]);
+  }, [region, selectedImageId, selectedImage, localRotation, activeSlot, onSetCropDimensions, onConfirmCrop, onRotationChange]);
 
   const sideLabel = activeSlot.side === 'front' ? 'Front' : 'Back';
   const sideColor = activeSlot.side === 'front' ? 'bg-blue-500' : 'bg-amber-500';

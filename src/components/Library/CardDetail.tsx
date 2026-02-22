@@ -19,9 +19,10 @@ import {
   Save,
   Scissors,
   FoldVertical,
-  ImageIcon,
   Sparkles,
   Check,
+  Upload,
+  Hash,
 } from 'lucide-react';
 import { CardVisualizer3D } from '@/components/FoldEditor/CardVisualizer3D';
 import { generateAndUploadOgImage } from '@/lib/ogImageGenerator';
@@ -31,6 +32,8 @@ import {
   fetchCardDetail,
   deleteCard,
   updateCardMetadata,
+  uploadScansToCard,
+  updatePanelCount,
   addProvenanceEntry,
   deleteProvenanceEntry,
   addPriceObservation,
@@ -60,6 +63,7 @@ interface CardDetailProps {
   onBack: () => void;
   onEditCrops?: () => void;
   onEditFolds?: () => void;
+  isNew?: boolean;
 }
 
 function formatBytes(bytes: number): string {
@@ -68,17 +72,94 @@ function formatBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-export const CardDetail: React.FC<CardDetailProps> = ({ cardId, onBack, onEditCrops, onEditFolds }) => {
+// ─── Shared UI Components ────────────────────────────────────────
+
+const SetupStep: React.FC<{
+  number: number;
+  title: string;
+  icon: React.ReactNode;
+  complete?: boolean;
+  disabled?: boolean;
+  summary?: string;
+  children: React.ReactNode;
+}> = ({ number, title, icon, complete, disabled, summary, children }) => (
+  <section className={`rounded-lg border p-4 ${disabled ? 'opacity-50' : ''}`}>
+    <div className="flex items-center gap-2.5 mb-3">
+      <div className={`flex items-center justify-center w-6 h-6 rounded-full text-xs font-bold flex-shrink-0 ${
+        complete
+          ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900 dark:text-emerald-300'
+          : 'bg-muted text-muted-foreground'
+      }`}>
+        {complete ? <Check className="h-3.5 w-3.5" /> : number}
+      </div>
+      <div className="flex items-center gap-1.5 flex-1 min-w-0">
+        {icon}
+        <span className="text-sm font-medium">{title}</span>
+      </div>
+      {summary && (
+        <span className="text-xs text-muted-foreground flex-shrink-0">{summary}</span>
+      )}
+    </div>
+    <div className="pl-[34px]">{children}</div>
+  </section>
+);
+
+const SectionHeading: React.FC<{ children: React.ReactNode; noMargin?: boolean }> = ({ children, noMargin }) => (
+  <h2 className={`text-base font-medium text-muted-foreground ${noMargin ? '' : 'mb-4'}`}>{children}</h2>
+);
+
+const EditorField: React.FC<{ label: string; children: React.ReactNode }> = ({ label, children }) => (
+  <div className="flex flex-col gap-1">
+    <label className="text-xs font-medium text-muted-foreground">{label}</label>
+    {children}
+  </div>
+);
+
+const InlineSuggestion: React.FC<{
+  value: string | null | undefined;
+  label?: string;
+  accepted: boolean;
+  onAccept: () => void;
+}> = ({ value, label, accepted, onAccept }) => {
+  if (!value) return null;
+  return (
+    <div className="flex items-center gap-1.5 mt-1 rounded-md bg-primary/5 border border-primary/15 px-2 py-1">
+      <Sparkles className="h-3 w-3 text-primary/60 flex-shrink-0" />
+      <span className="text-xs text-foreground/80 truncate flex-1">
+        {label ? `${label}: ` : ''}{value}
+      </span>
+      {accepted ? (
+        <span className="flex items-center gap-0.5 text-xs text-emerald-600 flex-shrink-0">
+          <Check className="h-3 w-3" /> Applied
+        </span>
+      ) : (
+        <button
+          type="button"
+          onClick={onAccept}
+          className="flex items-center gap-0.5 text-xs text-primary hover:underline flex-shrink-0 font-medium"
+        >
+          Apply
+        </button>
+      )}
+    </div>
+  );
+};
+
+// ─── Main Component ──────────────────────────────────────────────
+
+export const CardDetail: React.FC<CardDetailProps> = ({ cardId, onBack, onEditCrops, onEditFolds, isNew }) => {
   const [card, setCard] = useState<CardDetailData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
   const [showScans, setShowScans] = useState(false);
-  const [isEditing, setIsEditing] = useState(false);
+  const [isEditing, setIsEditing] = useState(!!isNew);
   const [saving, setSaving] = useState(false);
   const [showAddProvenance, setShowAddProvenance] = useState(false);
   const [showAddPrice, setShowAddPrice] = useState(false);
+  const [uploadingScans, setUploadingScans] = useState(false);
+  const scanFileInputRef = useRef<HTMLInputElement>(null);
 
   const refreshCard = useCallback(async () => {
     const data = await fetchCardDetail(cardId);
@@ -98,6 +179,28 @@ export const CardDetail: React.FC<CardDetailProps> = ({ cardId, onBack, onEditCr
       })
       .finally(() => setLoading(false));
   }, [cardId]);
+
+  const handleScanUpload = useCallback(async (files: FileList) => {
+    const imageFiles = Array.from(files).filter((f) => f.type.startsWith('image/'));
+    if (imageFiles.length === 0) return;
+    setUploadingScans(true);
+    const result = await uploadScansToCard(cardId, imageFiles);
+    if (result.success) {
+      await refreshCard();
+    } else {
+      alert(`Upload failed: ${result.error}`);
+    }
+    setUploadingScans(false);
+  }, [cardId, refreshCard]);
+
+  const handlePanelCountChange = useCallback(async (count: number) => {
+    const result = await updatePanelCount(cardId, count);
+    if (result.success) {
+      await refreshCard();
+    } else {
+      alert(`Failed to update panel count: ${result.error}`);
+    }
+  }, [cardId, refreshCard]);
 
   const handleSaveMetadata = useCallback(async (update: CardMetadataUpdate) => {
     setSaving(true);
@@ -139,10 +242,34 @@ export const CardDetail: React.FC<CardDetailProps> = ({ cardId, onBack, onEditCr
     if (result.success && result.url) {
       setOgImageUrl(result.url + '?t=' + Date.now());
       setOgExists(true);
-    } else {
-      alert(`OG image failed: ${result.error}`);
     }
   }, [card, cardId]);
+
+  // Auto-generate OG image when card has complete crops + folds
+  const ogFingerprintRef = useRef<string>('');
+  useEffect(() => {
+    if (!card || generatingOg) return;
+    const hasCrops = card.panels.length >= (card.panel_count ?? 0) * 2;
+    const hasFolds = card.creases.length > 0;
+    if (!hasCrops || !hasFolds) return;
+
+    const fingerprint = [
+      card.panels.map(p => p.id).join(','),
+      card.creases.map(c => `${c.side}:${c.between_panel}:${c.fold_direction}:${c.unfold_sequence}`).join(','),
+      `${card.cover.side}:${card.cover.spreadIndex}`,
+    ].join('|');
+
+    if (fingerprint === ogFingerprintRef.current) return;
+    ogFingerprintRef.current = fingerprint;
+    handleGenerateOg();
+  }, [card, generatingOg, handleGenerateOg]);
+
+  const handleBack = useCallback(async () => {
+    if (isNew && card && card.panels.length === 0 && card.scans.length === 0 && !card.title) {
+      await deleteCard(cardId);
+    }
+    onBack();
+  }, [isNew, card, cardId, onBack]);
 
   const handleDelete = async () => {
     if (!confirm('Delete this card and all its images? This cannot be undone.')) return;
@@ -191,8 +318,11 @@ export const CardDetail: React.FC<CardDetailProps> = ({ cardId, onBack, onEditCr
     .filter((p) => p.side === 'back')
     .sort((a, b) => a.panel_index - b.panel_index);
 
+  const panelCount = card.panel_count ?? 3;
   const panelsPerSide = card.panel_count ? Math.ceil(card.panel_count / 2) : frontPanels.length;
   const hasPanels = frontPanels.length > 0 || backPanels.length > 0;
+  const hasScans = card.scans.length > 0;
+  const allCropsComplete = hasPanels && card.panels.length >= panelCount * 2;
   const createdDate = card.created_at
     ? new Date(card.created_at).toLocaleDateString(undefined, {
         month: 'long',
@@ -208,7 +338,7 @@ export const CardDetail: React.FC<CardDetailProps> = ({ cardId, onBack, onEditCr
           <div className="flex items-center justify-between gap-4">
             <div className="flex items-center gap-3 min-w-0">
               <button
-                onClick={onBack}
+                onClick={handleBack}
                 className="text-muted-foreground hover:text-foreground transition-colors flex-shrink-0"
               >
                 <ArrowLeft className="h-5 w-5" />
@@ -232,22 +362,6 @@ export const CardDetail: React.FC<CardDetailProps> = ({ cardId, onBack, onEditCr
                 {isEditing ? <XIcon className="h-4 w-4" /> : <Pencil className="h-4 w-4" />}
                 {isEditing ? 'Cancel' : 'Edit'}
               </Button>
-              {card.panels.length > 0 && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleGenerateOg}
-                  disabled={generatingOg || isEditing}
-                  className="gap-1.5"
-                >
-                  {generatingOg ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <ImageIcon className="h-4 w-4" />
-                  )}
-                  {generatingOg ? 'Generating...' : 'OG Image'}
-                </Button>
-              )}
               <Button
                 variant="ghost"
                 size="sm"
@@ -271,47 +385,168 @@ export const CardDetail: React.FC<CardDetailProps> = ({ cardId, onBack, onEditCr
         <div className="max-w-6xl mx-auto px-6 py-6 flex flex-col gap-8">
           <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_340px] gap-8">
             <div className="min-w-0 flex flex-col gap-6">
-              {hasPanels ? (
+              {/* ── Card Visualizer (only when all crops are complete) ── */}
+              {allCropsComplete && (
                 <CardVisualizer3D
                   panels={card.panels}
                   creases={card.creases}
                   cover={card.cover}
+                  pivotIndex={card.pivotIndex ?? undefined}
                 />
-              ) : card.preview_url ? (
-                <div className="rounded-lg border bg-card overflow-hidden">
-                  <img
-                    src={card.preview_url}
-                    alt={card.title || 'Card preview'}
-                    className="w-full h-auto max-h-[500px] object-contain bg-gradient-to-b from-slate-100 to-slate-200 dark:from-slate-800 dark:to-slate-900"
-                  />
-                </div>
-              ) : (
-                <div className="rounded-lg border bg-card flex items-center justify-center min-h-[300px]">
-                  <div className="text-center">
-                    <Layers className="h-10 w-10 text-muted-foreground/30 mx-auto mb-2" />
-                    <p className="text-sm text-muted-foreground">No panel images</p>
-                  </div>
-                </div>
               )}
 
+              {/* ── Step 1: Upload Scans ────────────────────────────── */}
+              <SetupStep
+                number={1}
+                title="Upload Scans"
+                icon={<Upload className="h-4 w-4" />}
+                complete={hasScans}
+                summary={hasScans ? `${card.scans.length} scan${card.scans.length !== 1 ? 's' : ''} uploaded` : undefined}
+              >
+                {isEditing ? (
+                  <>
+                    <div
+                      className="flex flex-col items-center justify-center py-6 border-2 border-dashed border-muted-foreground/20 rounded-lg cursor-pointer hover:border-muted-foreground/40 hover:bg-muted/20 transition-colors"
+                      onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                      onDrop={(e) => { e.preventDefault(); e.stopPropagation(); if (e.dataTransfer.files.length > 0) handleScanUpload(e.dataTransfer.files); }}
+                      onClick={() => scanFileInputRef.current?.click()}
+                    >
+                      {uploadingScans ? (
+                        <>
+                          <Loader2 className="h-6 w-6 text-muted-foreground/40 mb-1.5 animate-spin" />
+                          <p className="text-sm font-medium text-muted-foreground">Uploading...</p>
+                        </>
+                      ) : (
+                        <>
+                          <Upload className="h-6 w-6 text-muted-foreground/40 mb-1.5" />
+                          <p className="text-sm font-medium text-muted-foreground">
+                            {hasScans ? 'Add more scans' : 'Drop scans here or click to browse'}
+                          </p>
+                          <p className="text-xs text-muted-foreground/60 mt-0.5">JPG, PNG, TIFF, or WebP</p>
+                        </>
+                      )}
+                    </div>
+                    <input
+                      ref={scanFileInputRef}
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      className="hidden"
+                      onChange={(e) => { if (e.target.files) handleScanUpload(e.target.files); if (scanFileInputRef.current) scanFileInputRef.current.value = ''; }}
+                    />
+                    {hasScans && (
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {card.scans.map((scan) => (
+                          <div key={scan.id} className="flex items-center gap-1.5 rounded-md border bg-muted px-2.5 py-1.5">
+                            <Layers className="h-3.5 w-3.5 text-muted-foreground/50 flex-shrink-0" />
+                            <span className="text-xs text-muted-foreground truncate max-w-[140px]">
+                              {scan.original_filename ?? 'Scan'}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </>
+                ) : hasScans ? (
+                  <p className="text-sm text-muted-foreground">{card.scans.length} scan{card.scans.length !== 1 ? 's' : ''}</p>
+                ) : (
+                  <p className="text-sm text-muted-foreground/50">No scans uploaded. Enter edit mode to add scans.</p>
+                )}
+              </SetupStep>
+
+              {/* ── Step 2: Panel Count ─────────────────────────────── */}
+              <SetupStep
+                number={2}
+                title="Panel Count"
+                icon={<Hash className="h-4 w-4" />}
+                complete={hasScans}
+                disabled={!hasScans}
+                summary={hasScans ? `${panelCount} panels per side` : undefined}
+              >
+                {isEditing ? (
+                  <div className="flex items-center gap-3">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => { if (panelCount > 1) handlePanelCountChange(panelCount - 1); }}
+                      disabled={!hasScans || panelCount <= 1}
+                    >
+                      <span className="text-lg leading-none">−</span>
+                    </Button>
+                    <span className="text-lg font-semibold tabular-nums w-8 text-center">{panelCount}</span>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handlePanelCountChange(panelCount + 1)}
+                      disabled={!hasScans}
+                    >
+                      <Plus className="h-4 w-4" />
+                    </Button>
+                    <span className="text-sm text-muted-foreground">panels per side</span>
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground">{panelCount} panels per side</p>
+                )}
+              </SetupStep>
+
+              {/* ── Step 3: Define Crops ────────────────────────────── */}
+              <SetupStep
+                number={3}
+                title="Define Crops"
+                icon={<Scissors className="h-4 w-4" />}
+                complete={allCropsComplete}
+                disabled={!hasScans}
+                summary={hasPanels ? `${card.panels.length} of ${panelCount * 2} panels cropped` : undefined}
+              >
+                {hasScans && onEditCrops ? (
+                  <Button variant="outline" size="sm" onClick={onEditCrops} className="gap-1.5" disabled={!hasScans}>
+                    <Scissors className="h-3.5 w-3.5" />
+                    {hasPanels ? 'Edit Crops' : 'Define Crops'}
+                  </Button>
+                ) : (
+                  <p className="text-sm text-muted-foreground/50">Upload scans first</p>
+                )}
+              </SetupStep>
+
+              {/* ── Step 4: Define Folds ────────────────────────────── */}
+              <SetupStep
+                number={4}
+                title="Define Folds"
+                icon={<FoldVertical className="h-4 w-4" />}
+                complete={allCropsComplete && card.creases.length > 0}
+                disabled={!hasPanels}
+              >
+                {hasPanels && onEditFolds ? (
+                  <Button variant="outline" size="sm" onClick={onEditFolds} className="gap-1.5" disabled={!hasPanels}>
+                    <FoldVertical className="h-3.5 w-3.5" />
+                    Edit Folds
+                  </Button>
+                ) : (
+                  <p className="text-sm text-muted-foreground/50">Define crops first</p>
+                )}
+              </SetupStep>
+
+              {/* ── Panel Spreads ───────────────────────────────────── */}
               {hasPanels && (
                 <section>
                   <div className="flex items-center justify-between mb-4">
                     <SectionHeading noMargin>Panel Spreads</SectionHeading>
-                    <div className="flex items-center gap-1.5">
-                      {onEditCrops && (
-                        <Button variant="outline" size="sm" onClick={onEditCrops} className="gap-1.5">
-                          <Scissors className="h-3.5 w-3.5" />
-                          Edit Crops
-                        </Button>
-                      )}
-                      {onEditFolds && (
-                        <Button variant="outline" size="sm" onClick={onEditFolds} className="gap-1.5">
-                          <FoldVertical className="h-3.5 w-3.5" />
-                          Edit Folds
-                        </Button>
-                      )}
-                    </div>
+                    {!isEditing && (
+                      <div className="flex items-center gap-1.5">
+                        {onEditCrops && (
+                          <Button variant="outline" size="sm" onClick={onEditCrops} className="gap-1.5">
+                            <Scissors className="h-3.5 w-3.5" />
+                            Edit Crops
+                          </Button>
+                        )}
+                        {onEditFolds && (
+                          <Button variant="outline" size="sm" onClick={onEditFolds} className="gap-1.5">
+                            <FoldVertical className="h-3.5 w-3.5" />
+                            Edit Folds
+                          </Button>
+                        )}
+                      </div>
+                    )}
                   </div>
                   <SpreadRow
                     label="Front"
@@ -333,15 +568,22 @@ export const CardDetail: React.FC<CardDetailProps> = ({ cardId, onBack, onEditCr
                 </section>
               )}
 
-              {ogExists && ogImageUrl && (
+              {(ogExists && ogImageUrl || generatingOg) && (
                 <section>
                   <SectionHeading>OG Image</SectionHeading>
                   <div className="rounded-lg border bg-card overflow-hidden">
-                    <img
-                      src={ogImageUrl}
-                      alt="Generated Open Graph image"
-                      className="w-full h-auto"
-                    />
+                    {generatingOg ? (
+                      <div className="flex items-center justify-center gap-2 py-8 text-sm text-muted-foreground">
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Generating OG image…
+                      </div>
+                    ) : (
+                      <img
+                        src={ogImageUrl!}
+                        alt="Generated Open Graph image"
+                        className="w-full h-auto"
+                      />
+                    )}
                   </div>
                 </section>
               )}
@@ -915,49 +1157,6 @@ const MetadataEditor: React.FC<MetadataEditorProps> = ({ card, onSave, onCancel,
     </div>
   );
 };
-
-const EditorField: React.FC<{ label: string; children: React.ReactNode }> = ({ label, children }) => (
-  <div className="flex flex-col gap-1">
-    <label className="text-xs font-medium text-muted-foreground">{label}</label>
-    {children}
-  </div>
-);
-
-const InlineSuggestion: React.FC<{
-  value: string | null | undefined;
-  label?: string;
-  accepted: boolean;
-  onAccept: () => void;
-}> = ({ value, label, accepted, onAccept }) => {
-  if (!value) return null;
-  return (
-    <div className="flex items-center gap-1.5 mt-1 rounded-md bg-primary/5 border border-primary/15 px-2 py-1">
-      <Sparkles className="h-3 w-3 text-primary/60 flex-shrink-0" />
-      <span className="text-xs text-foreground/80 truncate flex-1">
-        {label ? `${label}: ` : ''}{value}
-      </span>
-      {accepted ? (
-        <span className="flex items-center gap-0.5 text-xs text-emerald-600 flex-shrink-0">
-          <Check className="h-3 w-3" /> Applied
-        </span>
-      ) : (
-        <button
-          type="button"
-          onClick={onAccept}
-          className="flex items-center gap-0.5 text-xs text-primary hover:underline flex-shrink-0 font-medium"
-        >
-          Apply
-        </button>
-      )}
-    </div>
-  );
-};
-
-// ─── Shared Section Components ───────────────────────────────────
-
-const SectionHeading: React.FC<{ children: React.ReactNode; noMargin?: boolean }> = ({ children, noMargin }) => (
-  <h2 className={`text-base font-medium text-muted-foreground ${noMargin ? '' : 'mb-4'}`}>{children}</h2>
-);
 
 const CollapsibleHeading: React.FC<{
   children: React.ReactNode;

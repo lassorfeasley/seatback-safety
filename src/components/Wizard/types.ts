@@ -101,6 +101,7 @@ export interface WizardState {
   cropHeight: number | null;
   creases: Crease[];
   cover: CoverDesignation;
+  pivotIndex: number | null;
 
   // UI state for step 3 (crop session)
   activeSlot: { panelIndex: number; side: PanelSide } | null;
@@ -147,6 +148,7 @@ export interface CropStepProps {
   ) => void;
   onClearSlot: (panelIndex: number, side: PanelSide) => void;
   onSetCropDimensions: (width: number, height: number) => void;
+  onRotationChange: (imageId: string, rotation: number) => void;
   onBack: () => void;
   onContinue: () => void;
   continueLabel?: string;
@@ -157,9 +159,11 @@ export interface FoldStepProps {
   slots: PanelSlot[];
   creases: Crease[];
   cover: CoverDesignation;
+  pivotIndex: number | null;
   onCreaseChange: (betweenPanel: number, direction: 'forward' | 'backward', side: Side) => void;
   onSequenceChange: (betweenPanel: number, sequence: number, side: Side) => void;
   onCoverChange: (spreadIndex: number, side: Side) => void;
+  onPivotChange: (spreadIndex: number) => void;
   onBack: () => void;
   onExport: () => void;
   onSave: () => void;

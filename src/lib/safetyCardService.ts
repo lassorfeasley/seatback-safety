@@ -14,6 +14,7 @@ export interface CardSummary {
   cover_spread_index: number;
   thumbnail_url: string | null;
   preview_url: string | null;
+  og_url: string | null;
   airline_name: string | null;
   aircraft_label: string | null;
 }
@@ -85,6 +86,7 @@ export interface CardDetailData {
   panels: Panel[];
   creases: Crease[];
   cover: CoverDesignation;
+  pivotIndex: number | null;
   displayUrls: Record<string, string>;
   fullUrls: Record<string, string>;
   scans: ScanInfo[];
@@ -210,6 +212,7 @@ export async function saveCardToLibrary(
         crop_height: state.cropHeight,
         cover_spread_index: state.cover.spreadIndex,
         cover_side: state.cover.side,
+        pivot_index: state.pivotIndex,
       })
       .select('id')
       .single();
@@ -620,6 +623,7 @@ export async function fetchCards(): Promise<CardSummary[]> {
 
     const hasImages = thumbnailUrl != null;
     const previewUrl = hasImages ? derivativePublicUrl(`${card.id}/preview.jpg`) : null;
+    const ogUrl = hasImages ? derivativePublicUrl(`${card.id}/og.jpg`) : null;
 
     return {
       id: card.id as string,
@@ -630,6 +634,7 @@ export async function fetchCards(): Promise<CardSummary[]> {
       cover_spread_index: card.cover_spread_index as number,
       thumbnail_url: thumbnailUrl,
       preview_url: previewUrl,
+      og_url: ogUrl,
       airline_name: (airline?.name as string) ?? null,
       aircraft_label: label,
     };
@@ -642,7 +647,7 @@ export async function fetchCardDetail(cardId: string): Promise<CardDetailData | 
       .from('safety_cards')
       .select(`
         id, title, panel_count, crop_width, crop_height,
-        cover_spread_index, cover_side, created_at,
+        cover_spread_index, cover_side, pivot_index, created_at,
         published_year, revision, language, notes, airline_id,
         airlines ( name ),
         aircraft_variants ( name, aircraft_models ( name, aircraft_manufacturers ( name ) ) ),
@@ -929,6 +934,7 @@ export async function fetchCardDetail(cardId: string): Promise<CardDetailData | 
       spreadIndex: card.cover_spread_index,
       side: card.cover_side as Side,
     },
+    pivotIndex: card.pivot_index ?? null,
     displayUrls,
     fullUrls,
     scans,
@@ -1000,7 +1006,8 @@ export async function updateCardMetadata(
 export async function updateCardFolds(
   cardId: string,
   creases: Crease[],
-  cover: { spreadIndex: number; side: Side }
+  cover: { spreadIndex: number; side: Side },
+  pivotIndex: number | null
 ): Promise<{ success: boolean; error?: string }> {
   try {
     const { error: cardErr } = await supabase
@@ -1008,6 +1015,7 @@ export async function updateCardFolds(
       .update({
         cover_spread_index: cover.spreadIndex,
         cover_side: cover.side,
+        pivot_index: pivotIndex,
       })
       .eq('id', cardId);
     if (cardErr) return { success: false, error: cardErr.message };
@@ -1428,6 +1436,96 @@ export async function deletePriceObservation(
   id: string
 ): Promise<{ success: boolean; error?: string }> {
   const { error } = await supabase.from('card_price_observations').delete().eq('id', id);
+  if (error) return { success: false, error: error.message };
+  return { success: true };
+}
+
+// ─── Create Blank Card ───────────────────────────────────────────
+
+export async function createBlankCard(): Promise<{ cardId: string | null; error?: string }> {
+  const { data: card, error: cardErr } = await supabase
+    .from('safety_cards')
+    .insert({ panel_count: 3 })
+    .select('id')
+    .single();
+
+  if (cardErr || !card) {
+    return { cardId: null, error: cardErr?.message ?? 'Failed to create card' };
+  }
+
+  const cardId = card.id as string;
+
+  const { error: sidesErr } = await supabase
+    .from('card_sides')
+    .insert([
+      { card_id: cardId, side: 'front' },
+      { card_id: cardId, side: 'back' },
+    ]);
+
+  if (sidesErr) {
+    await supabase.from('safety_cards').delete().eq('id', cardId);
+    return { cardId: null, error: sidesErr.message };
+  }
+
+  return { cardId };
+}
+
+// ─── Upload Scans to Existing Card ───────────────────────────────
+
+export async function uploadScansToCard(
+  cardId: string,
+  files: File[]
+): Promise<{ success: boolean; error?: string }> {
+  for (const file of files) {
+    const sha256 = await computeSha256(file);
+    const ext = fileExtension(file);
+    const scanId = crypto.randomUUID();
+    const storagePath = `${cardId}/${scanId}.${ext}`;
+
+    const img = await loadImage(URL.createObjectURL(file));
+    const width = img.naturalWidth;
+    const height = img.naturalHeight;
+
+    const { error: uploadErr } = await supabase.storage
+      .from('scans')
+      .upload(storagePath, file, { contentType: file.type, upsert: false });
+
+    if (uploadErr) {
+      return { success: false, error: `Upload failed: ${uploadErr.message}` };
+    }
+
+    const { error: dbErr } = await supabase.from('card_scans').insert({
+      id: scanId,
+      card_id: cardId,
+      dpi: 600,
+      width_px: width,
+      height_px: height,
+      file_path: storagePath,
+      original_filename: file.name,
+      mime_type: file.type,
+      file_size_bytes: file.size,
+      sha256_hash: sha256,
+    });
+
+    if (dbErr) {
+      return { success: false, error: `DB insert failed: ${dbErr.message}` };
+    }
+  }
+
+  return { success: true };
+}
+
+// ─── Update Panel Count ──────────────────────────────────────────
+
+export async function updatePanelCount(
+  cardId: string,
+  panelCount: number
+): Promise<{ success: boolean; error?: string }> {
+  const { error } = await supabase
+    .from('safety_cards')
+    .update({ panel_count: panelCount })
+    .eq('id', cardId);
+
   if (error) return { success: false, error: error.message };
   return { success: true };
 }

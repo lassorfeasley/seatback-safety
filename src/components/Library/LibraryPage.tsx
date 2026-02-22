@@ -11,6 +11,7 @@ interface LibraryPageProps {
 export const LibraryPage: React.FC<LibraryPageProps> = ({ onNewCard, onSelectCard }) => {
   const [cards, setCards] = useState<CardSummary[]>([]);
   const [loading, setLoading] = useState(true);
+  const [creating, setCreating] = useState(false);
 
   useEffect(() => {
     fetchCards().then((data) => {
@@ -24,9 +25,9 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onNewCard, onSelectCar
       <header className="flex-shrink-0 bg-card border-b">
         <div className="max-w-7xl mx-auto flex items-center justify-between px-6 py-5">
           <h1 className="text-2xl font-semibold tracking-tight">Safety Card Library</h1>
-          <Button onClick={onNewCard} size="sm" className="gap-1.5">
-            <Plus className="h-4 w-4" />
-            New Card
+          <Button onClick={() => { setCreating(true); onNewCard(); }} size="sm" className="gap-1.5" disabled={creating}>
+            {creating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+            {creating ? 'Creating...' : 'New Card'}
           </Button>
         </div>
       </header>
@@ -46,9 +47,9 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onNewCard, onSelectCar
                   Create your first safety card to get started.
                 </p>
               </div>
-              <Button onClick={onNewCard} className="gap-2 mt-2">
-                <Plus className="h-4 w-4" />
-                New Card
+              <Button onClick={() => { setCreating(true); onNewCard(); }} className="gap-2 mt-2" disabled={creating}>
+                {creating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+                {creating ? 'Creating...' : 'New Card'}
               </Button>
             </div>
           ) : (
@@ -67,7 +68,9 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onNewCard, onSelectCar
 // ─── Card Tile ───────────────────────────────────────────────────
 
 const CardTile: React.FC<{ card: CardSummary; onClick: () => void }> = ({ card, onClick }) => {
-  const [imgSrc, setImgSrc] = React.useState(card.preview_url || card.thumbnail_url);
+  const fallbacks = [card.og_url, card.thumbnail_url].filter(Boolean) as string[];
+  const [imgSrc, setImgSrc] = React.useState(fallbacks[0] ?? null);
+  const fallbackIdx = React.useRef(0);
 
   return (
     <button
@@ -84,8 +87,9 @@ const CardTile: React.FC<{ card: CardSummary; onClick: () => void }> = ({ card, 
             className="absolute inset-0 w-full h-full object-cover
                        transition-transform group-hover:scale-[1.03]"
             onError={() => {
-              if (imgSrc !== card.thumbnail_url && card.thumbnail_url) {
-                setImgSrc(card.thumbnail_url);
+              fallbackIdx.current += 1;
+              if (fallbackIdx.current < fallbacks.length) {
+                setImgSrc(fallbacks[fallbackIdx.current]);
               } else {
                 setImgSrc(null);
               }

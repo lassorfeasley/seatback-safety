@@ -26,6 +26,7 @@ export interface FoldEditorData {
   panels: Panel[];
   creases: Crease[];
   cover?: CoverDesignation;
+  pivotIndex?: number;
 }
 
 export interface FoldEditorProps {
