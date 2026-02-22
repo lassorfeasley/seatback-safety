@@ -582,7 +582,7 @@ export const SafetyCardWizard: React.FC<SafetyCardWizardProps> = ({
       </div>
 
       {/* Step content — fills remaining height */}
-      <div className="flex-1 min-h-0 max-w-7xl w-full mx-auto">
+      <div className="flex-1 min-h-0 w-full" style={{ maxWidth: state.currentStep === 3 ? 'none' : '80rem', margin: '0 auto' }}>
         {state.currentStep === 1 && !isEditMode && (
           <ImageLibraryStep
             images={state.images}

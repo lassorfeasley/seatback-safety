@@ -22,14 +22,16 @@ export interface CropCanvasProps {
   lockDimensions: boolean;
   lockedWidth: number | null;
   lockedHeight: number | null;
-  constrainHeight?: number | null; // Lock height only (width remains free-draw). Ignored when lockDimensions is true.
+  constrainHeight?: number | null;
   rotation: number;
-  singleCropMode?: boolean; // When true: drawing replaces existing region, no collision detection
+  singleCropMode?: boolean;
+  straightenMode?: boolean;
   onRegionAdd: (region: CropRegion) => void;
   onRegionUpdate: (region: CropRegion) => void;
   onRegionSelect: (id: string | null) => void;
   onRegionDelete: (id: string) => void;
   onImageLoad: (dimensions: ImageDimensions) => void;
+  onStraighten?: (angleDelta: number) => void;
 }
 
 export interface ScanControlsProps {

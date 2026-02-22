@@ -1,9 +1,9 @@
 import React, { useRef, useState, useEffect, useCallback, useMemo } from 'react';
-import { Stage, Layer, Image as KonvaImage, Rect, Transformer, Group, Line } from 'react-konva';
+import { Stage, Layer, Image as KonvaImage, Rect, Transformer, Group, Line, Circle } from 'react-konva';
 import type Konva from 'konva';
 import type { CropCanvasProps, CropRegion } from './types';
 
-type GuideMode = 'off' | 'crosshair' | 'grid';
+type GuideMode = 'off' | 'grid';
 
 const MIN_REGION_SIZE = 20;
 const ZOOM_SCALE_BY = 1.1;
@@ -21,11 +21,13 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
   constrainHeight,
   rotation,
   singleCropMode = false,
+  straightenMode = false,
   onRegionAdd,
   onRegionUpdate,
   onRegionSelect,
   onRegionDelete,
   onImageLoad,
+  onStraighten,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<Konva.Stage>(null);
@@ -40,8 +42,20 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
   const [drawStart, setDrawStart] = useState<{ x: number; y: number } | null>(null);
   const [drawingRegion, setDrawingRegion] = useState<CropRegion | null>(null);
 
-  // Alignment guides
-  const [guideMode, setGuideMode] = useState<GuideMode>('crosshair');
+  // Alignment guides — grid on by default
+  const [guideMode, setGuideMode] = useState<GuideMode>('grid');
+
+  // Straighten tool — two-point edge alignment
+  const [straightenPoint1, setStraightenPoint1] = useState<{ x: number; y: number } | null>(null);
+  const [straightenPreview, setStraightenPreview] = useState<{ x: number; y: number } | null>(null);
+
+  // Clear straighten points when mode is deactivated
+  useEffect(() => {
+    if (!straightenMode) {
+      setStraightenPoint1(null);
+      setStraightenPreview(null);
+    }
+  }, [straightenMode]);
 
   const hasLockedDimensions = lockDimensions && lockedWidth != null && lockedHeight != null;
   const hasConstrainedHeight = !hasLockedDimensions && constrainHeight != null && constrainHeight > 0;
@@ -72,7 +86,7 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
   const fitToContainer = useCallback(() => {
     if (!containerRef.current || !rotatedBounds) return;
     const containerWidth = containerRef.current.offsetWidth;
-    const containerHeight = stageSize.height;
+    const containerHeight = containerRef.current.offsetHeight;
     const scaleX = containerWidth / rotatedBounds.width;
     const scaleY = containerHeight / rotatedBounds.height;
     const scale = Math.min(scaleX, scaleY) * 0.9; // 90% to add padding
@@ -96,9 +110,7 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
         onRegionDelete(selectedRegionId);
       }
       if (e.key === 'g' || e.key === 'G') {
-        setGuideMode((prev) =>
-          prev === 'off' ? 'crosshair' : prev === 'crosshair' ? 'grid' : 'off'
-        );
+        setGuideMode((prev) => prev === 'off' ? 'grid' : 'off');
       }
     };
     window.addEventListener('keydown', handleKeyDown);
@@ -134,17 +146,18 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
   // ─── Resize container ──────────────────────────────────────────
 
   useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
     const updateSize = () => {
-      if (containerRef.current) {
-        setStageSize({
-          width: containerRef.current.offsetWidth,
-          height: Math.max(400, Math.min(700, window.innerHeight - 300)),
-        });
-      }
+      setStageSize({
+        width: el.offsetWidth,
+        height: el.offsetHeight,
+      });
     };
     updateSize();
-    window.addEventListener('resize', updateSize);
-    return () => window.removeEventListener('resize', updateSize);
+    const ro = new ResizeObserver(updateSize);
+    ro.observe(el);
+    return () => ro.disconnect();
   }, []);
 
   // ─── Transformer sync ─────────────────────────────────────────
@@ -244,6 +257,40 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
       // Only react to left click
       if (e.evt.button !== 0) return;
 
+      // ── Straighten mode: capture two points ──
+      if (straightenMode && onStraighten) {
+        const coords = pointerToCanvas();
+        if (!coords) return;
+
+        if (!straightenPoint1) {
+          setStraightenPoint1(coords);
+          return;
+        }
+
+        // Second click — compute angle and apply
+        const dx = coords.x - straightenPoint1.x;
+        const dy = coords.y - straightenPoint1.y;
+        const lineAngle = Math.atan2(dy, dx) * (180 / Math.PI);
+        // Determine if the user drew closer to vertical or horizontal
+        const absAngle = Math.abs(lineAngle);
+        const isCloserToVertical = absAngle > 45 && absAngle < 135;
+        // For vertical: target is 90° (or -90°), delta = target - lineAngle
+        // For horizontal: target is 0° (or 180°), delta = target - lineAngle
+        let angleDelta: number;
+        if (isCloserToVertical) {
+          const target = lineAngle > 0 ? 90 : -90;
+          angleDelta = -(lineAngle - target);
+        } else {
+          const target = Math.abs(lineAngle) > 90 ? (lineAngle > 0 ? 180 : -180) : 0;
+          angleDelta = -(lineAngle - target);
+        }
+
+        onStraighten(angleDelta);
+        setStraightenPoint1(null);
+        setStraightenPreview(null);
+        return;
+      }
+
       const target = e.target;
       const clickedOnRegion =
         target.name()?.startsWith('crop-') || target.id()?.startsWith('crop-');
@@ -324,11 +371,21 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
       clampToBounds,
       onRegionSelect,
       onRegionAdd,
+      straightenMode,
+      straightenPoint1,
+      onStraighten,
     ]
   );
 
   const handleMouseMove = useCallback(
     (_e: Konva.KonvaEventObject<MouseEvent>) => {
+      // Straighten preview line
+      if (straightenMode && straightenPoint1) {
+        const coords = pointerToCanvas();
+        if (coords) setStraightenPreview(coords);
+        return;
+      }
+
       if (!isDrawing || !drawStart) return;
 
       const coords = pointerToCanvas();
@@ -358,7 +415,7 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
           : null
       );
     },
-    [isDrawing, drawStart, pointerToCanvas, clampToBounds, hasConstrainedHeight]
+    [isDrawing, drawStart, pointerToCanvas, clampToBounds, hasConstrainedHeight, straightenMode, straightenPoint1]
   );
 
   const handleMouseUp = useCallback(() => {
@@ -466,7 +523,7 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
   return (
     <div
       ref={containerRef}
-      className="relative w-full overflow-hidden bg-neutral-900 rounded-b-lg"
+      className="relative w-full h-full overflow-hidden bg-neutral-900"
       tabIndex={0}
     >
       <Stage
@@ -522,29 +579,31 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
             />
           ))}
 
-          {/* Alignment guides */}
-          {rotatedBounds && guideMode !== 'off' && (() => {
+          {/* Alignment guides — square cells based on shorter dimension */}
+          {rotatedBounds && guideMode === 'grid' && (() => {
             const sw = 1 / stageScale;
             const w = rotatedBounds.width;
             const h = rotatedBounds.height;
+            const cellSize = Math.min(w, h) / 40;
             const guideLines: React.ReactNode[] = [];
 
-            if (guideMode === 'crosshair') {
+            for (let x = cellSize; x < w; x += cellSize) {
               guideLines.push(
-                <Line key="ch-v" points={[w / 2, 0, w / 2, h]} stroke="rgba(239,68,68,0.5)" strokeWidth={sw} listening={false} />,
-                <Line key="ch-h" points={[0, h / 2, w, h / 2]} stroke="rgba(239,68,68,0.5)" strokeWidth={sw} listening={false} />,
+                <Line key={`gv-${x}`} points={[x, 0, x, h]} stroke="rgba(239,68,68,0.18)" strokeWidth={sw} listening={false} />,
               );
-            } else if (guideMode === 'grid') {
-              const count = 20;
-              for (let i = 1; i < count; i++) {
-                const x = (w / count) * i;
-                const y = (h / count) * i;
-                guideLines.push(
-                  <Line key={`gv-${i}`} points={[x, 0, x, h]} stroke="rgba(239,68,68,0.25)" strokeWidth={sw} listening={false} />,
-                  <Line key={`gh-${i}`} points={[0, y, w, y]} stroke="rgba(239,68,68,0.25)" strokeWidth={sw} listening={false} />,
-                );
-              }
             }
+            for (let y = cellSize; y < h; y += cellSize) {
+              guideLines.push(
+                <Line key={`gh-${y}`} points={[0, y, w, y]} stroke="rgba(239,68,68,0.18)" strokeWidth={sw} listening={false} />,
+              );
+            }
+
+            // Center crosshair (stronger)
+            guideLines.push(
+              <Line key="ch-v" points={[w / 2, 0, w / 2, h]} stroke="rgba(239,68,68,0.45)" strokeWidth={sw} listening={false} />,
+              <Line key="ch-h" points={[0, h / 2, w, h / 2]} stroke="rgba(239,68,68,0.45)" strokeWidth={sw} listening={false} />,
+            );
+
             return guideLines;
           })()}
 
@@ -562,6 +621,28 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
               listening={false}
             />
           )}
+
+          {/* Straighten tool: point markers + preview line */}
+          {straightenMode && straightenPoint1 && (() => {
+            const sw = 1 / stageScale;
+            const r = 6 * sw;
+            const endPoint = straightenPreview || straightenPoint1;
+            return (
+              <>
+                <Line
+                  points={[straightenPoint1.x, straightenPoint1.y, endPoint.x, endPoint.y]}
+                  stroke="#22d3ee"
+                  strokeWidth={2 * sw}
+                  dash={[8 * sw, 4 * sw]}
+                  listening={false}
+                />
+                <Circle x={straightenPoint1.x} y={straightenPoint1.y} radius={r} fill="#22d3ee" stroke="#fff" strokeWidth={sw} listening={false} />
+                {straightenPreview && (
+                  <Circle x={straightenPreview.x} y={straightenPreview.y} radius={r} fill="#22d3ee" stroke="#fff" strokeWidth={sw} listening={false} />
+                )}
+              </>
+            );
+          })()}
 
           {/* Transformer: only shown when NOT locked and a region is selected */}
           <Transformer
@@ -612,10 +693,10 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
           className={`rounded-md px-3 py-1.5 text-sm font-medium shadow-md transition-colors ${
             guideMode !== 'off' ? 'bg-red-500/80 text-white hover:bg-red-500' : 'bg-white/90 hover:bg-white'
           }`}
-          onClick={() => setGuideMode((prev) => prev === 'off' ? 'crosshair' : prev === 'crosshair' ? 'grid' : 'off')}
-          title={`Guides: ${guideMode} (G)`}
+          onClick={() => setGuideMode((prev) => prev === 'off' ? 'grid' : 'off')}
+          title={`Guides: ${guideMode === 'off' ? 'off' : 'on'} (G)`}
         >
-          {guideMode === 'off' ? '⊞' : guideMode === 'crosshair' ? '┼' : '▦'}
+          {guideMode === 'off' ? '⊞' : '▦'}
         </button>
         <button
           className="bg-white/90 hover:bg-white rounded-md px-3 py-1.5 text-sm font-medium shadow-md transition-colors"
@@ -652,11 +733,15 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
 
       {/* Instructions */}
       <div className="absolute bottom-4 left-4 bg-black/60 text-white text-xs px-2 py-1 rounded pointer-events-none">
-        {hasLockedDimensions
-          ? 'Click to place crop | Drag to reposition | Scroll to zoom'
-          : hasConstrainedHeight
-            ? 'Click + drag horizontally to set width | Height is locked | Scroll to zoom'
-            : 'Click + drag to draw crop | Drag to reposition | Scroll to zoom'}
+        {straightenMode
+          ? (straightenPoint1
+            ? 'Click the second point on the same edge to straighten'
+            : 'Click the first point on a straight edge')
+          : hasLockedDimensions
+            ? 'Click to place crop | Drag to reposition | Scroll to zoom'
+            : hasConstrainedHeight
+              ? 'Click + drag horizontally to set width | Height is locked | Scroll to zoom'
+              : 'Click + drag to draw crop | Drag to reposition | Scroll to zoom'}
       </div>
     </div>
   );

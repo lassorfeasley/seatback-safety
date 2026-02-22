@@ -21,6 +21,7 @@ interface Spread {
 const FOLD_DURATION = 600;
 const FOLD_STAGGER = 100;
 const PAPER_THICKNESS = 0.6;
+const STACK_GAP = 3;
 const PANEL_HEIGHT = 250;
 const PANEL_WIDTH_FALLBACK = 180;
 
@@ -232,14 +233,68 @@ export const CardVisualizer3D: React.FC<CardVisualizer3DProps> = ({
     ? 'none'
     : `transform ${FOLD_DURATION}ms cubic-bezier(0.4, 0, 0.2, 1)`;
 
-  // ─── Panel face rendering (shared by both chains) ─────────────
+  // ─── Compute flat panel transforms ────────────────────────────
+  // Each panel gets a pre-computed world-space transform (x, yRotation, z).
+  // We walk outward from the pivot, accumulating rotations at each crease.
+  // Panels are returned in back-to-front paint order (inner panels first,
+  // cover last) so DOM order guarantees correct stacking.
+
+  // Build a map from spread index → { yRotation, zOffset, hingeSide }
+  const panelTransformMap = useMemo(() => {
+    const map: Record<number, { yRotation: number; zOffset: number; hingeSide: 'left' | 'right' | 'center' }> = {};
+
+    // Pivot: stationary
+    map[pivot] = { yRotation: 0, zOffset: 0, hingeSide: 'center' };
+
+    // Right chain: hinge on LEFT edge.
+    // With origin 'left center': +angle folds toward viewer, -angle folds away.
+    // After staticFlipY(180°), +rotateY swings the panel's far edge through
+    // -z local = +z world (toward viewer). So forward = +, backward = -.
+    let cumulativeAngle = 0;
+    for (let i = pivot + 1; i < spreads.length; i++) {
+      const creaseIdx = i - 1;
+      const crease = frontCreases.find((c) => c.between_panel === creaseIdx);
+      const amount = creaseFolds[creaseIdx] ?? 0;
+      const sign = crease?.fold_direction === 'backward' ? -1 : 1;
+      cumulativeAngle += sign * amount * 180;
+      map[i] = { yRotation: cumulativeAngle, zOffset: Math.abs(i - pivot) * STACK_GAP * amount, hingeSide: 'left' };
+    }
+
+    // Left chain: hinge on RIGHT edge.
+    // With origin 'right center': -angle folds toward viewer, +angle folds away.
+    // So forward = -, backward = +.
+    cumulativeAngle = 0;
+    for (let i = pivot - 1; i >= 0; i--) {
+      const creaseIdx = i;
+      const crease = frontCreases.find((c) => c.between_panel === creaseIdx);
+      const amount = creaseFolds[creaseIdx] ?? 0;
+      const sign = crease?.fold_direction === 'backward' ? 1 : -1;
+      cumulativeAngle += sign * amount * 180;
+      map[i] = { yRotation: cumulativeAngle, zOffset: Math.abs(i - pivot) * STACK_GAP * amount, hingeSide: 'right' };
+    }
+
+    return map;
+  }, [spreads.length, pivot, creaseFolds]);
+
+  // Determine paint order: panels farthest from cover first, cover last
+  const paintOrder = useMemo(() => {
+    const coverIdx = coverDesignation.spreadIndex;
+    return [...spreads]
+      .sort((a, b) => {
+        const distA = Math.abs(a.index - coverIdx);
+        const distB = Math.abs(b.index - coverIdx);
+        return distB - distA;
+      });
+  }, [spreads, coverDesignation.spreadIndex]);
+
+  // ─── Panel face rendering ─────────────────────────────────────
 
   const renderPanelFaces = (spread: Spread) => {
     const hasFront = spread.frontPanel && spread.frontPanel.thumbnail_url;
     const hasBack = spread.backPanel && spread.backPanel.thumbnail_url;
 
     return (
-      <div className="relative flex-shrink-0" style={{ transformStyle: 'preserve-3d' }}>
+      <>
         {hasFront ? (
           <img
             src={spread.frontPanel!.thumbnail_url}
@@ -291,79 +346,7 @@ export const CardVisualizer3D: React.FC<CardVisualizer3DProps> = ({
             B-S{spread.index + 1}
           </div>
         )}
-      </div>
-    );
-  };
-
-  // Z-stacking: chain-level offsets applied OUTSIDE the hinge rotation push
-  // each chain clear of the pivot's face thickness. Cover chain gets a larger
-  // offset so it renders in front. In local coords, -z = toward viewer after
-  // staticFlipY(180°). Offsets scale with fold progress to stay flush when flat.
-  const coverOnRight = coverDesignation.spreadIndex > pivot;
-  const rightChainDepth = coverOnRight ? 2 : 1;
-  const leftChainDepth = coverOnRight ? 1 : 2;
-
-  // ─── Right chain: pivot+1 → last, hinges on LEFT edge ────────
-
-  const renderRightChain = (idx: number): React.ReactNode => {
-    if (idx >= spreads.length) return null;
-    const spread = spreads[idx];
-    if (!spread) return null;
-
-    const creaseIdx = idx - 1;
-    const crease = frontCreases.find((c) => c.between_panel === creaseIdx);
-    const amount = creaseFolds[creaseIdx] ?? 0;
-    const angle = crease
-      ? (crease.fold_direction === 'forward' ? -1 : 1) * amount * 180
-      : 0;
-
-    return (
-      <div
-        key={`right-hinge-${creaseIdx}`}
-        style={{
-          transformStyle: 'preserve-3d',
-          transformOrigin: 'left center',
-          transition: foldTransition,
-          transform: `rotateY(${angle}deg)`,
-        }}
-      >
-        <div className="flex" style={{ transformStyle: 'preserve-3d' }}>
-          {renderPanelFaces(spread)}
-          {idx < spreads.length - 1 && renderRightChain(idx + 1)}
-        </div>
-      </div>
-    );
-  };
-
-  // ─── Left chain: pivot-1 → 0, hinges on RIGHT edge ───────────
-
-  const renderLeftChain = (idx: number): React.ReactNode => {
-    if (idx < 0) return null;
-    const spread = spreads[idx];
-    if (!spread) return null;
-
-    const creaseIdx = idx;
-    const crease = frontCreases.find((c) => c.between_panel === creaseIdx);
-    const amount = creaseFolds[creaseIdx] ?? 0;
-    const angle = crease
-      ? (crease.fold_direction === 'forward' ? 1 : -1) * amount * 180
-      : 0;
-
-    return (
-      <div
-        key={`left-hinge-${creaseIdx}`}
-        style={{
-          transformStyle: 'preserve-3d',
-          transformOrigin: 'right center',
-          transition: foldTransition,
-          transform: `rotateY(${angle}deg)`,
-        }}
-      >
-        <div className="flex" style={{ transformStyle: 'preserve-3d' }}>
-          {idx > 0 && renderLeftChain(idx - 1)}
-          {renderPanelFaces(spread)}
-        </div>
-      </div>
+      </>
     );
   };
 
@@ -436,6 +419,7 @@ export const CardVisualizer3D: React.FC<CardVisualizer3DProps> = ({
           onTouchMove={(e) => { if (e.touches.length === 1) moveDrag(e.touches[0].clientX, e.touches[0].clientY); }}
           onTouchEnd={endDrag}
         >
+          {/* Outer container: user rotation + staticFlipY */}
           <div
             style={{
               position: 'absolute',
@@ -449,26 +433,34 @@ export const CardVisualizer3D: React.FC<CardVisualizer3DProps> = ({
               transform: `rotateX(${rotation.x}deg) rotateY(${rotation.y + staticFlipY}deg)`,
             }}
           >
+            {/* Panels in a flex row — flex ensures edges adjoin naturally.
+                DOM order = paint order (back-to-front via paintOrder).
+                CSS `order` restores left-to-right visual layout. */}
             <div ref={cardRef} className="inline-flex" style={{ transformStyle: 'preserve-3d' }}>
-              {pivot > 0 && (
-                <div style={{
-                  transformStyle: 'preserve-3d',
-                  transform: `translateZ(${-leftChainDepth * PAPER_THICKNESS * overallFoldProgress}px)`,
-                  transition: foldTransition,
-                }}>
-                  {renderLeftChain(pivot - 1)}
-                </div>
-              )}
-              {spreads[pivot] && renderPanelFaces(spreads[pivot])}
-              {pivot < spreads.length - 1 && (
-                <div style={{
-                  transformStyle: 'preserve-3d',
-                  transform: `translateZ(${-rightChainDepth * PAPER_THICKNESS * overallFoldProgress}px)`,
-                  transition: foldTransition,
-                }}>
-                  {renderRightChain(pivot + 1)}
-                </div>
-              )}
+              {paintOrder.map((spread) => {
+                const t = panelTransformMap[spread.index];
+                if (!t) return null;
+                const origin = t.hingeSide === 'left'
+                  ? 'left center'
+                  : t.hingeSide === 'right'
+                    ? 'right center'
+                    : 'center center';
+                return (
+                  <div
+                    key={`panel-${spread.index}`}
+                    className="relative flex-shrink-0"
+                    style={{
+                      order: spread.index,
+                      transformStyle: 'preserve-3d',
+                      transformOrigin: origin,
+                      transition: foldTransition,
+                      transform: `rotateY(${t.yRotation}deg) translateZ(${t.zOffset}px)`,
+                    }}
+                  >
+                    {renderPanelFaces(spread)}
+                  </div>
+                );
+              })}
             </div>
           </div>
         </div>

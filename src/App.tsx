@@ -6,7 +6,7 @@ import { createBlankCard } from './lib/safetyCardService';
 type Page =
   | { view: 'library' }
   | { view: 'wizard'; editCardId?: string; editStep?: 3 | 4 }
-  | { view: 'detail'; cardId: string; isNew?: boolean };
+  | { view: 'detail'; cardId: string; isNew?: boolean; editing?: boolean };
 
 function App() {
   const [page, setPage] = useState<Page>({ view: 'library' });
@@ -22,12 +22,12 @@ function App() {
 
   if (page.view === 'wizard') {
     const returnTo = page.editCardId
-      ? () => setPage({ view: 'detail', cardId: page.editCardId! })
+      ? () => setPage({ view: 'detail', cardId: page.editCardId!, editing: true })
       : () => setPage({ view: 'library' });
 
     return (
       <SafetyCardWizard
-        onSaveComplete={(cardId: string) => setPage({ view: 'detail', cardId })}
+        onSaveComplete={(cardId: string) => setPage({ view: 'detail', cardId, editing: true })}
         onBackToLibrary={returnTo}
         editCardId={page.editCardId}
         initialStep={page.editStep}
@@ -40,6 +40,7 @@ function App() {
       <CardDetail
         cardId={page.cardId}
         isNew={page.isNew}
+        initialEditing={page.editing}
         onBack={() => setPage({ view: 'library' })}
         onEditCrops={() => setPage({ view: 'wizard', editCardId: page.cardId, editStep: 3 })}
         onEditFolds={() => setPage({ view: 'wizard', editCardId: page.cardId, editStep: 4 })}

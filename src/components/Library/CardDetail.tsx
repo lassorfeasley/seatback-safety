@@ -24,6 +24,7 @@ import {
   Upload,
   Hash,
 } from 'lucide-react';
+import { cn } from '@/lib/utils';
 import { CardVisualizer3D } from '@/components/FoldEditor/CardVisualizer3D';
 import { generateAndUploadOgImage } from '@/lib/ogImageGenerator';
 import { analyzeCardScans, type CardSuggestions } from '@/lib/aiService';
@@ -64,6 +65,7 @@ interface CardDetailProps {
   onEditCrops?: () => void;
   onEditFolds?: () => void;
   isNew?: boolean;
+  initialEditing?: boolean;
 }
 
 function formatBytes(bytes: number): string {
@@ -147,14 +149,14 @@ const InlineSuggestion: React.FC<{
 
 // ─── Main Component ──────────────────────────────────────────────
 
-export const CardDetail: React.FC<CardDetailProps> = ({ cardId, onBack, onEditCrops, onEditFolds, isNew }) => {
+export const CardDetail: React.FC<CardDetailProps> = ({ cardId, onBack, onEditCrops, onEditFolds, isNew, initialEditing }) => {
   const [card, setCard] = useState<CardDetailData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
   const [showScans, setShowScans] = useState(false);
-  const [isEditing, setIsEditing] = useState(!!isNew);
+  const [isEditing, setIsEditing] = useState(!!isNew || !!initialEditing);
   const [saving, setSaving] = useState(false);
   const [showAddProvenance, setShowAddProvenance] = useState(false);
   const [showAddPrice, setShowAddPrice] = useState(false);
@@ -319,7 +321,7 @@ export const CardDetail: React.FC<CardDetailProps> = ({ cardId, onBack, onEditCr
     .sort((a, b) => a.panel_index - b.panel_index);
 
   const panelCount = card.panel_count ?? 3;
-  const panelsPerSide = card.panel_count ? Math.ceil(card.panel_count / 2) : frontPanels.length;
+  const panelsPerSide = card.panel_count || frontPanels.length || panelCount;
   const hasPanels = frontPanels.length > 0 || backPanels.length > 0;
   const hasScans = card.scans.length > 0;
   const allCropsComplete = hasPanels && card.panels.length >= panelCount * 2;
@@ -489,20 +491,39 @@ export const CardDetail: React.FC<CardDetailProps> = ({ cardId, onBack, onEditCr
                 )}
               </SetupStep>
 
-              {/* ── Step 3: Define Crops ────────────────────────────── */}
+              {/* ── Step 3: Panel Spreads / Crops ────────────────── */}
               <SetupStep
                 number={3}
-                title="Define Crops"
+                title="Panel Spreads"
                 icon={<Scissors className="h-4 w-4" />}
                 complete={allCropsComplete}
                 disabled={!hasScans}
                 summary={hasPanels ? `${card.panels.length} of ${panelCount * 2} panels cropped` : undefined}
               >
-                {hasScans && onEditCrops ? (
-                  <Button variant="outline" size="sm" onClick={onEditCrops} className="gap-1.5" disabled={!hasScans}>
-                    <Scissors className="h-3.5 w-3.5" />
-                    {hasPanels ? 'Edit Crops' : 'Define Crops'}
-                  </Button>
+                {hasScans ? (
+                  <>
+                    <SpreadRow
+                      label="Front"
+                      panels={frontPanels}
+                      expectedCount={panelsPerSide}
+                      displayUrls={card.displayUrls}
+                      fullUrls={card.fullUrls}
+                      onZoom={setLightboxUrl}
+                      isEditing={isEditing}
+                      onEditCrops={onEditCrops}
+                    />
+                    <div className="my-4" />
+                    <SpreadRow
+                      label="Back"
+                      panels={backPanels}
+                      expectedCount={panelsPerSide}
+                      displayUrls={card.displayUrls}
+                      fullUrls={card.fullUrls}
+                      onZoom={setLightboxUrl}
+                      isEditing={isEditing}
+                      onEditCrops={onEditCrops}
+                    />
+                  </>
                 ) : (
                   <p className="text-sm text-muted-foreground/50">Upload scans first</p>
                 )}
@@ -525,48 +546,6 @@ export const CardDetail: React.FC<CardDetailProps> = ({ cardId, onBack, onEditCr
                   <p className="text-sm text-muted-foreground/50">Define crops first</p>
                 )}
               </SetupStep>
-
-              {/* ── Panel Spreads ───────────────────────────────────── */}
-              {hasPanels && (
-                <section>
-                  <div className="flex items-center justify-between mb-4">
-                    <SectionHeading noMargin>Panel Spreads</SectionHeading>
-                    {!isEditing && (
-                      <div className="flex items-center gap-1.5">
-                        {onEditCrops && (
-                          <Button variant="outline" size="sm" onClick={onEditCrops} className="gap-1.5">
-                            <Scissors className="h-3.5 w-3.5" />
-                            Edit Crops
-                          </Button>
-                        )}
-                        {onEditFolds && (
-                          <Button variant="outline" size="sm" onClick={onEditFolds} className="gap-1.5">
-                            <FoldVertical className="h-3.5 w-3.5" />
-                            Edit Folds
-                          </Button>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                  <SpreadRow
-                    label="Front"
-                    panels={frontPanels}
-                    expectedCount={panelsPerSide}
-                    displayUrls={card.displayUrls}
-                    fullUrls={card.fullUrls}
-                    onZoom={setLightboxUrl}
-                  />
-                  <div className="my-4" />
-                  <SpreadRow
-                    label="Back"
-                    panels={backPanels}
-                    expectedCount={panelsPerSide}
-                    displayUrls={card.displayUrls}
-                    fullUrls={card.fullUrls}
-                    onZoom={setLightboxUrl}
-                  />
-                </section>
-              )}
 
               {(ogExists && ogImageUrl || generatingOg) && (
                 <section>
@@ -1186,6 +1165,8 @@ interface SpreadRowProps {
   displayUrls: Record<string, string>;
   fullUrls: Record<string, string>;
   onZoom: (url: string) => void;
+  isEditing?: boolean;
+  onEditCrops?: () => void;
 }
 
 const SpreadRow: React.FC<SpreadRowProps> = ({
@@ -1195,6 +1176,8 @@ const SpreadRow: React.FC<SpreadRowProps> = ({
   displayUrls,
   fullUrls,
   onZoom,
+  isEditing,
+  onEditCrops,
 }) => {
   const slots = Array.from({ length: Math.max(expectedCount, panels.length) }, (_, i) => {
     return panels.find((p) => p.panel_index === i) ?? null;
@@ -1207,7 +1190,7 @@ const SpreadRow: React.FC<SpreadRowProps> = ({
       </h2>
       <div
         className="grid gap-1"
-        style={{ gridTemplateColumns: `repeat(${slots.length}, 1fr)` }}
+        style={{ gridTemplateColumns: `repeat(${slots.length}, 1fr)`, maxHeight: 300 }}
       >
         {slots.map((panel, i) => {
           const displayUrl = panel ? (displayUrls[panel.id] || panel.thumbnail_url) : null;
@@ -1216,17 +1199,30 @@ const SpreadRow: React.FC<SpreadRowProps> = ({
           return (
             <div
               key={panel?.id ?? `empty-${i}`}
-              className="relative group bg-muted/50 rounded-sm overflow-hidden"
+              className={cn(
+                'relative group rounded-sm overflow-hidden',
+                displayUrl ? 'bg-muted/50' : 'bg-muted/30 border border-dashed border-muted-foreground/20',
+                isEditing && onEditCrops && 'cursor-pointer hover:ring-2 hover:ring-primary/50 transition-all',
+              )}
+              style={{ maxHeight: 300 }}
+              onClick={isEditing && onEditCrops ? onEditCrops : undefined}
             >
               {displayUrl ? (
                 <>
                   <img
                     src={displayUrl}
                     alt={`${label} Panel ${i + 1}`}
-                    className="w-full h-auto block"
+                    className="w-full h-full object-contain block"
                     loading="lazy"
                   />
-                  {fullUrl && (
+                  {isEditing && onEditCrops ? (
+                    <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors
+                                   flex items-center justify-center opacity-0 group-hover:opacity-100">
+                      <div className="bg-black/60 rounded-full p-2">
+                        <Scissors className="h-4 w-4 text-white" />
+                      </div>
+                    </div>
+                  ) : fullUrl ? (
                     <button
                       onClick={() => onZoom(fullUrl)}
                       className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors
@@ -1236,11 +1232,18 @@ const SpreadRow: React.FC<SpreadRowProps> = ({
                         <ZoomIn className="h-4 w-4 text-white" />
                       </div>
                     </button>
-                  )}
+                  ) : null}
                 </>
               ) : (
-                <div className="aspect-[3/4] flex items-center justify-center">
-                  <span className="text-xs text-muted-foreground">Panel {i + 1}</span>
+                <div className="aspect-[3/4] max-h-[300px] flex flex-col items-center justify-center gap-1.5">
+                  {isEditing && onEditCrops ? (
+                    <>
+                      <Scissors className="h-4 w-4 text-muted-foreground/40" />
+                      <span className="text-xs text-muted-foreground/60">Crop</span>
+                    </>
+                  ) : (
+                    <span className="text-xs text-muted-foreground">Panel {i + 1}</span>
+                  )}
                 </div>
               )}
             </div>

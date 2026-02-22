@@ -9,6 +9,7 @@ import {
   RotateCcw,
   RotateCw,
   Lock,
+  Ruler,
 } from 'lucide-react';
 import { CropCanvas } from '@/components/PanelCropper/CropCanvas';
 import type { CropStepProps, LibraryImage } from './types';
@@ -138,8 +139,8 @@ export const CropStep: React.FC<CropStepProps> = ({
           )}
         </div>
 
-        <Button size="sm" onClick={onContinue} disabled={!allFilled} className="h-8 gap-1.5 px-2.5">
-          {continueLabel ?? 'Continue'}
+        <Button size="sm" onClick={onContinue} disabled={filledCount === 0} className="h-8 gap-1.5 px-2.5">
+          {continueLabel ?? (allFilled ? 'Continue' : 'Save Progress')}
           <ArrowRight className="h-3.5 w-3.5" />
         </Button>
       </div>
@@ -356,6 +357,13 @@ const CropSession: React.FC<CropSessionProps> = ({
   // Rotation controls for the selected image during crop
   const [localRotation, setLocalRotation] = useState(selectedImage?.rotation || 0);
 
+  // Straighten tool
+  const [straightenMode, setStraightenMode] = useState(false);
+  const handleStraighten = useCallback((angleDelta: number) => {
+    setLocalRotation((r) => r + angleDelta);
+    setStraightenMode(false);
+  }, []);
+
   // Sync rotation when image changes
   useEffect(() => {
     if (selectedImage) {
@@ -497,73 +505,10 @@ const CropSession: React.FC<CropSessionProps> = ({
   }
 
   return (
-    <div className="flex flex-col h-full p-3 gap-2">
-      {/* Compact header: title + constraints + image picker + actions */}
-      <div className="flex items-center gap-3 flex-shrink-0 flex-wrap">
-        <Button variant="outline" size="sm" onClick={onCancelCrop} className="h-8 gap-1.5 px-2.5">
-          <X className="h-3.5 w-3.5" />
-          Cancel
-        </Button>
-        <span className="text-sm font-semibold flex items-center gap-1.5 whitespace-nowrap">
-          <span className={`w-2 h-2 rounded-full ${sideColor}`} />
-          Panel {activeSlot.panelIndex + 1} {sideLabel}
-        </span>
-        <span className="text-xs text-muted-foreground">&mdash;</span>
-        <span className="text-xs text-muted-foreground flex-shrink min-w-0">
-          {dimensionsLocked
-            ? <>Locked to <span className="font-mono">{oppositeWidth}&times;{cropHeight}px</span></>
-            : heightConstrained
-            ? <>Height locked to <span className="font-mono">{cropHeight}px</span> &mdash; set width</>
-            : 'Draw first crop to set shared height'}
-        </span>
-        <div className="flex items-center gap-2 ml-auto">
-          {region && (
-            <Button variant="outline" size="sm" onClick={() => setRegion(null)} className="h-8 gap-1.5 px-2.5">
-              <RotateCcw className="h-3.5 w-3.5" />
-              Redraw
-            </Button>
-          )}
-          <Button size="sm" onClick={handleConfirm} disabled={!region || !selectedImageId} className="h-8 gap-1.5 px-2.5">
-            <Check className="h-3.5 w-3.5" />
-            Confirm
-          </Button>
-        </div>
-      </div>
-
-      {/* Image picker */}
-      <div className="flex items-center gap-2 flex-shrink-0">
-        <div className="flex gap-2 overflow-x-auto py-1">
-          {images.map((img) => (
-            <button
-              key={img.id}
-              className={`
-                flex-shrink-0 w-14 h-14 rounded-md overflow-hidden border-2 transition-all
-                ${selectedImageId === img.id
-                  ? 'border-primary ring-2 ring-primary/20'
-                  : 'border-muted hover:border-primary/50'
-                }
-              `}
-              onClick={() => onSelectImage(img.id)}
-            >
-              <img
-                src={img.imageUrl}
-                alt={img.label}
-                className="w-full h-full object-cover"
-                style={{ transform: `rotate(${img.rotation}deg)` }}
-              />
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Rotation strip */}
-      {selectedImage && (
-        <RotationStrip rotation={localRotation} onRotationChange={setLocalRotation} />
-      )}
-
-      {/* Crop canvas — fills remaining space */}
-      {selectedImage && (
-        <div className="flex-1 min-h-0 rounded-lg overflow-hidden border">
+    <div className="flex h-full">
+      {/* Canvas — fills viewport */}
+      <div className="flex-1 min-w-0 min-h-0 relative">
+        {selectedImage ? (
           <CropCanvas
             imageUrl={selectedImage.imageUrl}
             imageDimensions={imageDimensions}
@@ -575,14 +520,108 @@ const CropSession: React.FC<CropSessionProps> = ({
             constrainHeight={heightConstrained ? cropHeight : null}
             rotation={localRotation}
             singleCropMode={true}
+            straightenMode={straightenMode}
             onRegionAdd={handleRegionAdd}
             onRegionUpdate={handleRegionUpdate}
             onRegionSelect={handleRegionSelect}
             onRegionDelete={handleRegionDelete}
             onImageLoad={handleImageLoad}
+            onStraighten={handleStraighten}
           />
+        ) : (
+          <div className="h-full flex items-center justify-center bg-neutral-900 text-muted-foreground text-sm">
+            Select a scan image to begin cropping
+          </div>
+        )}
+      </div>
+
+      {/* Right sidebar — controls */}
+      <div className="w-64 flex-shrink-0 border-l bg-card flex flex-col overflow-y-auto">
+        {/* Panel info + actions */}
+        <div className="p-4 border-b flex flex-col gap-3">
+          <div className="flex items-center gap-2">
+            <span className={`w-2 h-2 rounded-full flex-shrink-0 ${sideColor}`} />
+            <span className="text-sm font-semibold">
+              Panel {activeSlot.panelIndex + 1} {sideLabel}
+            </span>
+          </div>
+          {constraintMessage}
         </div>
-      )}
+
+        {/* Scan picker */}
+        <div className="p-4 border-b flex flex-col gap-2">
+          <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Source Scan</span>
+          <div className="flex gap-2 flex-wrap">
+            {images.map((img) => (
+              <button
+                key={img.id}
+                className={`
+                  flex-shrink-0 w-14 h-14 rounded-md overflow-hidden border-2 transition-all
+                  ${selectedImageId === img.id
+                    ? 'border-primary ring-2 ring-primary/20'
+                    : 'border-muted hover:border-primary/50'
+                  }
+                `}
+                onClick={() => onSelectImage(img.id)}
+              >
+                <img
+                  src={img.imageUrl}
+                  alt={img.label}
+                  className="w-full h-full object-cover"
+                  style={{ transform: `rotate(${img.rotation}deg)` }}
+                />
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Rotation */}
+        {selectedImage && (
+          <div className="p-4 border-b flex flex-col gap-2">
+            <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Rotation</span>
+            <RotationStrip rotation={localRotation} onRotationChange={setLocalRotation} />
+          </div>
+        )}
+
+        {/* Straighten tool */}
+        {selectedImage && (
+          <div className="p-4 border-b flex flex-col gap-2">
+            <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Straighten</span>
+            <Button
+              variant={straightenMode ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => setStraightenMode((m) => !m)}
+              className="w-full gap-1.5"
+            >
+              <Ruler className="h-3.5 w-3.5" />
+              {straightenMode ? 'Click two points on an edge…' : 'Straighten Edge'}
+            </Button>
+            {straightenMode && (
+              <p className="text-[11px] text-muted-foreground leading-tight">
+                Click two points along a straight edge (like the card border). The image will auto-rotate to make that line perfectly vertical or horizontal.
+              </p>
+            )}
+          </div>
+        )}
+
+        {/* Actions */}
+        <div className="p-4 mt-auto flex flex-col gap-2">
+          {region && (
+            <Button variant="outline" size="sm" onClick={() => setRegion(null)} className="w-full gap-1.5">
+              <RotateCcw className="h-3.5 w-3.5" />
+              Redraw
+            </Button>
+          )}
+          <Button size="sm" onClick={handleConfirm} disabled={!region || !selectedImageId} className="w-full gap-1.5">
+            <Check className="h-3.5 w-3.5" />
+            Confirm Crop
+          </Button>
+          <Button variant="outline" size="sm" onClick={onCancelCrop} className="w-full gap-1.5">
+            <X className="h-3.5 w-3.5" />
+            Cancel
+          </Button>
+        </div>
+      </div>
     </div>
   );
 };
@@ -597,21 +636,55 @@ const RotationStrip: React.FC<{
   const fine = rotation - coarseBase;
 
   return (
-    <div className="flex items-center gap-2 flex-shrink-0 bg-muted/40 rounded-lg px-3 py-1.5">
-      <button
-        className="flex items-center gap-1 px-2 py-1 bg-background hover:bg-accent border border-border rounded-md text-xs font-medium transition-colors"
-        onClick={() => onRotationChange((r) => {
-          const base = Math.round(r / 90) * 90;
-          const f = r - base;
-          return ((base - 90 + 360) % 360) + f;
-        })}
-        title="Rotate 90° counter-clockwise"
-      >
-        <RotateCcw className="h-3 w-3" /> 90°
-      </button>
-
-      <div className="flex items-center gap-2 flex-1 min-w-0">
-        <span className="text-[10px] text-muted-foreground whitespace-nowrap">-15°</span>
+    <div className="flex flex-col gap-2">
+      {/* 90° buttons + numeric input */}
+      <div className="flex items-center gap-1.5">
+        <button
+          className="flex items-center gap-1 px-2 py-1 bg-background hover:bg-accent border border-border rounded-md text-xs font-medium transition-colors"
+          onClick={() => onRotationChange((r) => {
+            const base = Math.round(r / 90) * 90;
+            const f = r - base;
+            return ((base - 90 + 360) % 360) + f;
+          })}
+          title="Rotate 90° counter-clockwise"
+        >
+          <RotateCcw className="h-3 w-3" />
+        </button>
+        <button
+          className="flex items-center gap-1 px-2 py-1 bg-background hover:bg-accent border border-border rounded-md text-xs font-medium transition-colors"
+          onClick={() => onRotationChange((r) => {
+            const base = Math.round(r / 90) * 90;
+            const f = r - base;
+            return ((base + 90) % 360) + f;
+          })}
+          title="Rotate 90° clockwise"
+        >
+          <RotateCw className="h-3 w-3" />
+        </button>
+        <input
+          type="number"
+          value={Math.round(rotation * 10) / 10}
+          onChange={(e) => {
+            const v = parseFloat(e.target.value);
+            if (!isNaN(v)) onRotationChange(((v % 360) + 360) % 360);
+          }}
+          className="flex-1 min-w-0 px-1.5 py-1 text-xs font-mono border border-border rounded-md bg-background text-center"
+          step={0.1}
+        />
+        <span className="text-xs text-muted-foreground">°</span>
+        {rotation !== 0 && (
+          <button
+            className="px-1.5 py-1 text-[10px] text-muted-foreground hover:text-foreground border border-border rounded-md transition-colors whitespace-nowrap"
+            onClick={() => onRotationChange(0)}
+            title="Reset rotation"
+          >
+            Reset
+          </button>
+        )}
+      </div>
+      {/* Fine-tune slider */}
+      <div className="flex items-center gap-1.5">
+        <span className="text-[10px] text-muted-foreground">-15°</span>
         <input
           type="range"
           min={-15}
@@ -625,42 +698,7 @@ const RotationStrip: React.FC<{
           className="flex-1 h-1.5 accent-primary cursor-pointer"
           title="Fine-tune rotation"
         />
-        <span className="text-[10px] text-muted-foreground whitespace-nowrap">+15°</span>
-      </div>
-
-      <button
-        className="flex items-center gap-1 px-2 py-1 bg-background hover:bg-accent border border-border rounded-md text-xs font-medium transition-colors"
-        onClick={() => onRotationChange((r) => {
-          const base = Math.round(r / 90) * 90;
-          const f = r - base;
-          return ((base + 90) % 360) + f;
-        })}
-        title="Rotate 90° clockwise"
-      >
-        90° <RotateCw className="h-3 w-3" />
-      </button>
-
-      <div className="flex items-center gap-1.5 border-l pl-2">
-        <input
-          type="number"
-          value={Math.round(rotation * 10) / 10}
-          onChange={(e) => {
-            const v = parseFloat(e.target.value);
-            if (!isNaN(v)) onRotationChange(((v % 360) + 360) % 360);
-          }}
-          className="w-16 px-1.5 py-0.5 text-xs font-mono border border-border rounded-md bg-background text-center"
-          step={0.1}
-        />
-        <span className="text-xs text-muted-foreground">°</span>
-        {rotation !== 0 && (
-          <button
-            className="px-1.5 py-0.5 text-[10px] text-muted-foreground hover:text-foreground border border-border rounded-md transition-colors"
-            onClick={() => onRotationChange(0)}
-            title="Reset rotation"
-          >
-            Reset
-          </button>
-        )}
+        <span className="text-[10px] text-muted-foreground">+15°</span>
       </div>
     </div>
   );

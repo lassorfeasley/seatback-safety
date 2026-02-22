@@ -3,10 +3,10 @@ import type { Panel, CoverDesignation } from '@/components/FoldEditor/types';
 
 const OG_SIZE = 1200;
 const BG_COLOR = '#ebeaef'; // oklch(92% 0.004 286.32)
-const CARD_PADDING = 120;
 const SHADOW_COLOR = '#a8a7b2'; // oklch(70.5% 0.015 286.067) - solid offset rect, no blur
 const SHADOW_OFFSET_X = 100;
 const SHADOW_OFFSET_Y = 100;
+const FAN_OFFSET = 18; // px per panel distance from cover — subtle peek effect
 
 function loadImage(url: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
@@ -70,43 +70,52 @@ export async function generateOgImage(
   ctx.fillStyle = BG_COLOR;
   ctx.fillRect(0, 0, OG_SIZE, OG_SIZE);
 
-  // Find the bounding box across all loaded panels to determine max extent
+  const coverIdx = cover.spreadIndex;
+
+  // Scale all panels to a uniform height
   const maxNatW = Math.max(...loaded.map((l) => l.img.naturalWidth));
   const maxNatH = Math.max(...loaded.map((l) => l.img.naturalHeight));
-  const envelopeAspect = maxNatW / maxNatH;
-
-  // Lock height so all cards render at the same vertical size
   const envelopeH = 900;
-  const envelopeW = envelopeH * envelopeAspect;
+  const scale = envelopeH / maxNatH;
+  const envelopeW = maxNatW * scale;
 
-  const scale = envelopeW / maxNatW;
+  // Fan: all non-cover panels offset to the LEFT of the cover, ordered
+  // by distance from cover (farthest = most offset). This mimics holding
+  // a folded card where inner panels peek out from one side.
+  const maxDist = Math.max(0, ...loaded.map((l) => Math.abs(l.panel.panel_index - coverIdx)));
+  const totalFanExtent = maxDist * FAN_OFFSET;
 
-  // Center the combined envelope+shadow
+  // Center the cover horizontally; account for the fan extending to the left
   const combinedH = SHADOW_OFFSET_Y + envelopeH;
-  const originX = OG_SIZE / 2 - envelopeW / 2;
+  const coverCenterX = OG_SIZE / 2;
   const originY = OG_SIZE / 2 - combinedH / 2;
 
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = 'high';
 
-  // Draw solid offset shadow sized to the full envelope
+  // Shadow spans the full fanned extent
+  const shadowW = envelopeW + totalFanExtent;
   ctx.fillStyle = SHADOW_COLOR;
-  ctx.fillRect(originX + SHADOW_OFFSET_X, originY + SHADOW_OFFSET_Y, envelopeW, envelopeH);
+  ctx.fillRect(
+    coverCenterX - envelopeW / 2 - totalFanExtent + SHADOW_OFFSET_X,
+    originY + SHADOW_OFFSET_Y,
+    shadowW,
+    envelopeH,
+  );
 
   // Draw panels back-to-front: farthest from cover first, cover last on top
-  // Order: panels far from cover index → cover index
-  const coverIdx = cover.spreadIndex;
   const sorted = [...loaded].sort((a, b) => {
     const distA = Math.abs(a.panel.panel_index - coverIdx);
     const distB = Math.abs(b.panel.panel_index - coverIdx);
     return distB - distA;
   });
 
-  for (const { img } of sorted) {
+  for (const { panel, img } of sorted) {
     const w = img.naturalWidth * scale;
     const h = img.naturalHeight * scale;
-    // Center each panel within the envelope
-    const px = originX + (envelopeW - w) / 2;
+    const dist = Math.abs(panel.panel_index - coverIdx);
+    const fanX = -dist * FAN_OFFSET;
+    const px = coverCenterX - envelopeW / 2 + (envelopeW - w) / 2 + fanX;
     const py = originY + (envelopeH - h) / 2;
     ctx.drawImage(img, px, py, w, h);
   }
