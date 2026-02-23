@@ -24,7 +24,7 @@ import type {
 export const CardInfoStep: React.FC<CardInfoStepProps> = ({
   metadata,
   panelCount,
-  images,
+  images: _images,
   onMetadataChange,
   onPanelCountChange,
   onBack,

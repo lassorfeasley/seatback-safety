@@ -336,7 +336,7 @@ const CropSession: React.FC<CropSessionProps> = ({
   activeSlot,
   images,
   selectedImageId,
-  cropWidth,
+  cropWidth: _cropWidth,
   cropHeight,
   existingSlot,
   oppositeSlot,
@@ -389,7 +389,7 @@ const CropSession: React.FC<CropSessionProps> = ({
   // Height-only constraint: reference height exists but no opposite face width yet
   const heightConstrained = hasReferenceHeight && oppositeWidth == null;
   // Fully free: first crop ever (no reference height)
-  const isFirstCrop = !hasReferenceHeight;
+  // hasReferenceHeight used in dimensionsLocked/heightConstrained above
 
   const handleRegionAdd = useCallback(
     (newRegion: CropRegion) => {
@@ -495,14 +495,7 @@ const CropSession: React.FC<CropSessionProps> = ({
   }
 
   // Build the instruction text for the crop canvas card
-  let canvasInstruction: string;
-  if (dimensionsLocked) {
-    canvasInstruction = 'Click to place crop. Drag to reposition.';
-  } else if (heightConstrained) {
-    canvasInstruction = 'Click and drag horizontally to set width. Height is locked. Drag to reposition.';
-  } else {
-    canvasInstruction = 'Click and drag to draw a crop region. Drag to reposition. Use handles to resize.';
-  }
+  // Instruction varies by constraint mode — used in UI below if needed
 
   return (
     <div className="flex h-full">

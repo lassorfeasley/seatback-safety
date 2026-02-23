@@ -264,68 +264,6 @@ export const CardVisualizer: React.FC<CardVisualizerProps> = ({ panels, creases 
     return crease.fold_direction === 'forward' ? -angle : angle;
   }, [frontCreases, creaseFolds]);
 
-  // Calculate cumulative transform data for each spread
-  // This computes the actual world-space position/rotation of each panel
-  const getSpreadTransforms = useMemo(() => {
-    const transforms: Array<{
-      xOffset: number;
-      yRotation: number;
-      zOffset: number;
-      isFlipped: boolean;
-    }> = [];
-    
-    const panelWidth = estimatedPanelWidth;
-    
-    for (let i = 0; i < spreads.length; i++) {
-      if (i === 0) {
-        // First spread is the anchor - no transform
-        transforms.push({
-          xOffset: 0,
-          yRotation: 0,
-          zOffset: 0,
-          isFlipped: false,
-        });
-      } else {
-        // Get the previous transform
-        const prevTransform = transforms[i - 1];
-        
-        // Get the fold angle at the crease BEFORE this spread (crease i-1)
-        const crease = frontCreases.find((c) => c.between_panel === i - 1);
-        const creaseFoldAmount = creaseFolds[i - 1] ?? 0;
-        const foldAngle = crease 
-          ? (crease.fold_direction === 'forward' ? -1 : 1) * creaseFoldAmount * 180
-          : 0;
-        
-        // Cumulative rotation
-        const cumulativeRotation = prevTransform.yRotation + foldAngle;
-        
-        // Is this spread flipped (back facing viewer)?
-        const normalizedRotation = ((cumulativeRotation % 360) + 360) % 360;
-        const isFlipped = normalizedRotation > 90 && normalizedRotation < 270;
-        
-        // Calculate X offset - when folded, panels stack at the same position
-        // When flat, each panel is offset by its width
-        const flatXOffset = i * panelWidth;
-        const foldedXOffset = 0; // All panels stack at origin when folded
-        const xOffset = flatXOffset + (foldedXOffset - flatXOffset) * creaseFoldAmount;
-        
-        // Z offset for stacking - increases with depth
-        // Forward folds go toward viewer (+Z), backward folds go away (-Z)
-        const zSign = crease?.fold_direction === 'forward' ? 1 : -1;
-        const zOffset = prevTransform.zOffset + (zSign * creaseFoldAmount * 2);
-        
-        transforms.push({
-          xOffset,
-          yRotation: cumulativeRotation,
-          zOffset,
-          isFlipped,
-        });
-      }
-    }
-    
-    return transforms;
-  }, [spreads.length, frontCreases, creaseFolds, estimatedPanelWidth]);
-
   // Render spreads with nested structure for proper hinge behavior
   const renderFoldableSpreads = useCallback(() => {
     if (spreads.length === 0) return null;

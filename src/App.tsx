@@ -1,74 +1,57 @@
-import { useState, useCallback } from 'react';
-import { SafetyCardWizard } from './components/Wizard';
-import { LibraryPage, CardDetail, AirlinesPage, ManufacturersPage } from './components/Library';
-import { AppShell, type Section } from './components/Layout/AppShell';
-import { createBlankCard } from './lib/safetyCardService';
+import { Routes, Route, Navigate } from 'react-router-dom';
+import { AuthProvider } from './lib/authContext';
 
-type Page =
-  | { view: 'shell'; section: Section }
-  | { view: 'wizard'; editCardId?: string; editStep?: 3 | 4 }
-  | { view: 'detail'; cardId: string; isNew?: boolean; editing?: boolean };
+import { AdminLayout } from './components/Admin/AdminLayout';
+import { AdminLibrary } from './components/Admin/AdminLibrary';
+import { AdminCardDetail } from './components/Admin/AdminCardDetail';
+import { AdminCropEditor } from './components/Admin/AdminCropEditor';
+import { AdminFoldEditor } from './components/Admin/AdminFoldEditor';
+import { AdminAirlines } from './components/Admin/AdminAirlines';
+import { AdminManufacturers } from './components/Admin/AdminManufacturers';
+import { LoginPage } from './components/Auth/LoginPage';
+import { RequireAuth } from './components/Auth/RequireAuth';
+
+import { PublicLayout } from './components/Public/PublicLayout';
+import { PublicHome } from './components/Public/PublicHome';
+import { PublicAirlinesBrowse } from './components/Public/PublicAirlinesBrowse';
+import { PublicAirlineDetail } from './components/Public/PublicAirlineDetail';
+import { PublicManufacturersBrowse } from './components/Public/PublicManufacturersBrowse';
+import { PublicManufacturerDetail } from './components/Public/PublicManufacturerDetail';
+import { PublicCardDetail } from './components/Public/PublicCardDetail';
+import { AboutPage } from './components/Public/AboutPage';
 
 function App() {
-  const [page, setPage] = useState<Page>({ view: 'shell', section: 'cards' });
-
-  const handleNewCard = useCallback(async () => {
-    const result = await createBlankCard();
-    if (result.cardId) {
-      setPage({ view: 'detail', cardId: result.cardId, isNew: true });
-    } else {
-      alert(`Failed to create card: ${result.error}`);
-    }
-  }, []);
-
-  if (page.view === 'wizard') {
-    const returnTo = page.editCardId
-      ? () => setPage({ view: 'detail', cardId: page.editCardId!, editing: true })
-      : () => setPage({ view: 'shell', section: 'cards' });
-
-    return (
-      <SafetyCardWizard
-        onSaveComplete={(cardId: string) => setPage({ view: 'detail', cardId, editing: true })}
-        onBackToLibrary={returnTo}
-        editCardId={page.editCardId}
-        initialStep={page.editStep}
-      />
-    );
-  }
-
-  if (page.view === 'detail') {
-    return (
-      <CardDetail
-        cardId={page.cardId}
-        isNew={page.isNew}
-        initialEditing={page.editing}
-        onBack={() => setPage({ view: 'shell', section: 'cards' })}
-        onEditCrops={() => setPage({ view: 'wizard', editCardId: page.cardId, editStep: 3 })}
-        onEditFolds={() => setPage({ view: 'wizard', editCardId: page.cardId, editStep: 4 })}
-      />
-    );
-  }
-
-  const activeSection = page.section;
-
   return (
-    <AppShell
-      activeSection={activeSection}
-      onSectionChange={(section) => setPage({ view: 'shell', section })}
-    >
-      {activeSection === 'cards' && (
-        <LibraryPage
-          onNewCard={handleNewCard}
-          onSelectCard={(cardId) => setPage({ view: 'detail', cardId })}
-        />
-      )}
-      {activeSection === 'airlines' && (
-        <AirlinesPage />
-      )}
-      {activeSection === 'manufacturers' && (
-        <ManufacturersPage />
-      )}
-    </AppShell>
+    <AuthProvider>
+      <Routes>
+        {/* Public routes */}
+        <Route element={<PublicLayout />}>
+          <Route index element={<PublicHome />} />
+          <Route path="airlines" element={<PublicAirlinesBrowse />} />
+          <Route path="airlines/:id" element={<PublicAirlineDetail />} />
+          <Route path="manufacturers" element={<PublicManufacturersBrowse />} />
+          <Route path="manufacturers/:id" element={<PublicManufacturerDetail />} />
+          <Route path="cards/:id" element={<PublicCardDetail />} />
+          <Route path="about" element={<AboutPage />} />
+        </Route>
+
+        {/* Auth */}
+        <Route path="admin/login" element={<LoginPage />} />
+
+        {/* Admin routes (auth required) */}
+        <Route path="admin" element={<RequireAuth><AdminLayout /></RequireAuth>}>
+          <Route index element={<AdminLibrary />} />
+          <Route path="cards/:id" element={<AdminCardDetail />} />
+          <Route path="cards/:id/crop" element={<AdminCropEditor />} />
+          <Route path="cards/:id/folds" element={<AdminFoldEditor />} />
+          <Route path="airlines" element={<AdminAirlines />} />
+          <Route path="manufacturers" element={<AdminManufacturers />} />
+        </Route>
+
+        {/* Fallback */}
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </AuthProvider>
   );
 }
 
