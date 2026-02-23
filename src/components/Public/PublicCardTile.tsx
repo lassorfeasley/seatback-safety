@@ -11,16 +11,14 @@ export const PublicCardTile: React.FC<{ card: CardSummary }> = ({ card }) => {
     <Link
       to={`/cards/${card.id}`}
       className="group flex flex-col rounded-lg overflow-hidden
-                 transition-all hover:shadow-lg focus-visible:outline-none
-                 focus-visible:ring-2 focus-visible:ring-primary"
+                 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
     >
       <div className="aspect-square bg-muted/60 relative overflow-hidden rounded-lg">
         {imgSrc ? (
           <img
             src={imgSrc}
             alt={card.title || 'Safety card'}
-            className="absolute inset-0 w-full h-full object-cover
-                       transition-transform group-hover:scale-[1.03]"
+            className="absolute inset-0 w-full h-full object-cover"
             loading="lazy"
             onError={() => {
               fallbackIdx.current += 1;

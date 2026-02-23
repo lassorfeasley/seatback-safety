@@ -56,6 +56,7 @@ export const PublicCardDetail: React.FC = () => {
     .sort((a, b) => a.panel_index - b.panel_index);
   const hasPanels = frontPanels.length > 0 || backPanels.length > 0;
   const allCropsComplete = hasPanels && card.panels.length >= panelCount * 2;
+  const has3D = allCropsComplete && card.creases.length > 0;
 
   const metadataItems = [
     { label: 'Airline', value: card.airline_name },
@@ -76,73 +77,79 @@ export const PublicCardDetail: React.FC = () => {
         <ArrowLeft className="h-4 w-4" /> Back
       </Link>
 
-      <div className="grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-10">
-        {/* Main content */}
-        <div className="min-w-0 flex flex-col gap-8">
-          <div>
-            <h1 className="text-2xl font-semibold tracking-tight">
-              {card.title || 'Untitled Card'}
-            </h1>
-            {card.aircraft_label && (
-              <p className="text-muted-foreground mt-1">{card.aircraft_label}</p>
-            )}
-            {card.languages && card.languages.length > 0 && (
-              <div className="flex gap-1.5 mt-2">
-                {card.languages.map((lang) => (
-                  <Badge key={lang} variant="secondary" className="text-xs">{lang}</Badge>
-                ))}
-              </div>
-            )}
+      {/* Title */}
+      <div className="mb-6">
+        <h1 className="text-2xl font-semibold tracking-tight">
+          {card.title || 'Untitled Card'}
+        </h1>
+        {card.aircraft_label && (
+          <p className="text-muted-foreground mt-1">{card.aircraft_label}</p>
+        )}
+        {card.languages && card.languages.length > 0 && (
+          <div className="flex gap-1.5 mt-2">
+            {card.languages.map((lang) => (
+              <Badge key={lang} variant="secondary" className="text-xs">{lang}</Badge>
+            ))}
           </div>
+        )}
+      </div>
 
-          {/* 3D Visualizer */}
-          {allCropsComplete && card.creases.length > 0 && (
+      {/* 3D Visualizer -- full width, golden ratio */}
+      {has3D && (
+        <div
+          className="w-full rounded-lg overflow-hidden mb-8"
+          style={{ aspectRatio: '1.618 / 1' }}
+        >
+          <div className="w-full h-full rounded-lg overflow-hidden bg-gradient-to-b from-slate-100 to-slate-200 dark:from-slate-800 dark:to-slate-900">
             <CardVisualizer3D
               panels={card.panels}
               creases={card.creases}
               cover={card.cover}
               pivotIndex={card.pivotIndex ?? undefined}
+              minimal
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Panel spreads */}
+      {hasPanels && (
+        <div className="flex flex-col gap-6 mb-8">
+          {frontPanels.length > 0 && (
+            <PanelSpread
+              label="Front"
+              panels={frontPanels}
+              displayUrls={card.displayUrls}
+              fullUrls={card.fullUrls}
+              onZoom={setLightboxUrl}
             />
           )}
-
-          {/* Panel spreads */}
-          {hasPanels && (
-            <div className="flex flex-col gap-6">
-              {frontPanels.length > 0 && (
-                <PanelSpread
-                  label="Front"
-                  panels={frontPanels}
-                  displayUrls={card.displayUrls}
-                  fullUrls={card.fullUrls}
-                  onZoom={setLightboxUrl}
-                />
-              )}
-              {backPanels.length > 0 && (
-                <PanelSpread
-                  label="Back"
-                  panels={backPanels}
-                  displayUrls={card.displayUrls}
-                  fullUrls={card.fullUrls}
-                  onZoom={setLightboxUrl}
-                />
-              )}
-            </div>
+          {backPanels.length > 0 && (
+            <PanelSpread
+              label="Back"
+              panels={backPanels}
+              displayUrls={card.displayUrls}
+              fullUrls={card.fullUrls}
+              onZoom={setLightboxUrl}
+            />
           )}
         </div>
+      )}
 
-        {/* Sidebar metadata */}
+      {/* Metadata below */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+        {metadataItems.length > 0 && (
+          <div className="rounded-lg border divide-y">
+            {metadataItems.map((item) => (
+              <div key={item.label} className="flex items-baseline justify-between px-4 py-2.5">
+                <span className="text-xs text-muted-foreground">{item.label}</span>
+                <span className="text-sm font-medium text-right">{item.value}</span>
+              </div>
+            ))}
+          </div>
+        )}
+
         <div className="flex flex-col gap-5">
-          {metadataItems.length > 0 && (
-            <div className="rounded-lg border divide-y">
-              {metadataItems.map((item) => (
-                <div key={item.label} className="flex items-baseline justify-between px-4 py-2.5">
-                  <span className="text-xs text-muted-foreground">{item.label}</span>
-                  <span className="text-sm font-medium text-right">{item.value}</span>
-                </div>
-              ))}
-            </div>
-          )}
-
           {card.notes && (
             <div className="rounded-lg bg-muted/40 p-4">
               <p className="text-xs font-medium text-muted-foreground mb-1">Notes</p>

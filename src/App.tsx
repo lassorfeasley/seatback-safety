@@ -18,6 +18,8 @@ import { PublicAirlineDetail } from './components/Public/PublicAirlineDetail';
 import { PublicManufacturersBrowse } from './components/Public/PublicManufacturersBrowse';
 import { PublicManufacturerDetail } from './components/Public/PublicManufacturerDetail';
 import { PublicCardDetail } from './components/Public/PublicCardDetail';
+import { PublicDecadesBrowse, PublicDecadeDetail } from './components/Public/PublicDecades';
+import { PublicSearch } from './components/Public/PublicSearch';
 import { AboutPage } from './components/Public/AboutPage';
 
 function App() {
@@ -32,6 +34,9 @@ function App() {
           <Route path="manufacturers" element={<PublicManufacturersBrowse />} />
           <Route path="manufacturers/:id" element={<PublicManufacturerDetail />} />
           <Route path="cards/:id" element={<PublicCardDetail />} />
+          <Route path="decades" element={<PublicDecadesBrowse />} />
+          <Route path="decades/:decade" element={<PublicDecadeDetail />} />
+          <Route path="search" element={<PublicSearch />} />
           <Route path="about" element={<AboutPage />} />
         </Route>
 

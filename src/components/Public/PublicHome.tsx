@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Loader2, Plane, ArrowRight } from 'lucide-react';
+import { Loader2, ArrowRight } from 'lucide-react';
 import { fetchCards, type CardSummary } from '@/lib/safetyCardService';
 import { fetchAirlinesBrowse, fetchManufacturersBrowse, type AirlineBrowse, type ManufacturerBrowse } from '@/lib/lookupService';
 import { PublicCardTile } from './PublicCardTile';
@@ -35,25 +35,7 @@ export const PublicHome: React.FC = () => {
   const recentCards = cards.slice(0, 8);
 
   return (
-    <div>
-      {/* Hero */}
-      <section className="border-b bg-gradient-to-b from-primary/[0.03] to-transparent">
-        <div className="max-w-6xl mx-auto px-6 py-20 text-center">
-          <div className="inline-flex items-center justify-center h-16 w-16 rounded-2xl bg-primary/10 mb-6">
-            <Plane className="h-8 w-8 text-primary" />
-          </div>
-          <h1 className="text-4xl sm:text-5xl font-bold tracking-tight">
-            Seatback Safety Cards
-          </h1>
-          <p className="text-lg text-muted-foreground mt-4 max-w-xl mx-auto">
-            A curated collection of airline safety cards spanning decades of aviation history.
-          </p>
-          <p className="text-sm text-muted-foreground mt-2">
-            {cards.length} cards and counting
-          </p>
-        </div>
-      </section>
-
+    <div style={{ backgroundColor: '#ebeaef' }} className="min-h-[calc(100dvh-4rem)]">
       {/* Recent Additions */}
       {recentCards.length > 0 && (
         <section className="max-w-6xl mx-auto px-6 py-12">

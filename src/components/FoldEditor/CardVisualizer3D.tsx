@@ -10,6 +10,7 @@ interface CardVisualizer3DProps {
   creases: Crease[];
   cover?: CoverDesignation;
   pivotIndex?: number;
+  minimal?: boolean;
 }
 
 interface Spread {
@@ -33,7 +34,7 @@ function defaultPivot(coverIdx: number, panelCount: number): number {
 }
 
 export const CardVisualizer3D: React.FC<CardVisualizer3DProps> = ({
-  panels, creases, cover, pivotIndex,
+  panels, creases, cover, pivotIndex, minimal,
 }) => {
   const [targetFoldState, setTargetFoldState] = useState<0 | 1>(1);
   const [rotation, setRotation] = useState({ x: 0, y: 0 });
@@ -198,11 +199,14 @@ export const CardVisualizer3D: React.FC<CardVisualizer3DProps> = ({
 
   // ─── Drag-to-rotate ───────────────────────────────────────────
 
+  const dragDistance = useRef(0);
+
   const startDrag = useCallback(
     (x: number, y: number) => {
       setIsDragging(true);
       dragStart.current = { x, y };
       rotationStart.current = { ...rotation };
+      dragDistance.current = 0;
     },
     [rotation]
   );
@@ -210,6 +214,7 @@ export const CardVisualizer3D: React.FC<CardVisualizer3DProps> = ({
   const moveDrag = useCallback(
     (x: number, y: number) => {
       if (!isDragging) return;
+      dragDistance.current += Math.abs(x - dragStart.current.x) + Math.abs(y - dragStart.current.y);
       setRotation({
         x: rotationStart.current.x - (y - dragStart.current.y) * 0.5,
         y: rotationStart.current.y + (x - dragStart.current.x) * 0.5,
@@ -219,6 +224,15 @@ export const CardVisualizer3D: React.FC<CardVisualizer3DProps> = ({
   );
 
   const endDrag = useCallback(() => setIsDragging(false), []);
+
+  const handleCanvasClick = useCallback(() => {
+    if (!minimal || dragDistance.current > 5) return;
+    if (targetFoldState === 1) {
+      handleUnfold();
+    } else {
+      handleFold();
+    }
+  }, [minimal, targetFoldState, handleUnfold, handleFold]);
 
   // ─── Layout math ──────────────────────────────────────────────
 
@@ -353,6 +367,78 @@ export const CardVisualizer3D: React.FC<CardVisualizer3DProps> = ({
 
   if (spreads.length === 0) return null;
 
+  const canvasEl = (
+        <div
+          className={cn(
+            minimal
+              ? 'relative w-full h-full select-none overflow-hidden'
+              : 'rounded-b-lg bg-gradient-to-b from-slate-100 to-slate-200 dark:from-slate-800 dark:to-slate-900 relative min-h-[350px] h-full select-none overflow-hidden',
+            isDragging ? 'cursor-grabbing' : (minimal ? 'cursor-pointer' : 'cursor-grab')
+          )}
+          style={{ perspective: '1200px', perspectiveOrigin: '50% 50%' }}
+          onMouseDown={(e) => { e.preventDefault(); startDrag(e.clientX, e.clientY); }}
+          onMouseMove={(e) => moveDrag(e.clientX, e.clientY)}
+          onMouseUp={() => { handleCanvasClick(); endDrag(); }}
+          onMouseLeave={() => { if (isDragging) endDrag(); }}
+          onTouchStart={(e) => { if (e.touches.length === 1) startDrag(e.touches[0].clientX, e.touches[0].clientY); }}
+          onTouchMove={(e) => { if (e.touches.length === 1) moveDrag(e.touches[0].clientX, e.touches[0].clientY); }}
+          onTouchEnd={() => { handleCanvasClick(); endDrag(); }}
+        >
+          {/* Outer container: user rotation + staticFlipY */}
+          <div
+            style={{
+              position: 'absolute',
+              left: `calc(50% - ${centerX}px)`,
+              top: `calc(50% - ${centerY}px)`,
+              transformStyle: 'preserve-3d',
+              transformOrigin: `${centerX}px ${centerY}px`,
+              transition: !settled ? 'none' : (
+                isDragging ? 'none' : `transform 300ms ease-out, left ${FOLD_DURATION}ms cubic-bezier(0.4, 0, 0.2, 1)`
+              ),
+              transform: [
+                minimal ? 'scale(1.5)' : '',
+                `rotateX(${rotation.x}deg)`,
+                `rotateY(${rotation.y + staticFlipY}deg)`,
+              ].filter(Boolean).join(' '),
+            }}
+          >
+            {/* Panels in a flex row — flex ensures edges adjoin naturally.
+                DOM order = paint order (back-to-front via paintOrder).
+                CSS `order` restores left-to-right visual layout. */}
+            <div ref={cardRef} className="inline-flex" style={{ transformStyle: 'preserve-3d' }}>
+              {paintOrder.map((spread) => {
+                const t = panelTransformMap[spread.index];
+                if (!t) return null;
+                const origin = t.hingeSide === 'left'
+                  ? 'left center'
+                  : t.hingeSide === 'right'
+                    ? 'right center'
+                    : 'center center';
+                return (
+                  <div
+                    key={`panel-${spread.index}`}
+                    className="relative flex-shrink-0"
+                    style={{
+                      order: spread.index,
+                      transformStyle: 'preserve-3d',
+                      transformOrigin: origin,
+                      transition: foldTransition,
+                      transform: `translateZ(${zDirection * t.zOffset}px) rotateY(${t.yRotation}deg)`,
+                    }}
+                  >
+                    {renderPanelFaces(spread)}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+  );
+
+  if (minimal) {
+    return canvasEl;
+  }
+
   return (
     <Card className="w-full flex flex-col">
       <CardHeader className="py-3 px-4">
@@ -405,66 +491,7 @@ export const CardVisualizer3D: React.FC<CardVisualizer3DProps> = ({
         <p className="text-[10px] text-muted-foreground mt-1">Drag to rotate</p>
       </CardHeader>
       <CardContent className="p-0 flex-1">
-        <div
-          className={cn(
-            'rounded-b-lg bg-gradient-to-b from-slate-100 to-slate-200 dark:from-slate-800 dark:to-slate-900',
-            'relative min-h-[350px] h-full select-none overflow-hidden',
-            isDragging ? 'cursor-grabbing' : 'cursor-grab'
-          )}
-          style={{ perspective: '1200px', perspectiveOrigin: '50% 50%' }}
-          onMouseDown={(e) => { e.preventDefault(); startDrag(e.clientX, e.clientY); }}
-          onMouseMove={(e) => moveDrag(e.clientX, e.clientY)}
-          onMouseUp={endDrag}
-          onMouseLeave={() => { if (isDragging) endDrag(); }}
-          onTouchStart={(e) => { if (e.touches.length === 1) startDrag(e.touches[0].clientX, e.touches[0].clientY); }}
-          onTouchMove={(e) => { if (e.touches.length === 1) moveDrag(e.touches[0].clientX, e.touches[0].clientY); }}
-          onTouchEnd={endDrag}
-        >
-          {/* Outer container: user rotation + staticFlipY */}
-          <div
-            style={{
-              position: 'absolute',
-              left: `calc(50% - ${centerX}px)`,
-              top: `calc(50% - ${centerY}px)`,
-              transformStyle: 'preserve-3d',
-              transformOrigin: `${centerX}px ${centerY}px`,
-              transition: !settled ? 'none' : (
-                isDragging ? 'none' : 'transform 300ms ease-out'
-              ),
-              transform: `rotateX(${rotation.x}deg) rotateY(${rotation.y + staticFlipY}deg)`,
-            }}
-          >
-            {/* Panels in a flex row — flex ensures edges adjoin naturally.
-                DOM order = paint order (back-to-front via paintOrder).
-                CSS `order` restores left-to-right visual layout. */}
-            <div ref={cardRef} className="inline-flex" style={{ transformStyle: 'preserve-3d' }}>
-              {paintOrder.map((spread) => {
-                const t = panelTransformMap[spread.index];
-                if (!t) return null;
-                const origin = t.hingeSide === 'left'
-                  ? 'left center'
-                  : t.hingeSide === 'right'
-                    ? 'right center'
-                    : 'center center';
-                return (
-                  <div
-                    key={`panel-${spread.index}`}
-                    className="relative flex-shrink-0"
-                    style={{
-                      order: spread.index,
-                      transformStyle: 'preserve-3d',
-                      transformOrigin: origin,
-                      transition: foldTransition,
-                      transform: `translateZ(${zDirection * t.zOffset}px) rotateY(${t.yRotation}deg)`,
-                    }}
-                  >
-                    {renderPanelFaces(spread)}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        </div>
+        {canvasEl}
       </CardContent>
     </Card>
   );

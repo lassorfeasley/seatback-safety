@@ -17,6 +17,7 @@ export interface CardSummary {
   og_url: string | null;
   airline_name: string | null;
   aircraft_label: string | null;
+  published_year: number | null;
 }
 
 export interface ScanInfo {
@@ -540,7 +541,7 @@ export async function fetchCards(): Promise<CardSummary[]> {
   const { data: cards, error } = await supabase
     .from('safety_cards')
     .select(`
-      id, title, panel_count, cover_spread_index, cover_side, created_at,
+      id, title, panel_count, cover_spread_index, cover_side, created_at, published_year,
       airlines ( name ),
       aircraft_variants ( name, aircraft_models ( name, aircraft_manufacturers ( name ) ) ),
       card_aircraft ( sort_order,
@@ -637,6 +638,7 @@ export async function fetchCards(): Promise<CardSummary[]> {
       og_url: ogUrl,
       airline_name: (airline?.name as string) ?? null,
       aircraft_label: label,
+      published_year: (card.published_year as number) ?? null,
     };
   });
 }
