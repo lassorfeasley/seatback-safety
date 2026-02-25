@@ -302,7 +302,7 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
 
       // Crosshair
       ctx.save();
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+      ctx.strokeStyle = '#CCFF00';
       ctx.lineWidth = 0.5;
       ctx.setLineDash([4, 3]);
       ctx.beginPath();
@@ -314,7 +314,7 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
       ctx.restore();
 
       ctx.save();
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+      ctx.fillStyle = '#CCFF00';
       ctx.beginPath();
       ctx.arc(r, r, 1.5, 0, Math.PI * 2);
       ctx.fill();
