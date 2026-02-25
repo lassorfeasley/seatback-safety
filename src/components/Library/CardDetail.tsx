@@ -63,7 +63,7 @@ import type { Panel } from '@/components/FoldEditor/types';
 interface CardDetailProps {
   cardId: string;
   onBack: () => void;
-  onEditCrops?: () => void;
+  onEditCrops?: (panelIndex: number, side: string) => void;
   onEditFolds?: () => void;
   isNew?: boolean;
   initialEditing?: boolean;
@@ -507,6 +507,7 @@ export const CardDetail: React.FC<CardDetailProps> = ({ cardId, onBack, onEditCr
                   <>
                     <SpreadRow
                       label="Front"
+                      side="front"
                       panels={frontPanels}
                       expectedCount={panelsPerSide}
                       displayUrls={card.displayUrls}
@@ -518,6 +519,7 @@ export const CardDetail: React.FC<CardDetailProps> = ({ cardId, onBack, onEditCr
                     <div className="my-4" />
                     <SpreadRow
                       label="Back"
+                      side="back"
                       panels={backPanels}
                       expectedCount={panelsPerSide}
                       displayUrls={card.displayUrls}
@@ -1181,17 +1183,19 @@ const CollapsibleHeading: React.FC<{
 
 interface SpreadRowProps {
   label: string;
+  side: 'front' | 'back';
   panels: Panel[];
   expectedCount: number;
   displayUrls: Record<string, string>;
   fullUrls: Record<string, string>;
   onZoom: (url: string) => void;
   isEditing?: boolean;
-  onEditCrops?: () => void;
+  onEditCrops?: (panelIndex: number, side: string) => void;
 }
 
 const SpreadRow: React.FC<SpreadRowProps> = ({
   label,
+  side,
   panels,
   expectedCount,
   displayUrls,
@@ -1226,7 +1230,7 @@ const SpreadRow: React.FC<SpreadRowProps> = ({
                 isEditing && onEditCrops && 'cursor-pointer hover:ring-2 hover:ring-primary/50 transition-all',
               )}
               style={{ maxHeight: 300 }}
-              onClick={isEditing && onEditCrops ? onEditCrops : undefined}
+              onClick={isEditing && onEditCrops ? () => onEditCrops(i, side) : undefined}
             >
               {displayUrl ? (
                 <>

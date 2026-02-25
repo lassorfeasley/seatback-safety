@@ -57,6 +57,7 @@ interface SafetyCardWizardProps {
   onBackToLibrary?: () => void;
   editCardId?: string;
   initialStep?: 3 | 4;
+  initialSlot?: { panelIndex: number; side: 'front' | 'back' };
 }
 
 export const SafetyCardWizard: React.FC<SafetyCardWizardProps> = ({
@@ -64,6 +65,7 @@ export const SafetyCardWizard: React.FC<SafetyCardWizardProps> = ({
   onBackToLibrary,
   editCardId,
   initialStep,
+  initialSlot,
 }) => {
   const isEditMode = !!editCardId;
 
@@ -86,6 +88,7 @@ export const SafetyCardWizard: React.FC<SafetyCardWizardProps> = ({
   const [editSideIds, setEditSideIds] = useState<Record<string, string>>({});
   const [isSaving, setIsSaving] = useState(false);
   const [saveProgress, setSaveProgress] = useState('');
+  const [pendingSave, setPendingSave] = useState(false);
 
   // ─── Load existing card data for edit mode ─────────────────────
 
@@ -160,22 +163,54 @@ export const SafetyCardWizard: React.FC<SafetyCardWizardProps> = ({
           }
         }
 
-        setState((prev) => ({
-          ...prev,
-          currentStep: 3,
-          panelCount: editData.panelCount,
-          images,
-          slots,
-          cropWidth: editData.cropWidth,
-          cropHeight: editData.cropHeight,
-        }));
+        setState((prev) => {
+          const base = {
+            ...prev,
+            currentStep: 3 as const,
+            panelCount: editData.panelCount,
+            images,
+            slots,
+            cropWidth: editData.cropWidth,
+            cropHeight: editData.cropHeight,
+          };
+
+          if (initialSlot) {
+            const existing = slots.find(
+              (s) => s.panelIndex === initialSlot.panelIndex && s.side === initialSlot.side
+            );
+            base.activeSlot = { panelIndex: initialSlot.panelIndex, side: initialSlot.side };
+
+            if (existing?.imageId) {
+              base.selectedImageId = existing.imageId;
+            } else {
+              const oppSide: PanelSide = initialSlot.side === 'front' ? 'back' : 'front';
+              const oppSlot = slots.find(
+                (s) => s.panelIndex === initialSlot.panelIndex && s.side === oppSide
+              );
+              const oppImageId = oppSlot?.imageId ?? null;
+              let defaultImageId = images[0]?.id || null;
+              if (images.length === 2) {
+                if (oppImageId) {
+                  defaultImageId = images.find((i) => i.id !== oppImageId)?.id ?? defaultImageId;
+                } else if (initialSlot.side === 'back') {
+                  defaultImageId = images[1].id;
+                }
+              } else if (images.length > 2 && oppImageId) {
+                defaultImageId = images.find((i) => i.id !== oppImageId)?.id ?? defaultImageId;
+              }
+              base.selectedImageId = defaultImageId;
+            }
+          }
+
+          return base;
+        });
       }
 
       setEditLoading(false);
     };
 
     load();
-  }, [editCardId, initialStep]);
+  }, [editCardId, initialStep, initialSlot]);
 
   // ─── Derived data ──────────────────────────────────────────────
 
@@ -323,8 +358,12 @@ export const SafetyCardWizard: React.FC<SafetyCardWizardProps> = ({
   }, []);
 
   const handleCancelCrop = useCallback(() => {
-    setState((prev) => ({ ...prev, activeSlot: null, selectedImageId: null }));
-  }, []);
+    if (initialSlot) {
+      onBackToLibrary?.();
+    } else {
+      setState((prev) => ({ ...prev, activeSlot: null, selectedImageId: null }));
+    }
+  }, [initialSlot, onBackToLibrary]);
 
   const handleConfirmCrop = useCallback(
     (
@@ -341,11 +380,13 @@ export const SafetyCardWizard: React.FC<SafetyCardWizardProps> = ({
             ? { ...slot, imageId, cropRegion: region, thumbnailUrl }
             : slot
         ),
-        activeSlot: null,
-        selectedImageId: null,
+        ...(initialSlot ? {} : { activeSlot: null, selectedImageId: null }),
       }));
+      if (initialSlot) {
+        setPendingSave(true);
+      }
     },
-    []
+    [initialSlot]
   );
 
   const handleClearSlot = useCallback((panelIndex: number, side: PanelSide) => {
@@ -536,6 +577,14 @@ export const SafetyCardWizard: React.FC<SafetyCardWizardProps> = ({
     }
   }, [state, editCardId, initialStep, editSideIds, onSaveComplete]);
 
+  // Auto-save after confirming a crop in direct mode
+  useEffect(() => {
+    if (pendingSave && !isSaving) {
+      setPendingSave(false);
+      handleSave();
+    }
+  }, [pendingSave, isSaving, handleSave]);
+
   // ─── Render ────────────────────────────────────────────────────
 
   if (editLoading) {
@@ -550,7 +599,17 @@ export const SafetyCardWizard: React.FC<SafetyCardWizardProps> = ({
   }
 
   return (
-    <div className="h-dvh flex flex-col bg-background overflow-hidden">
+    <div className="h-dvh flex flex-col bg-background overflow-hidden relative">
+      {isSaving && initialSlot && (
+        <div className="absolute inset-0 z-50 bg-background/80 flex items-center justify-center">
+          <div className="flex flex-col items-center gap-3">
+            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+            <p className="text-sm text-muted-foreground">Saving crop...</p>
+            {saveProgress && <p className="text-xs text-muted-foreground">{saveProgress}</p>}
+          </div>
+        </div>
+      )}
+      {!initialSlot && (
       <div className="border-b flex-shrink-0">
         <div className="max-w-7xl mx-auto flex items-center">
           {onBackToLibrary && (
@@ -580,6 +639,7 @@ export const SafetyCardWizard: React.FC<SafetyCardWizardProps> = ({
           )}
         </div>
       </div>
+      )}
 
       {/* Step content — fills remaining height */}
       <div className="flex-1 min-h-0 w-full" style={{ maxWidth: state.currentStep === 3 ? 'none' : '80rem', margin: '0 auto' }}>

@@ -17,7 +17,7 @@ export const AdminCardDetail: React.FC = () => {
       isNew={isNew}
       initialEditing={isNew || editing}
       onBack={() => navigate('/admin')}
-      onEditCrops={() => navigate(`/admin/cards/${id}/crop`)}
+      onEditCrops={(panelIndex, side) => navigate(`/admin/cards/${id}/crop?panel=${panelIndex}&side=${side}`)}
       onEditFolds={() => navigate(`/admin/cards/${id}/folds`)}
     />
   );

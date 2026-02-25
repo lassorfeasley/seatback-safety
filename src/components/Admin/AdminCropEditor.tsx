@@ -1,9 +1,17 @@
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { SafetyCardWizard } from '@/components/Wizard';
 
 export const AdminCropEditor: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+
+  const panelParam = searchParams.get('panel');
+  const sideParam = searchParams.get('side');
+  const initialSlot =
+    panelParam != null && (sideParam === 'front' || sideParam === 'back')
+      ? { panelIndex: parseInt(panelParam, 10), side: sideParam as 'front' | 'back' }
+      : undefined;
 
   if (!id) return null;
 
@@ -11,6 +19,7 @@ export const AdminCropEditor: React.FC = () => {
     <SafetyCardWizard
       editCardId={id}
       initialStep={3}
+      initialSlot={initialSlot}
       onSaveComplete={() => navigate(`/admin/cards/${id}?editing=1`)}
       onBackToLibrary={() => navigate(`/admin/cards/${id}?editing=1`)}
     />

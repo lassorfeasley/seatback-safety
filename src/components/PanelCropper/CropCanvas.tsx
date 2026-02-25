@@ -9,6 +9,8 @@ const MIN_REGION_SIZE = 20;
 const ZOOM_SCALE_BY = 1.1;
 const MAX_ZOOM = 5;
 const MIN_ZOOM = 0.01;
+const MAGNIFIER_SIZE = 150;
+const MAGNIFIER_ZOOM = 3;
 
 export const CropCanvas: React.FC<CropCanvasProps> = ({
   imageUrl,
@@ -48,6 +50,11 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
   // Straighten tool — two-point edge alignment
   const [straightenPoint1, setStraightenPoint1] = useState<{ x: number; y: number } | null>(null);
   const [straightenPreview, setStraightenPreview] = useState<{ x: number; y: number } | null>(null);
+
+  // Magnifier loupe
+  const [showMagnifier, setShowMagnifier] = useState(true);
+  const magnifierCanvasRef = useRef<HTMLCanvasElement>(null);
+  const magnifierWrapRef = useRef<HTMLDivElement>(null);
 
   // Clear straighten points when mode is deactivated
   useEffect(() => {
@@ -111,6 +118,9 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
       }
       if (e.key === 'g' || e.key === 'G') {
         setGuideMode((prev) => prev === 'off' ? 'grid' : 'off');
+      }
+      if (e.key === 'm' || e.key === 'M') {
+        setShowMagnifier((prev) => !prev);
       }
     };
     window.addEventListener('keydown', handleKeyDown);
@@ -250,6 +260,69 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
     [stageScale, stagePosition, stageSize]
   );
 
+  // ─── Magnifier drawing ─────────────────────────────────────────
+
+  useEffect(() => {
+    if (!showMagnifier && magnifierWrapRef.current) {
+      magnifierWrapRef.current.style.display = 'none';
+    }
+  }, [showMagnifier]);
+
+  const drawMagnifier = useCallback(
+    (canvas: HTMLCanvasElement, canvasX: number, canvasY: number) => {
+      if (!image || !imageDimensions) return;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+      const size = MAGNIFIER_SIZE;
+      const zoom = MAGNIFIER_ZOOM;
+      const r = size / 2;
+
+      ctx.clearRect(0, 0, size, size);
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(r, r, r, 0, Math.PI * 2);
+      ctx.clip();
+
+      ctx.fillStyle = '#111';
+      ctx.fillRect(0, 0, size, size);
+
+      ctx.translate(r, r);
+      ctx.scale(zoom, zoom);
+      ctx.translate(-canvasX, -canvasY);
+
+      ctx.translate(
+        imageOffset.x + imageDimensions.width / 2,
+        imageOffset.y + imageDimensions.height / 2
+      );
+      ctx.rotate((rotation * Math.PI) / 180);
+      ctx.translate(-imageDimensions.width / 2, -imageDimensions.height / 2);
+      ctx.drawImage(image, 0, 0);
+
+      ctx.restore();
+
+      // Crosshair
+      ctx.save();
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+      ctx.lineWidth = 0.5;
+      ctx.setLineDash([4, 3]);
+      ctx.beginPath();
+      ctx.moveTo(r, 8);
+      ctx.lineTo(r, size - 8);
+      ctx.moveTo(8, r);
+      ctx.lineTo(size - 8, r);
+      ctx.stroke();
+      ctx.restore();
+
+      ctx.save();
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+      ctx.beginPath();
+      ctx.arc(r, r, 1.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    },
+    [image, imageDimensions, imageOffset, rotation]
+  );
+
   // ─── Mouse handlers ────────────────────────────────────────────
 
   const handleMouseDown = useCallback(
@@ -379,6 +452,37 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
 
   const handleMouseMove = useCallback(
     (_e: Konva.KonvaEventObject<MouseEvent>) => {
+      // Magnifier tracking
+      if (showMagnifier && image && imageDimensions) {
+        const magnifierCanvas = magnifierCanvasRef.current;
+        const magnifierWrap = magnifierWrapRef.current;
+        const container = containerRef.current;
+        const coords = pointerToCanvas();
+        if (magnifierCanvas && magnifierWrap && container && coords) {
+          if (
+            rotatedBounds &&
+            coords.x >= 0 && coords.y >= 0 &&
+            coords.x <= rotatedBounds.width && coords.y <= rotatedBounds.height
+          ) {
+            const rect = container.getBoundingClientRect();
+            const screenX = _e.evt.clientX - rect.left;
+            const screenY = _e.evt.clientY - rect.top;
+            const OFFSET = 24;
+            let left = screenX + OFFSET;
+            let top = screenY + OFFSET;
+            if (left + MAGNIFIER_SIZE > container.offsetWidth)
+              left = screenX - MAGNIFIER_SIZE - OFFSET;
+            if (top + MAGNIFIER_SIZE > container.offsetHeight)
+              top = screenY - MAGNIFIER_SIZE - OFFSET;
+            magnifierWrap.style.transform = `translate(${left}px, ${top}px)`;
+            magnifierWrap.style.display = 'block';
+            drawMagnifier(magnifierCanvas, coords.x, coords.y);
+          } else {
+            magnifierWrap.style.display = 'none';
+          }
+        }
+      }
+
       // Straighten preview line
       if (straightenMode && straightenPoint1) {
         const coords = pointerToCanvas();
@@ -415,7 +519,7 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
           : null
       );
     },
-    [isDrawing, drawStart, pointerToCanvas, clampToBounds, hasConstrainedHeight, straightenMode, straightenPoint1]
+    [isDrawing, drawStart, pointerToCanvas, clampToBounds, hasConstrainedHeight, straightenMode, straightenPoint1, showMagnifier, image, imageDimensions, rotatedBounds, drawMagnifier]
   );
 
   const handleMouseUp = useCallback(() => {
@@ -449,6 +553,12 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
 
     setDrawingRegion(null);
   }, [isDrawing, drawingRegion, singleCropMode, regions.length, onRegionAdd, hasConstrainedHeight, constrainHeight]);
+
+  const handleMouseLeave = useCallback(() => {
+    const magnifierWrap = magnifierWrapRef.current;
+    if (magnifierWrap) magnifierWrap.style.display = 'none';
+    handleMouseUp();
+  }, [handleMouseUp]);
 
   // ─── Region click (select) ─────────────────────────────────────
 
@@ -538,7 +648,7 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
-        onMouseLeave={handleMouseUp}
+        onMouseLeave={handleMouseLeave}
       >
         <Layer>
           {/* Rotated image */}
@@ -687,8 +797,37 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
         </Layer>
       </Stage>
 
+      {/* Magnifier loupe */}
+      <div
+        ref={magnifierWrapRef}
+        className="absolute top-0 left-0 pointer-events-none"
+        style={{ display: 'none', zIndex: 40, willChange: 'transform' }}
+      >
+        <canvas
+          ref={magnifierCanvasRef}
+          width={MAGNIFIER_SIZE}
+          height={MAGNIFIER_SIZE}
+          className="rounded-full"
+          style={{
+            width: MAGNIFIER_SIZE,
+            height: MAGNIFIER_SIZE,
+            boxShadow: '0 4px 20px rgba(0,0,0,0.5)',
+            border: '2px solid rgba(255,255,255,0.35)',
+          }}
+        />
+      </div>
+
       {/* Zoom controls */}
       <div className="absolute bottom-4 right-4 flex gap-1.5">
+        <button
+          className={`rounded-md px-3 py-1.5 text-sm font-medium shadow-md transition-colors ${
+            showMagnifier ? 'bg-indigo-500/80 text-white hover:bg-indigo-500' : 'bg-white/90 hover:bg-white'
+          }`}
+          onClick={() => setShowMagnifier((prev) => !prev)}
+          title={`Magnifier: ${showMagnifier ? 'on' : 'off'} (M)`}
+        >
+          ◎
+        </button>
         <button
           className={`rounded-md px-3 py-1.5 text-sm font-medium shadow-md transition-colors ${
             guideMode !== 'off' ? 'bg-red-500/80 text-white hover:bg-red-500' : 'bg-white/90 hover:bg-white'
