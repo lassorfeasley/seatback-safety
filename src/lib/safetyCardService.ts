@@ -1164,36 +1164,53 @@ export async function updateCardPanels(
     onProgress?.({ stage, current, total });
 
   try {
-    report('Cleaning up old panels', 0, 1);
+    const dirtySlots = state.slots.filter((s) => s.dirty);
 
-    const { data: existingPanelImages } = await supabase
-      .from('panel_images')
-      .select('file_path, panel_id, card_panels!inner( side_id, card_sides!inner( card_id ) )')
-      .eq('card_panels.card_sides.card_id', cardId);
-
-    if (existingPanelImages) {
-      const paths = (existingPanelImages as Array<{ file_path: string }>).map((i) => i.file_path);
-      if (paths.length > 0) {
-        await supabase.storage.from('derivatives').remove(paths);
-      }
+    if (dirtySlots.length === 0) {
+      return { success: true };
     }
 
+    // Build a lookup of existing DB panels keyed by "sideId:panelIndex"
     const { data: existingSides } = await supabase
       .from('card_sides')
-      .select('id, card_panels ( id )')
+      .select('id, side, card_panels ( id, panel_index )')
       .eq('card_id', cardId);
 
+    const existingPanelMap = new Map<string, string>();
     if (existingSides) {
-      for (const side of existingSides as Array<{ id: string; card_panels: Array<{ id: string }> }>) {
+      for (const side of existingSides as Array<{ id: string; side: string; card_panels: Array<{ id: string; panel_index: number }> }>) {
         for (const panel of side.card_panels ?? []) {
-          await supabase.from('panel_images').delete().eq('panel_id', panel.id);
-          await supabase.from('panel_crops').delete().eq('panel_id', panel.id);
-          await supabase.from('card_panels').delete().eq('id', panel.id);
+          existingPanelMap.set(`${side.id}:${panel.panel_index}`, panel.id);
         }
       }
     }
 
-    const filledSlots = state.slots.filter((s) => s.cropRegion && s.imageId);
+    report('Cleaning up changed panels', 0, dirtySlots.length);
+
+    for (const slot of dirtySlots) {
+      const sideId = sideIds[slot.side];
+      if (!sideId) continue;
+      const oldPanelId = existingPanelMap.get(`${sideId}:${slot.panelIndex}`);
+      if (!oldPanelId) continue;
+
+      const { data: oldImages } = await supabase
+        .from('panel_images')
+        .select('file_path')
+        .eq('panel_id', oldPanelId);
+
+      if (oldImages) {
+        const paths = (oldImages as Array<{ file_path: string }>).map((i) => i.file_path);
+        if (paths.length > 0) {
+          await supabase.storage.from('derivatives').remove(paths);
+        }
+      }
+
+      await supabase.from('panel_images').delete().eq('panel_id', oldPanelId);
+      await supabase.from('panel_crops').delete().eq('panel_id', oldPanelId);
+      await supabase.from('card_panels').delete().eq('id', oldPanelId);
+    }
+
+    const filledDirtySlots = dirtySlots.filter((s) => s.cropRegion && s.imageId);
     const panelImageRows: Array<{
       panel_id: string;
       variant: string;
@@ -1202,9 +1219,9 @@ export async function updateCardPanels(
       file_path: string;
     }> = [];
 
-    for (let idx = 0; idx < filledSlots.length; idx++) {
-      const slot = filledSlots[idx];
-      report('Processing panels', idx + 1, filledSlots.length);
+    for (let idx = 0; idx < filledDirtySlots.length; idx++) {
+      const slot = filledDirtySlots[idx];
+      report('Processing panels', idx + 1, filledDirtySlots.length);
 
       const sideId = sideIds[slot.side];
       const image = state.images.find((i) => i.id === slot.imageId);

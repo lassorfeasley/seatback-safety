@@ -20,6 +20,7 @@ import {
   Scissors,
   FoldVertical,
   Sparkles,
+  Printer,
   Check,
   Upload,
   Hash,
@@ -65,6 +66,7 @@ interface CardDetailProps {
   onBack: () => void;
   onEditCrops?: (panelIndex: number, side: string) => void;
   onEditFolds?: () => void;
+  onPrintLabel?: () => void;
   isNew?: boolean;
   initialEditing?: boolean;
 }
@@ -150,7 +152,7 @@ const InlineSuggestion: React.FC<{
 
 // ─── Main Component ──────────────────────────────────────────────
 
-export const CardDetail: React.FC<CardDetailProps> = ({ cardId, onBack, onEditCrops, onEditFolds, isNew, initialEditing }) => {
+export const CardDetail: React.FC<CardDetailProps> = ({ cardId, onBack, onEditCrops, onEditFolds, onPrintLabel, isNew, initialEditing }) => {
   const [card, setCard] = useState<CardDetailData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -353,6 +355,17 @@ export const CardDetail: React.FC<CardDetailProps> = ({ cardId, onBack, onEditCr
               </h1>
             </div>
             <div className="flex items-center gap-1.5 flex-shrink-0">
+              {onPrintLabel && !isEditing && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={onPrintLabel}
+                  className="gap-1.5"
+                >
+                  <Printer className="h-4 w-4" />
+                  Print Label
+                </Button>
+              )}
               <Button
                 variant={isEditing ? 'secondary' : 'outline'}
                 size="sm"

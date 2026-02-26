@@ -19,6 +19,7 @@ export const AdminCardDetail: React.FC = () => {
       onBack={() => navigate('/admin')}
       onEditCrops={(panelIndex, side) => navigate(`/admin/cards/${id}/crop?panel=${panelIndex}&side=${side}`)}
       onEditFolds={() => navigate(`/admin/cards/${id}/folds`)}
+      onPrintLabel={() => window.open(`/admin/cards/${id}/label`, '_blank')}
     />
   );
 };

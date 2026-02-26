@@ -46,8 +46,8 @@ function generateDefaultCreases(panelCount: number): Crease[] {
 function generateSlots(panelCount: number): PanelSlot[] {
   const slots: PanelSlot[] = [];
   for (let i = 0; i < panelCount; i++) {
-    slots.push({ panelIndex: i, side: 'front', imageId: null, cropRegion: null, thumbnailUrl: null });
-    slots.push({ panelIndex: i, side: 'back', imageId: null, cropRegion: null, thumbnailUrl: null });
+    slots.push({ panelIndex: i, side: 'front', imageId: null, cropRegion: null, thumbnailUrl: null, dirty: false });
+    slots.push({ panelIndex: i, side: 'back', imageId: null, cropRegion: null, thumbnailUrl: null, dirty: false });
   }
   return slots;
 }
@@ -105,8 +105,8 @@ export const SafetyCardWizard: React.FC<SafetyCardWizardProps> = ({
         for (let i = 0; i < panelCount; i++) {
           const fp = card.panels.find((p) => p.side === 'front' && p.panel_index === i);
           const bp = card.panels.find((p) => p.side === 'back' && p.panel_index === i);
-          slots.push({ panelIndex: i, side: 'front', imageId: null, cropRegion: null, thumbnailUrl: fp?.thumbnail_url ?? null });
-          slots.push({ panelIndex: i, side: 'back', imageId: null, cropRegion: null, thumbnailUrl: bp?.thumbnail_url ?? null });
+          slots.push({ panelIndex: i, side: 'front', imageId: null, cropRegion: null, thumbnailUrl: fp?.thumbnail_url ?? null, dirty: false });
+          slots.push({ panelIndex: i, side: 'back', imageId: null, cropRegion: null, thumbnailUrl: bp?.thumbnail_url ?? null, dirty: false });
         }
 
         setState((prev) => ({
@@ -156,9 +156,10 @@ export const SafetyCardWizard: React.FC<SafetyCardWizardProps> = ({
                 imageId: panelData.scanId,
                 cropRegion: { id: `crop-${i}-${side}`, x: panelData.cropX, y: panelData.cropY, width: panelData.cropWidth, height: panelData.cropHeight },
                 thumbnailUrl: panelData.thumbnailUrl,
+                dirty: false,
               });
             } else {
-              slots.push({ panelIndex: i, side, imageId: null, cropRegion: null, thumbnailUrl: null });
+              slots.push({ panelIndex: i, side, imageId: null, cropRegion: null, thumbnailUrl: null, dirty: false });
             }
           }
         }
@@ -248,6 +249,7 @@ export const SafetyCardWizard: React.FC<SafetyCardWizardProps> = ({
           newSlot.imageId = existing.imageId;
           newSlot.cropRegion = existing.cropRegion;
           newSlot.thumbnailUrl = existing.thumbnailUrl;
+          newSlot.dirty = existing.dirty;
         }
       }
 
@@ -292,7 +294,7 @@ export const SafetyCardWizard: React.FC<SafetyCardWizardProps> = ({
       // Also clear any slots that reference this image
       const updatedSlots = prev.slots.map((slot) =>
         slot.imageId === imageId
-          ? { ...slot, imageId: null, cropRegion: null, thumbnailUrl: null }
+          ? { ...slot, imageId: null, cropRegion: null, thumbnailUrl: null, dirty: true }
           : slot
       );
 
@@ -377,7 +379,7 @@ export const SafetyCardWizard: React.FC<SafetyCardWizardProps> = ({
         ...prev,
         slots: prev.slots.map((slot) =>
           slot.panelIndex === panelIndex && slot.side === side
-            ? { ...slot, imageId, cropRegion: region, thumbnailUrl }
+            ? { ...slot, imageId, cropRegion: region, thumbnailUrl, dirty: true }
             : slot
         ),
         ...(initialSlot ? {} : { activeSlot: null, selectedImageId: null }),
@@ -394,7 +396,7 @@ export const SafetyCardWizard: React.FC<SafetyCardWizardProps> = ({
       ...prev,
       slots: prev.slots.map((slot) =>
         slot.panelIndex === panelIndex && slot.side === side
-          ? { ...slot, imageId: null, cropRegion: null, thumbnailUrl: null }
+          ? { ...slot, imageId: null, cropRegion: null, thumbnailUrl: null, dirty: true }
           : slot
       ),
     }));

@@ -88,6 +88,7 @@ export interface PanelSlot {
   imageId: string | null; // which LibraryImage was used
   cropRegion: CropRegion | null; // the single crop region
   thumbnailUrl: string | null; // generated thumbnail data URL
+  dirty?: boolean; // true when crop was modified since last save
 }
 
 // Top-level wizard state

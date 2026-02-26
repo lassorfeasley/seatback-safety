@@ -7,7 +7,10 @@ import { AdminCardDetail } from './components/Admin/AdminCardDetail';
 import { AdminCropEditor } from './components/Admin/AdminCropEditor';
 import { AdminFoldEditor } from './components/Admin/AdminFoldEditor';
 import { AdminAirlines } from './components/Admin/AdminAirlines';
+import { AdminAirlineDetail } from './components/Admin/AdminAirlineDetail';
 import { AdminManufacturers } from './components/Admin/AdminManufacturers';
+import { AdminManufacturerDetail } from './components/Admin/AdminManufacturerDetail';
+import { PrintLabel } from './components/Admin/PrintLabel';
 import { LoginPage } from './components/Auth/LoginPage';
 import { RequireAuth } from './components/Auth/RequireAuth';
 
@@ -43,6 +46,9 @@ function App() {
         {/* Auth */}
         <Route path="admin/login" element={<LoginPage />} />
 
+        {/* Standalone admin pages (no layout chrome) */}
+        <Route path="admin/cards/:id/label" element={<RequireAuth><PrintLabel /></RequireAuth>} />
+
         {/* Admin routes (auth required) */}
         <Route path="admin" element={<RequireAuth><AdminLayout /></RequireAuth>}>
           <Route index element={<AdminLibrary />} />
@@ -50,7 +56,9 @@ function App() {
           <Route path="cards/:id/crop" element={<AdminCropEditor />} />
           <Route path="cards/:id/folds" element={<AdminFoldEditor />} />
           <Route path="airlines" element={<AdminAirlines />} />
+          <Route path="airlines/:id" element={<AdminAirlineDetail />} />
           <Route path="manufacturers" element={<AdminManufacturers />} />
+          <Route path="manufacturers/:id" element={<AdminManufacturerDetail />} />
         </Route>
 
         {/* Fallback */}

@@ -1,5 +1,7 @@
+import { useNavigate } from 'react-router-dom';
 import { AirlinesPage } from '@/components/Library';
 
 export const AdminAirlines: React.FC = () => {
-  return <AirlinesPage />;
+  const navigate = useNavigate();
+  return <AirlinesPage onSelectAirline={(id) => navigate(`/admin/airlines/${id}`)} />;
 };
