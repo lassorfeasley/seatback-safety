@@ -80,6 +80,7 @@ function formatBytes(bytes: number): string {
 // ─── Shared UI Components ────────────────────────────────────────
 
 const SetupStep: React.FC<{
+  id?: string;
   number: number;
   title: string;
   icon: React.ReactNode;
@@ -87,8 +88,8 @@ const SetupStep: React.FC<{
   disabled?: boolean;
   summary?: string;
   children: React.ReactNode;
-}> = ({ number, title, icon, complete, disabled, summary, children }) => (
-  <section className={`rounded-lg border p-4 ${disabled ? 'opacity-50' : ''}`}>
+}> = ({ id, number, title, icon, complete, disabled, summary, children }) => (
+  <section id={id} className={`rounded-lg border p-4 ${disabled ? 'opacity-50' : ''}`}>
     <div className="flex items-center gap-2.5 mb-3">
       <div className={`flex items-center justify-center w-6 h-6 rounded-full text-xs font-bold flex-shrink-0 ${
         complete
@@ -166,6 +167,15 @@ export const CardDetail: React.FC<CardDetailProps> = ({ cardId, onBack, onEditCr
   const [uploadingScans, setUploadingScans] = useState(false);
   const scanFileInputRef = useRef<HTMLInputElement>(null);
 
+  // Track which panel slot is being background-saved (from crop editor return)
+  const [savingSlot, setSavingSlot] = useState<{ panelIndex: number; side: string } | null>(() => {
+    const params = new URLSearchParams(window.location.search);
+    const savingParam = params.get('saving');
+    if (!savingParam) return null;
+    const [idx, side] = savingParam.split('-');
+    return idx != null && side ? { panelIndex: parseInt(idx, 10), side } : null;
+  });
+
   const refreshCard = useCallback(async () => {
     const data = await fetchCardDetail(cardId);
     if (data) setCard(data);
@@ -182,8 +192,41 @@ export const CardDetail: React.FC<CardDetailProps> = ({ cardId, onBack, onEditCr
       .catch((err) => {
         setError(err instanceof Error ? err.message : 'Unknown error');
       })
-      .finally(() => setLoading(false));
+      .finally(() => {
+        setLoading(false);
+        if (window.location.hash) {
+          setTimeout(() => {
+            const el = document.querySelector(window.location.hash);
+            el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }, 100);
+        }
+      });
   }, [cardId]);
+
+  // Poll for updates when panels are still processing or a background save is in flight
+  useEffect(() => {
+    if (!card) return;
+    const hasProcessing = card.panels.some(
+      (p) => !card.displayUrls[p.id] && !p.thumbnail_url
+    );
+
+    // Clear savingSlot once the panel appears with images
+    if (savingSlot) {
+      const panel = card.panels.find(
+        (p) => p.panel_index === savingSlot.panelIndex && p.side === savingSlot.side
+      );
+      if (panel && (card.displayUrls[panel.id] || panel.thumbnail_url)) {
+        setSavingSlot(null);
+      }
+    }
+
+    if (!hasProcessing && !savingSlot) return;
+
+    const interval = setInterval(() => {
+      refreshCard();
+    }, 2000);
+    return () => clearInterval(interval);
+  }, [card, refreshCard, savingSlot]);
 
   const handleScanUpload = useCallback(async (files: FileList) => {
     const imageFiles = Array.from(files).filter((f) => f.type.startsWith('image/'));
@@ -455,9 +498,20 @@ export const CardDetail: React.FC<CardDetailProps> = ({ cardId, onBack, onEditCr
                     {hasScans && (
                       <div className="mt-3 flex flex-wrap gap-2">
                         {card.scans.map((scan) => (
-                          <div key={scan.id} className="flex items-center gap-1.5 rounded-md border bg-muted px-2.5 py-1.5">
-                            <Layers className="h-3.5 w-3.5 text-muted-foreground/50 flex-shrink-0" />
-                            <span className="text-xs text-muted-foreground truncate max-w-[140px]">
+                          <div key={scan.id} className="flex items-center gap-1.5 rounded-md border bg-muted overflow-hidden" title={scan.original_filename ?? 'Scan'}>
+                            {(scan.thumbnailUrl || scan.url) ? (
+                              <img
+                                src={scan.thumbnailUrl ?? scan.url!}
+                                alt={scan.original_filename ?? 'Scan'}
+                                className="h-10 w-10 object-cover flex-shrink-0"
+                                loading="lazy"
+                              />
+                            ) : (
+                              <div className="h-10 w-10 flex items-center justify-center flex-shrink-0 bg-muted">
+                                <Layers className="h-3.5 w-3.5 text-muted-foreground/50" />
+                              </div>
+                            )}
+                            <span className="text-xs text-muted-foreground truncate max-w-[100px] pr-2.5">
                               {scan.original_filename ?? 'Scan'}
                             </span>
                           </div>
@@ -509,6 +563,7 @@ export const CardDetail: React.FC<CardDetailProps> = ({ cardId, onBack, onEditCr
 
               {/* ── Step 3: Panel Spreads / Crops ────────────────── */}
               <SetupStep
+                id="spreads"
                 number={3}
                 title="Panel Spreads"
                 icon={<Scissors className="h-4 w-4" />}
@@ -525,6 +580,7 @@ export const CardDetail: React.FC<CardDetailProps> = ({ cardId, onBack, onEditCr
                       expectedCount={panelsPerSide}
                       displayUrls={card.displayUrls}
                       fullUrls={card.fullUrls}
+                      savingSlot={savingSlot}
                       onZoom={setLightboxUrl}
                       isEditing={isEditing}
                       onEditCrops={onEditCrops}
@@ -537,6 +593,7 @@ export const CardDetail: React.FC<CardDetailProps> = ({ cardId, onBack, onEditCr
                       expectedCount={panelsPerSide}
                       displayUrls={card.displayUrls}
                       fullUrls={card.fullUrls}
+                      savingSlot={savingSlot}
                       onZoom={setLightboxUrl}
                       isEditing={isEditing}
                       onEditCrops={onEditCrops}
@@ -1201,6 +1258,7 @@ interface SpreadRowProps {
   expectedCount: number;
   displayUrls: Record<string, string>;
   fullUrls: Record<string, string>;
+  savingSlot?: { panelIndex: number; side: string } | null;
   onZoom: (url: string) => void;
   isEditing?: boolean;
   onEditCrops?: (panelIndex: number, side: string) => void;
@@ -1213,6 +1271,7 @@ const SpreadRow: React.FC<SpreadRowProps> = ({
   expectedCount,
   displayUrls,
   fullUrls,
+  savingSlot,
   onZoom,
   isEditing,
   onEditCrops,
@@ -1233,19 +1292,21 @@ const SpreadRow: React.FC<SpreadRowProps> = ({
         {slots.map((panel, i) => {
           const displayUrl = panel ? (displayUrls[panel.id] || panel.thumbnail_url) : null;
           const fullUrl = panel ? (fullUrls[panel.id] || displayUrl) : null;
+          const isSavingThis = savingSlot?.panelIndex === i && savingSlot?.side === side;
+          const isProcessing = (!!panel && !displayUrl) || isSavingThis;
 
           return (
             <div
               key={panel?.id ?? `empty-${i}`}
               className={cn(
                 'relative group rounded-sm overflow-hidden',
-                displayUrl ? 'bg-muted/50' : 'bg-muted/30 border border-dashed border-muted-foreground/20',
-                isEditing && onEditCrops && 'cursor-pointer hover:ring-2 hover:ring-primary/50 transition-all',
+                (displayUrl && !isSavingThis) ? 'bg-muted/50' : 'bg-muted/30 border border-dashed border-muted-foreground/20',
+                isEditing && onEditCrops && !isProcessing && 'cursor-pointer hover:ring-2 hover:ring-primary/50 transition-all',
               )}
               style={{ maxHeight: 300 }}
-              onClick={isEditing && onEditCrops ? () => onEditCrops(i, side) : undefined}
+              onClick={isEditing && onEditCrops && !isProcessing ? () => onEditCrops(i, side) : undefined}
             >
-              {displayUrl ? (
+              {displayUrl && !isSavingThis ? (
                 <>
                   <img
                     src={displayUrl}
@@ -1272,6 +1333,11 @@ const SpreadRow: React.FC<SpreadRowProps> = ({
                     </button>
                   ) : null}
                 </>
+              ) : isProcessing ? (
+                <div className="aspect-[3/4] max-h-[300px] flex flex-col items-center justify-center gap-2 animate-pulse">
+                  <Loader2 className="h-5 w-5 text-muted-foreground/50 animate-spin" />
+                  <span className="text-[11px] text-muted-foreground/50">Processing...</span>
+                </div>
               ) : (
                 <div className="aspect-[3/4] max-h-[300px] flex flex-col items-center justify-center gap-1.5">
                   {isEditing && onEditCrops ? (

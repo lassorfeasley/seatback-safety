@@ -48,12 +48,12 @@ function App() {
 
         {/* Standalone admin pages (no layout chrome) */}
         <Route path="admin/cards/:id/label" element={<RequireAuth><PrintLabel /></RequireAuth>} />
+        <Route path="admin/cards/:id/crop" element={<RequireAuth><AdminCropEditor /></RequireAuth>} />
 
         {/* Admin routes (auth required) */}
         <Route path="admin" element={<RequireAuth><AdminLayout /></RequireAuth>}>
           <Route index element={<AdminLibrary />} />
           <Route path="cards/:id" element={<AdminCardDetail />} />
-          <Route path="cards/:id/crop" element={<AdminCropEditor />} />
           <Route path="cards/:id/folds" element={<AdminFoldEditor />} />
           <Route path="airlines" element={<AdminAirlines />} />
           <Route path="airlines/:id" element={<AdminAirlineDetail />} />

@@ -31,6 +31,7 @@ export interface ScanInfo {
   file_size_bytes: number | null;
   file_path: string | null;
   url: string | null;
+  thumbnailUrl: string | null;
 }
 
 export interface DetailDocumentInfo {
@@ -95,6 +96,8 @@ export interface CardDetailData {
   priceObservations: DetailPriceObservation[];
   preview_url: string | null;
   airline_id: string | null;
+  airline_logo_url: string | null;
+  manufacturer_logo_url: string | null;
   aircraft: DetailAircraftEntry[];
   languages: string[];
 }
@@ -251,18 +254,20 @@ export async function saveCardToLibrary(
 
     for (let idx = 0; idx < imagesToUpload.length; idx++) {
       const image = imagesToUpload[idx];
+      if (!image.imageFile) continue;
+      const file = image.imageFile;
       report('Uploading scans', idx + 1, imagesToUpload.length);
 
-      const sha256 = await computeSha256(image.imageFile);
-      const ext = fileExtension(image.imageFile);
+      const sha256 = await computeSha256(file);
+      const ext = fileExtension(file);
       const scanId = crypto.randomUUID();
       const storagePath = `${cardId}/${scanId}.${ext}`;
       const dims = await getImageDimensions(image);
 
       const { error: uploadErr } = await supabase.storage
         .from('scans')
-        .upload(storagePath, image.imageFile, {
-          contentType: image.imageFile.type,
+        .upload(storagePath, file, {
+          contentType: file.type,
           upsert: false,
         });
 
@@ -277,9 +282,9 @@ export async function saveCardToLibrary(
         width_px: dims.width,
         height_px: dims.height,
         file_path: storagePath,
-        original_filename: image.imageFile.name,
-        mime_type: image.imageFile.type,
-        file_size_bytes: image.imageFile.size,
+        original_filename: file.name,
+        mime_type: file.type,
+        file_size_bytes: file.size,
         sha256_hash: sha256,
       });
 
@@ -651,11 +656,11 @@ export async function fetchCardDetail(cardId: string): Promise<CardDetailData | 
         id, title, panel_count, crop_width, crop_height,
         cover_spread_index, cover_side, pivot_index, created_at,
         published_year, revision, language, notes, airline_id,
-        airlines ( name ),
-        aircraft_variants ( name, aircraft_models ( name, aircraft_manufacturers ( name ) ) ),
+        airlines ( name, logo_path ),
+        aircraft_variants ( name, aircraft_models ( name, aircraft_manufacturers ( name, logo_path ) ) ),
         card_aircraft ( aircraft_variant_id, aircraft_model_id, sort_order,
-          aircraft_variants ( name, aircraft_models ( id, name, manufacturer_id, aircraft_manufacturers ( id, name ) ) ),
-          aircraft_models ( id, name, manufacturer_id, aircraft_manufacturers ( id, name ) )
+          aircraft_variants ( name, aircraft_models ( id, name, manufacturer_id, aircraft_manufacturers ( id, name, logo_path ) ) ),
+          aircraft_models ( id, name, manufacturer_id, aircraft_manufacturers ( id, name, logo_path ) )
         ),
         card_languages ( language, sort_order ),
         card_sides (
@@ -694,24 +699,37 @@ export async function fetchCardDetail(cardId: string): Promise<CardDetailData | 
   const { data: card, error } = cardResult;
   if (error || !card) return null;
 
-  const scans: ScanInfo[] = (scansResult.data ?? []).map((s: Record<string, unknown>) => {
-    const filePath = s.file_path as string | null;
-    const url = filePath
-      ? supabase.storage.from('scans').getPublicUrl(filePath).data.publicUrl
-      : null;
-    return {
-      id: s.id as string,
-      side: s.side as string | null,
-      dpi: s.dpi as number,
-      width_px: s.width_px as number,
-      height_px: s.height_px as number,
-      original_filename: s.original_filename as string | null,
-      mime_type: s.mime_type as string | null,
-      file_size_bytes: s.file_size_bytes as number | null,
-      file_path: filePath,
-      url,
-    };
-  });
+  const rawScans = (scansResult.data ?? []) as Array<Record<string, unknown>>;
+  const scanUrls = await Promise.all(
+    rawScans.map(async (s) => {
+      const filePath = s.file_path as string | null;
+      if (!filePath) return { url: null, thumbnailUrl: null };
+      const [{ data: signed }, { data: thumb }] = await Promise.all([
+        supabase.storage.from('scans').createSignedUrl(filePath, 3600),
+        supabase.storage.from('scans').createSignedUrl(filePath, 3600, {
+          transform: { width: 120, resize: 'contain' },
+        }),
+      ]);
+      return {
+        url: signed?.signedUrl ?? null,
+        thumbnailUrl: thumb?.signedUrl ?? signed?.signedUrl ?? null,
+      };
+    })
+  );
+
+  const scans: ScanInfo[] = rawScans.map((s, idx) => ({
+    id: s.id as string,
+    side: s.side as string | null,
+    dpi: s.dpi as number,
+    width_px: s.width_px as number,
+    height_px: s.height_px as number,
+    original_filename: s.original_filename as string | null,
+    mime_type: s.mime_type as string | null,
+    file_size_bytes: s.file_size_bytes as number | null,
+    file_path: s.file_path as string | null,
+    url: scanUrls[idx].url,
+    thumbnailUrl: scanUrls[idx].thumbnailUrl,
+  }));
 
   const sides = (card.card_sides ?? []) as Array<{
     id: string;
@@ -780,6 +798,11 @@ export async function fetchCardDetail(cardId: string): Promise<CardDetailData | 
   const airlineRaw = card.airlines;
   const airline = (Array.isArray(airlineRaw) ? airlineRaw[0] : airlineRaw) as Record<string, unknown> | null;
 
+  const airlineLogoPath = (airline?.logo_path as string) || null;
+  const airlineLogoUrl = airlineLogoPath
+    ? supabase.storage.from('entity-images').getPublicUrl(airlineLogoPath).data.publicUrl
+    : null;
+
   // Build aircraft label from card_aircraft join table
   const cardAircraft = (card.card_aircraft ?? []) as Array<Record<string, unknown>>;
   let aircraftLabel: string | null = null;
@@ -834,6 +857,19 @@ export async function fetchCardDetail(cardId: string): Promise<CardDetailData | 
         manufacturerName: (mfr?.name as string) ?? '',
       };
     });
+
+  let manufacturerLogoUrl: string | null = null;
+  for (const ca of cardAircraft) {
+    const v = unwrap(ca.aircraft_variants);
+    const m = unwrap(ca.aircraft_models);
+    const model = v ? unwrap(v.aircraft_models) : m;
+    const mfr = model ? unwrap(model.aircraft_manufacturers) : null;
+    const logoPath = (mfr?.logo_path as string) || null;
+    if (logoPath) {
+      manufacturerLogoUrl = supabase.storage.from('entity-images').getPublicUrl(logoPath).data.publicUrl;
+      break;
+    }
+  }
 
   const structuredLanguages: string[] = cardLanguages.length > 0
     ? cardLanguages.sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0)).map((l) => l.language)
@@ -944,6 +980,8 @@ export async function fetchCardDetail(cardId: string): Promise<CardDetailData | 
     priceObservations,
     preview_url: derivativePublicUrl(`${cardId}/preview.jpg`),
     airline_id: (card.airline_id as string) ?? null,
+    airline_logo_url: airlineLogoUrl,
+    manufacturer_logo_url: manufacturerLogoUrl,
     aircraft: structuredAircraft,
     languages: structuredLanguages,
   };
@@ -1048,6 +1086,7 @@ export interface CropEditScan {
   id: string;
   filePath: string;
   downloadUrl: string;
+  thumbnailUrl: string;
   originalFilename: string;
   mimeType: string;
 }
@@ -1099,13 +1138,17 @@ export async function fetchCardForCropEditing(cardId: string): Promise<CropEditD
 
   const scanEntries: CropEditScan[] = [];
   for (const scan of (scans ?? []) as Array<{ id: string; file_path: string; original_filename: string | null; mime_type: string | null }>) {
-    const { data: signed } = await supabase.storage
-      .from('scans')
-      .createSignedUrl(scan.file_path, 3600);
+    const [{ data: signed }, { data: thumb }] = await Promise.all([
+      supabase.storage.from('scans').createSignedUrl(scan.file_path, 3600),
+      supabase.storage.from('scans').createSignedUrl(scan.file_path, 3600, {
+        transform: { width: 200, resize: 'contain' },
+      }),
+    ]);
     scanEntries.push({
       id: scan.id,
       filePath: scan.file_path,
       downloadUrl: signed?.signedUrl ?? '',
+      thumbnailUrl: thumb?.signedUrl ?? signed?.signedUrl ?? '',
       originalFilename: scan.original_filename ?? 'scan',
       mimeType: scan.mime_type ?? 'image/jpeg',
     });

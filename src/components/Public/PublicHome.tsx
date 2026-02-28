@@ -35,7 +35,7 @@ export const PublicHome: React.FC = () => {
   const recentCards = cards.slice(0, 8);
 
   return (
-    <div style={{ backgroundColor: '#ebeaef' }} className="min-h-[calc(100dvh-4rem)]">
+    <div className="min-h-[calc(100dvh-4rem)] bg-background">
       {/* Recent Additions */}
       {recentCards.length > 0 && (
         <section className="max-w-6xl mx-auto px-6 py-12">
@@ -62,7 +62,7 @@ export const PublicHome: React.FC = () => {
               View all <ArrowRight className="h-3.5 w-3.5" />
             </Link>
           </div>
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-5">
             {airlines.map((airline) => (
               <EntityTile
                 key={airline.id}
@@ -88,7 +88,7 @@ export const PublicHome: React.FC = () => {
               View all <ArrowRight className="h-3.5 w-3.5" />
             </Link>
           </div>
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-5">
             {manufacturers.map((mfr) => (
               <EntityTile
                 key={mfr.id}
@@ -113,21 +113,21 @@ const EntityTile: React.FC<{
 }> = ({ to, name, logoUrl, subtitle }) => (
   <Link
     to={to}
-    className="flex items-center gap-3 rounded-lg border p-4 hover:bg-accent/50
-               transition-colors group"
+    className="group flex flex-col overflow-hidden
+               focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
   >
-    <div className="h-10 w-10 rounded-md bg-muted/60 flex items-center justify-center overflow-hidden flex-shrink-0">
+    <div className="aspect-square bg-muted/60 relative overflow-hidden flex items-center justify-center">
       {logoUrl ? (
-        <img src={logoUrl} alt={name} className="h-full w-full object-contain" />
+        <img src={logoUrl} alt={name} className="w-3/4 h-3/4 object-contain" />
       ) : (
-        <span className="text-sm font-bold text-muted-foreground">
+        <span className="text-4xl font-bold text-muted-foreground">
           {name.charAt(0)}
         </span>
       )}
     </div>
-    <div className="min-w-0">
-      <p className="text-sm font-medium truncate group-hover:text-foreground">{name}</p>
-      <p className="text-xs text-muted-foreground">{subtitle}</p>
+    <div className="pt-2 px-0.5">
+      <p className="text-sm font-medium truncate">{name}</p>
+      <p className="text-xs text-muted-foreground truncate mt-0.5">{subtitle}</p>
     </div>
   </Link>
 );

@@ -24,6 +24,7 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
   rotation,
   singleCropMode = false,
   straightenMode = false,
+  panelSide,
   onRegionAdd,
   onRegionUpdate,
   onRegionSelect,
@@ -51,21 +52,29 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
   const [straightenPoint1, setStraightenPoint1] = useState<{ x: number; y: number } | null>(null);
   const [straightenPreview, setStraightenPreview] = useState<{ x: number; y: number } | null>(null);
 
+  // Two-point click-to-crop: click two opposite corners to define a rectangle
+  const [clickCropPoint, setClickCropPoint] = useState<{ x: number; y: number } | null>(null);
+  const [clickCropPreview, setClickCropPreview] = useState<{ x: number; y: number } | null>(null);
+
   // Magnifier loupe
   const [showMagnifier, setShowMagnifier] = useState(true);
   const magnifierCanvasRef = useRef<HTMLCanvasElement>(null);
   const magnifierWrapRef = useRef<HTMLDivElement>(null);
 
-  // Clear straighten points when mode is deactivated
+  // Clear straighten points when mode is deactivated; clear click-crop when entering straighten
   useEffect(() => {
     if (!straightenMode) {
       setStraightenPoint1(null);
       setStraightenPreview(null);
+    } else {
+      setClickCropPoint(null);
+      setClickCropPreview(null);
     }
   }, [straightenMode]);
 
   const hasLockedDimensions = lockDimensions && lockedWidth != null && lockedHeight != null;
   const hasConstrainedHeight = !hasLockedDimensions && constrainHeight != null && constrainHeight > 0;
+  const isBackFace = panelSide === 'back';
 
   // ─── Rotated image bounds ──────────────────────────────────────
 
@@ -115,6 +124,10 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
       if ((e.key === 'Delete' || e.key === 'Backspace') && selectedRegionId) {
         e.preventDefault();
         onRegionDelete(selectedRegionId);
+      }
+      if (e.key === 'Escape') {
+        setClickCropPoint(null);
+        setClickCropPreview(null);
       }
       if (e.key === 'g' || e.key === 'G') {
         setGuideMode((prev) => prev === 'off' ? 'grid' : 'off');
@@ -188,13 +201,10 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
   const pointerToCanvas = useCallback((): { x: number; y: number } | null => {
     const stage = stageRef.current;
     if (!stage) return null;
-    const pointer = stage.getPointerPosition();
-    if (!pointer) return null;
-    return {
-      x: (pointer.x - stagePosition.x) / stageScale,
-      y: (pointer.y - stagePosition.y) / stageScale,
-    };
-  }, [stageScale, stagePosition]);
+    const pos = stage.getRelativePointerPosition();
+    if (!pos) return null;
+    return { x: pos.x, y: pos.y };
+  }, []);
 
   // Clamp a point to rotated image bounds
   const clampToBounds = useCallback(
@@ -300,27 +310,47 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
 
       ctx.restore();
 
-      // Crosshair
-      ctx.save();
-      ctx.strokeStyle = '#CCFF00';
-      ctx.lineWidth = 0.5;
-      ctx.setLineDash([4, 3]);
-      ctx.beginPath();
-      ctx.moveTo(r, 8);
-      ctx.lineTo(r, size - 8);
-      ctx.moveTo(8, r);
-      ctx.lineTo(size - 8, r);
-      ctx.stroke();
-      ctx.restore();
+      // Crosshair — shape varies by mode; hidden once a crop region exists (unless straightening)
+      if (regions.length === 0 || straightenMode) {
+        const crosshairColor = straightenMode ? '#22d3ee' : '#ff0000';
+        const isCornerCursor = hasConstrainedHeight && !hasLockedDimensions && !straightenMode && !clickCropPoint;
+        const isLineCursor = hasConstrainedHeight && !hasLockedDimensions && !straightenMode && !!clickCropPoint;
 
-      ctx.save();
-      ctx.fillStyle = '#CCFF00';
-      ctx.beginPath();
-      ctx.arc(r, r, 1.5, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.restore();
+        ctx.save();
+        ctx.strokeStyle = crosshairColor;
+        ctx.lineWidth = 0.75;
+        ctx.beginPath();
+        if (isCornerCursor && isBackFace) {
+          ctx.moveTo(r, r);
+          ctx.lineTo(r, size - 8);
+          ctx.moveTo(r, r);
+          ctx.lineTo(8, r);
+        } else if (isCornerCursor) {
+          ctx.moveTo(r, r);
+          ctx.lineTo(r, size - 8);
+          ctx.moveTo(r, r);
+          ctx.lineTo(size - 8, r);
+        } else if (isLineCursor) {
+          ctx.moveTo(r, 8);
+          ctx.lineTo(r, size - 8);
+        } else {
+          ctx.moveTo(r, 8);
+          ctx.lineTo(r, size - 8);
+          ctx.moveTo(8, r);
+          ctx.lineTo(size - 8, r);
+        }
+        ctx.stroke();
+        ctx.restore();
+
+        ctx.save();
+        ctx.fillStyle = crosshairColor;
+        ctx.beginPath();
+        ctx.arc(r, r, 1.5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
     },
-    [image, imageDimensions, imageOffset, rotation]
+    [image, imageDimensions, imageOffset, rotation, straightenMode, hasConstrainedHeight, hasLockedDimensions, clickCropPoint, regions.length, isBackFace]
   );
 
   // ─── Mouse handlers ────────────────────────────────────────────
@@ -344,11 +374,8 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
         const dx = coords.x - straightenPoint1.x;
         const dy = coords.y - straightenPoint1.y;
         const lineAngle = Math.atan2(dy, dx) * (180 / Math.PI);
-        // Determine if the user drew closer to vertical or horizontal
         const absAngle = Math.abs(lineAngle);
         const isCloserToVertical = absAngle > 45 && absAngle < 135;
-        // For vertical: target is 90° (or -90°), delta = target - lineAngle
-        // For horizontal: target is 0° (or 180°), delta = target - lineAngle
         let angleDelta: number;
         if (isCloserToVertical) {
           const target = lineAngle > 0 ? 90 : -90;
@@ -396,7 +423,6 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
         let rx = coords.x - halfW;
         let ry = coords.y - halfH;
 
-        // Clamp so the rectangle stays inside the image
         if (rotatedBounds) {
           rx = Math.max(0, Math.min(rotatedBounds.width - lockedWidth!, rx));
           ry = Math.max(0, Math.min(rotatedBounds.height - lockedHeight!, ry));
@@ -415,7 +441,37 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
         return;
       }
 
-      // ── Free draw: start a rectangle ──
+      // ── Two-point click-to-crop: second click completes the rectangle ──
+      if (clickCropPoint) {
+        const clamped = clampToBounds(coords.x, coords.y);
+        let p2y = clamped.y;
+        if (hasConstrainedHeight && rotatedBounds) {
+          p2y = Math.max(0, Math.min(rotatedBounds.height - constrainHeight!, p2y));
+        }
+
+        const x = Math.min(clickCropPoint.x, clamped.x);
+        const y = hasConstrainedHeight ? clickCropPoint.y : Math.min(clickCropPoint.y, clamped.y);
+        const width = Math.abs(clamped.x - clickCropPoint.x);
+        const height = hasConstrainedHeight ? Math.round(constrainHeight!) : Math.abs(clamped.y - clickCropPoint.y);
+
+        if (width >= MIN_REGION_SIZE && (hasConstrainedHeight || height >= MIN_REGION_SIZE)) {
+          const region: CropRegion = {
+            id: `crop-${Date.now()}`,
+            x: Math.round(x),
+            y: Math.round(y),
+            width: Math.round(width),
+            height: Math.round(height),
+            label: singleCropMode ? 'Crop' : `Panel ${regions.length + 1}`,
+          };
+          onRegionAdd(region);
+        }
+
+        setClickCropPoint(null);
+        setClickCropPreview(null);
+        return;
+      }
+
+      // ── Free draw: start a rectangle (may convert to click-to-crop on mouseUp) ──
       const clamped = clampToBounds(coords.x, coords.y);
       let startY = clamped.y;
       if (hasConstrainedHeight && rotatedBounds) {
@@ -447,6 +503,7 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
       straightenMode,
       straightenPoint1,
       onStraighten,
+      clickCropPoint,
     ]
   );
 
@@ -490,6 +547,16 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
         return;
       }
 
+      // Two-point click-to-crop preview
+      if (clickCropPoint && !isDrawing) {
+        const coords = pointerToCanvas();
+        if (coords) {
+          const clamped = clampToBounds(coords.x, coords.y);
+          setClickCropPreview(clamped);
+        }
+        return;
+      }
+
       if (!isDrawing || !drawStart) return;
 
       const coords = pointerToCanvas();
@@ -519,7 +586,7 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
           : null
       );
     },
-    [isDrawing, drawStart, pointerToCanvas, clampToBounds, hasConstrainedHeight, straightenMode, straightenPoint1, showMagnifier, image, imageDimensions, rotatedBounds, drawMagnifier]
+    [isDrawing, drawStart, pointerToCanvas, clampToBounds, hasConstrainedHeight, straightenMode, straightenPoint1, showMagnifier, image, imageDimensions, rotatedBounds, drawMagnifier, clickCropPoint]
   );
 
   const handleMouseUp = useCallback(() => {
@@ -531,7 +598,6 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
     }
 
     setIsDrawing(false);
-    setDrawStart(null);
 
     const { x, y, width, height } = drawingRegion;
     const finalHeight = hasConstrainedHeight ? Math.round(constrainHeight!) : height;
@@ -540,6 +606,7 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
     const heightOk = hasConstrainedHeight || finalHeight >= MIN_REGION_SIZE;
 
     if (widthOk && heightOk) {
+      // Drag was large enough — create the crop region normally
       const region: CropRegion = {
         ...drawingRegion,
         x: Math.round(x),
@@ -549,10 +616,19 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
         label: singleCropMode ? 'Crop' : `Panel ${regions.length + 1}`,
       };
       onRegionAdd(region);
+      setDrawStart(null);
+      setDrawingRegion(null);
+    } else if (drawStart && !hasLockedDimensions) {
+      // Drag was too small — treat as a single click; set the first corner for two-point crop
+      setClickCropPoint(drawStart);
+      setClickCropPreview(null);
+      setDrawStart(null);
+      setDrawingRegion(null);
+    } else {
+      setDrawStart(null);
+      setDrawingRegion(null);
     }
-
-    setDrawingRegion(null);
-  }, [isDrawing, drawingRegion, singleCropMode, regions.length, onRegionAdd, hasConstrainedHeight, constrainHeight]);
+  }, [isDrawing, drawingRegion, drawStart, singleCropMode, regions.length, onRegionAdd, hasConstrainedHeight, constrainHeight, hasLockedDimensions]);
 
   const handleMouseLeave = useCallback(() => {
     const magnifierWrap = magnifierWrapRef.current;
@@ -628,6 +704,43 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
     [regions, onRegionUpdate, hasConstrainedHeight, constrainHeight]
   );
 
+  // ─── Cursor — set on Konva stage container for precise alignment ─
+
+  const cursorSvg = useCallback((lines: string) => {
+    const encoded = encodeURIComponent(
+      `<svg xmlns='http://www.w3.org/2000/svg' width='32' height='32'>${lines}</svg>`
+    );
+    return `url("data:image/svg+xml,${encoded}") 16 16, crosshair`;
+  }, []);
+
+  useEffect(() => {
+    const stage = stageRef.current;
+    if (!stage) return;
+    const container = stage.container();
+    if (!container) return;
+
+    let cursor: string;
+    if (straightenMode) {
+      cursor = cursorSvg(
+        `<line x1='16' y1='0' x2='16' y2='32' stroke='#22d3ee' stroke-width='1'/><line x1='0' y1='16' x2='32' y2='16' stroke='#22d3ee' stroke-width='1'/>`
+      );
+    } else if (regions.length > 0) {
+      cursor = 'default';
+    } else if (hasConstrainedHeight && !hasLockedDimensions && !clickCropPoint) {
+      cursor = isBackFace
+        ? cursorSvg(`<line x1='16' y1='16' x2='16' y2='32' stroke='red' stroke-width='1'/><line x1='0' y1='16' x2='16' y2='16' stroke='red' stroke-width='1'/>`)
+        : cursorSvg(`<line x1='16' y1='16' x2='16' y2='32' stroke='red' stroke-width='1'/><line x1='16' y1='16' x2='32' y2='16' stroke='red' stroke-width='1'/>`);
+    } else if (hasConstrainedHeight && !hasLockedDimensions && clickCropPoint) {
+      cursor = cursorSvg(`<line x1='16' y1='0' x2='16' y2='32' stroke='red' stroke-width='1'/>`);
+    } else {
+      cursor = cursorSvg(
+        `<line x1='16' y1='0' x2='16' y2='32' stroke='red' stroke-width='1'/><line x1='0' y1='16' x2='32' y2='16' stroke='red' stroke-width='1'/>`
+      );
+    }
+
+    container.style.cursor = cursor;
+  }, [regions.length, straightenMode, hasConstrainedHeight, hasLockedDimensions, clickCropPoint, isBackFace, cursorSvg]);
+
   // ─── Render ────────────────────────────────────────────────────
 
   return (
@@ -674,8 +787,8 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
               y={region.y}
               width={region.width}
               height={region.height}
-              fill="rgba(99, 102, 241, 0.2)"
-              stroke={selectedRegionId === region.id ? '#6366f1' : '#818cf8'}
+              fill={selectedRegionId === region.id ? 'rgba(239, 68, 68, 0.25)' : 'rgba(99, 102, 241, 0.2)'}
+              stroke={selectedRegionId === region.id ? '#ef4444' : '#818cf8'}
               strokeWidth={
                 selectedRegionId === region.id
                   ? 3 / stageScale
@@ -686,6 +799,18 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
               onTap={() => handleRegionClick(region.id)}
               onDragEnd={(e) => handleRegionDragEnd(region.id, e)}
               onTransformEnd={(e) => handleRegionTransformEnd(region.id, e)}
+              onMouseEnter={(e) => {
+                const container = e.target.getStage()?.container();
+                if (container) container.style.cursor = 'grab';
+              }}
+              onMouseLeave={(e) => {
+                const container = e.target.getStage()?.container();
+                if (container) container.style.cursor = '';
+              }}
+              onDragStart={(e) => {
+                const container = e.target.getStage()?.container();
+                if (container) container.style.cursor = 'grabbing';
+              }}
             />
           ))}
 
@@ -754,6 +879,77 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
             );
           })()}
 
+          {/* Two-point click-to-crop: corner marker + preview rectangle */}
+          {clickCropPoint && (() => {
+            const sw = 1 / stageScale;
+            const r = 6 * sw;
+            const p2 = clickCropPreview;
+            const imgW = rotatedBounds?.width ?? 0;
+            return (
+              <>
+                <Circle x={clickCropPoint.x} y={clickCropPoint.y} radius={r} fill="#CCFF00" stroke="#fff" strokeWidth={sw} listening={false} />
+                {/* Height-constrained: show top-edge guide line + locked height band + vertical edge line */}
+                {hasConstrainedHeight && rotatedBounds && (
+                  <>
+                    <Line
+                      points={[0, clickCropPoint.y, imgW, clickCropPoint.y]}
+                      stroke="#CCFF00"
+                      strokeWidth={sw}
+                      dash={[6 * sw, 3 * sw]}
+                      listening={false}
+                    />
+                    <Rect
+                      x={0}
+                      y={clickCropPoint.y}
+                      width={imgW}
+                      height={Math.round(constrainHeight!)}
+                      fill="rgba(204, 255, 0, 0.06)"
+                      listening={false}
+                    />
+                    <Line
+                      points={[0, clickCropPoint.y + Math.round(constrainHeight!), imgW, clickCropPoint.y + Math.round(constrainHeight!)]}
+                      stroke="rgba(204, 255, 0, 0.3)"
+                      strokeWidth={sw}
+                      dash={[6 * sw, 3 * sw]}
+                      listening={false}
+                    />
+                    <Line
+                      points={[clickCropPoint.x, clickCropPoint.y, clickCropPoint.x, clickCropPoint.y + Math.round(constrainHeight!)]}
+                      stroke="#CCFF00"
+                      strokeWidth={sw}
+                      listening={false}
+                    />
+                  </>
+                )}
+                {p2 && (() => {
+                  const previewX = Math.min(clickCropPoint.x, p2.x);
+                  const previewY = hasConstrainedHeight ? clickCropPoint.y : Math.min(clickCropPoint.y, p2.y);
+                  const previewW = Math.abs(p2.x - clickCropPoint.x);
+                  const previewH = hasConstrainedHeight ? Math.round(constrainHeight!) : Math.abs(p2.y - clickCropPoint.y);
+                  if (previewW < 1 && previewH < 1) return null;
+                  return (
+                    <>
+                      <Rect
+                        x={previewX}
+                        y={previewY}
+                        width={previewW}
+                        height={previewH}
+                        fill="rgba(204, 255, 0, 0.12)"
+                        stroke="#CCFF00"
+                        strokeWidth={2 * sw}
+                        dash={[8 * sw, 4 * sw]}
+                        listening={false}
+                      />
+                      {!hasConstrainedHeight && (
+                        <Circle x={p2.x} y={p2.y} radius={r} fill="#CCFF00" stroke="#fff" strokeWidth={sw} listening={false} />
+                      )}
+                    </>
+                  );
+                })()}
+              </>
+            );
+          })()}
+
           {/* Transformer: only shown when NOT locked and a region is selected */}
           <Transformer
             ref={transformerRef}
@@ -815,6 +1011,13 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
             border: '2px solid rgba(255,255,255,0.35)',
           }}
         />
+        {hasConstrainedHeight && !hasLockedDimensions && !straightenMode && (
+          <div className="mt-1 text-center text-[10px] font-medium text-white bg-black/60 rounded px-1.5 py-0.5 whitespace-nowrap">
+            {clickCropPoint
+              ? (isBackFace ? 'select left boundary' : 'select right boundary')
+              : (isBackFace ? 'select top-right corner' : 'select top-left corner')}
+          </div>
+        )}
       </div>
 
       {/* Zoom controls */}
@@ -876,11 +1079,17 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
           ? (straightenPoint1
             ? 'Click the second point on the same edge to straighten'
             : 'Click the first point on a straight edge')
-          : hasLockedDimensions
-            ? 'Click to place crop | Drag to reposition | Scroll to zoom'
-            : hasConstrainedHeight
-              ? 'Click + drag horizontally to set width | Height is locked | Scroll to zoom'
-              : 'Click + drag to draw crop | Drag to reposition | Scroll to zoom'}
+          : clickCropPoint
+            ? (hasConstrainedHeight
+              ? (isBackFace ? 'Now click the left boundary | Esc to cancel' : 'Now click the right boundary | Esc to cancel')
+              : 'Click the opposite corner to complete the crop | Esc to cancel')
+            : hasLockedDimensions
+              ? 'Click to place crop | Drag to reposition | Scroll to zoom'
+              : hasConstrainedHeight
+                ? (isBackFace
+                  ? 'Click the top-right corner of this panel (height is locked) | Scroll to zoom'
+                  : 'Click the top-left corner of this panel (height is locked) | Scroll to zoom')
+                : 'Click + drag or click two corners to crop | Scroll to zoom'}
       </div>
     </div>
   );

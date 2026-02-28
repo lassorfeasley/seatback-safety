@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { Outlet, Link, NavLink, useNavigate } from 'react-router-dom';
 import { Search, Send, ChevronDown, Cloud } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { BreadcrumbProvider, useBreadcrumbs } from './BreadcrumbContext';
 
 const ACCENT = 'oklch(50% 0.134 242.749)';
 
@@ -15,10 +16,17 @@ const DECADES = [
   { label: "2020's", to: '/decades/2020' },
 ];
 
-export const PublicLayout: React.FC = () => {
+export const PublicLayout: React.FC = () => (
+  <BreadcrumbProvider>
+    <PublicLayoutInner />
+  </BreadcrumbProvider>
+);
+
+const PublicLayoutInner: React.FC = () => {
   const [decadesOpen, setDecadesOpen] = useState(false);
   const decadesRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
+  const { breadcrumbs } = useBreadcrumbs();
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -54,7 +62,7 @@ export const PublicLayout: React.FC = () => {
                   Decades <ChevronDown className="h-3 w-3" />
                 </button>
                 {decadesOpen && (
-                  <div className="absolute top-full left-0 mt-1 rounded-md border bg-card shadow-lg py-1 min-w-[120px] z-50">
+                  <div className="absolute top-full left-0 mt-1 border bg-card shadow-lg py-1 min-w-[120px] z-50">
                     <Link
                       to="/decades"
                       onClick={() => setDecadesOpen(false)}
@@ -97,17 +105,33 @@ export const PublicLayout: React.FC = () => {
             </div>
           </div>
 
-          {/* Active link underline accent */}
-          <div className="h-[3px] -mt-[3px] bg-red-500/80 rounded-full"
-               style={{ opacity: 0 }} />
         </div>
 
-        {/* Tagline bar */}
+        {/* Tagline / Breadcrumb bar */}
         <div className="border-t border-white/10">
-          <div className="max-w-6xl mx-auto px-6 py-2 flex items-center justify-center gap-3
-                          text-xs text-white/60 tracking-wide uppercase">
-            <span>We collect seatback safety cards.</span>
-            <span>Created by Lassor Feasley.</span>
+          <div className="max-w-6xl mx-auto px-6 py-2 flex items-center gap-3
+                          text-xs text-white/60 tracking-wide uppercase"
+               style={{ justifyContent: breadcrumbs.length > 0 ? 'flex-start' : 'center' }}
+          >
+            {breadcrumbs.length > 0 ? (
+              breadcrumbs.map((crumb, i) => (
+                <span key={i} className="flex items-center gap-2">
+                  {i > 0 && <span className="text-white/30">→</span>}
+                  {crumb.to ? (
+                    <Link to={crumb.to} className="hover:text-white/90 transition-colors">
+                      {crumb.label}
+                    </Link>
+                  ) : (
+                    <span>{crumb.label}</span>
+                  )}
+                </span>
+              ))
+            ) : (
+              <>
+                <span>We collect seatback safety cards.</span>
+                <span>Created by Lassor Feasley.</span>
+              </>
+            )}
           </div>
         </div>
       </header>
@@ -153,7 +177,7 @@ const NavItem: React.FC<{ to: string; end?: boolean; children: React.ReactNode }
       <>
         {children}
         {isActive && (
-          <span className="absolute left-0 right-0 -bottom-[7px] h-[3px] rounded-full bg-red-500" />
+          <span className="absolute left-0 right-0 -bottom-[14px] h-[3px] bg-red-500" />
         )}
       </>
     )}

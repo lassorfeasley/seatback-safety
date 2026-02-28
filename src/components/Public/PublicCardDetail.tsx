@@ -1,18 +1,17 @@
 import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { Loader2, ArrowLeft, Info, ZoomIn } from 'lucide-react';
+import { Loader2, Info } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { fetchCardDetail, type CardDetailData } from '@/lib/safetyCardService';
 import { CardVisualizer3D } from '@/components/FoldEditor/CardVisualizer3D';
-import { cn } from '@/lib/utils';
-import type { Panel } from '@/components/FoldEditor/types';
+import { useBreadcrumbs, type Breadcrumb } from './BreadcrumbContext';
 
 export const PublicCardDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const [card, setCard] = useState<CardDetailData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
-  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
+  const { setBreadcrumbs, clearBreadcrumbs } = useBreadcrumbs();
 
   useEffect(() => {
     if (!id) return;
@@ -25,6 +24,41 @@ export const PublicCardDetail: React.FC = () => {
       .finally(() => setLoading(false));
   }, [id]);
 
+  useEffect(() => {
+    if (!card) return;
+
+    const mfr = card.aircraft[0] || null;
+    const manufacturerName = mfr?.manufacturerName || null;
+    const manufacturerId = mfr?.manufacturerId || null;
+    const modelParts = card.aircraft
+      .map((a) => [a.modelName, a.variantName].filter(Boolean).join(' '))
+      .filter(Boolean)
+      .join(', ');
+    const airlineModel = [card.airline_name, modelParts].filter(Boolean).join(' ') || null;
+
+    const crumbs: Breadcrumb[] = [];
+    if (card.airline_name) {
+      crumbs.push({
+        label: card.airline_name,
+        to: card.airline_id ? `/airlines/${card.airline_id}` : undefined,
+      });
+    }
+    if (manufacturerName) {
+      crumbs.push({
+        label: manufacturerName,
+        to: manufacturerId ? `/manufacturers/${manufacturerId}` : undefined,
+      });
+    }
+    if (airlineModel) crumbs.push({ label: airlineModel });
+    if (card.published_year) {
+      const decade = Math.floor(card.published_year / 10) * 10;
+      crumbs.push({ label: String(card.published_year), to: `/decades/${decade}` });
+    }
+
+    setBreadcrumbs(crumbs);
+    return () => clearBreadcrumbs();
+  }, [card, setBreadcrumbs, clearBreadcrumbs]);
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-32">
@@ -36,7 +70,7 @@ export const PublicCardDetail: React.FC = () => {
   if (error || !card) {
     return (
       <div className="max-w-6xl mx-auto px-6 py-20 text-center">
-        <div className="inline-flex items-center justify-center rounded-full bg-destructive/10 p-4 mb-4">
+        <div className="inline-flex items-center justify-center bg-destructive/10 p-4 mb-4">
           <Info className="h-8 w-8 text-destructive" />
         </div>
         <p className="font-medium">Card not found</p>
@@ -69,27 +103,38 @@ export const PublicCardDetail: React.FC = () => {
 
   return (
     <div className="max-w-6xl mx-auto px-6 py-10">
-      <Link
-        to="/"
-        className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground
-                   transition-colors mb-6"
-      >
-        <ArrowLeft className="h-4 w-4" /> Back
-      </Link>
+      {/* Title + Logos */}
+      <div className="flex items-start justify-between gap-4 mb-6">
+        <div className="min-w-0">
+          <h1 className="text-5xl font-semibold tracking-tight">
+            {card.title || 'Untitled Card'}
+          </h1>
+        </div>
 
-      {/* Title */}
-      <div className="mb-6">
-        <h1 className="text-2xl font-semibold tracking-tight">
-          {card.title || 'Untitled Card'}
-        </h1>
-        {card.aircraft_label && (
-          <p className="text-muted-foreground mt-1">{card.aircraft_label}</p>
-        )}
-        {card.languages && card.languages.length > 0 && (
-          <div className="flex gap-1.5 mt-2">
-            {card.languages.map((lang) => (
-              <Badge key={lang} variant="secondary" className="text-xs">{lang}</Badge>
-            ))}
+        {(card.airline_logo_url || card.manufacturer_logo_url) && (
+          <div className="flex items-center gap-3 flex-shrink-0">
+            {card.manufacturer_logo_url && card.aircraft[0]?.manufacturerId && (
+              <Link to={`/manufacturers/${card.aircraft[0].manufacturerId}`}>
+                <div className="w-[144px] h-[144px] bg-muted flex items-center justify-center overflow-hidden hover:bg-muted/80 transition-colors">
+                  <img
+                    src={card.manufacturer_logo_url}
+                    alt="Manufacturer"
+                    className="w-[108px] h-[108px] object-contain"
+                  />
+                </div>
+              </Link>
+            )}
+            {card.airline_logo_url && card.airline_id && (
+              <Link to={`/airlines/${card.airline_id}`}>
+                <div className="w-[144px] h-[144px] bg-muted flex items-center justify-center overflow-hidden hover:bg-muted/80 transition-colors">
+                  <img
+                    src={card.airline_logo_url}
+                    alt="Airline"
+                    className="w-[108px] h-[108px] object-contain"
+                  />
+                </div>
+              </Link>
+            )}
           </div>
         )}
       </div>
@@ -97,10 +142,10 @@ export const PublicCardDetail: React.FC = () => {
       {/* 3D Visualizer -- full width, golden ratio */}
       {has3D && (
         <div
-          className="w-full rounded-lg overflow-hidden mb-8"
+          className="w-full overflow-hidden mb-8"
           style={{ aspectRatio: '1.618 / 1' }}
         >
-          <div className="w-full h-full rounded-lg overflow-hidden bg-gradient-to-b from-slate-100 to-slate-200 dark:from-slate-800 dark:to-slate-900">
+          <div className="w-full h-full overflow-hidden bg-gradient-to-b from-slate-100 to-slate-200 dark:from-slate-800 dark:to-slate-900">
             <CardVisualizer3D
               panels={card.panels}
               creases={card.creases}
@@ -112,34 +157,22 @@ export const PublicCardDetail: React.FC = () => {
         </div>
       )}
 
-      {/* Panel spreads */}
-      {hasPanels && (
-        <div className="flex flex-col gap-6 mb-8">
-          {frontPanels.length > 0 && (
-            <PanelSpread
-              label="Front"
-              panels={frontPanels}
-              displayUrls={card.displayUrls}
-              fullUrls={card.fullUrls}
-              onZoom={setLightboxUrl}
-            />
-          )}
-          {backPanels.length > 0 && (
-            <PanelSpread
-              label="Back"
-              panels={backPanels}
-              displayUrls={card.displayUrls}
-              fullUrls={card.fullUrls}
-              onZoom={setLightboxUrl}
-            />
-          )}
+      {/* Aircraft & Languages */}
+      {card.aircraft_label && (
+        <p className="text-muted-foreground mb-2">{card.aircraft_label}</p>
+      )}
+      {card.languages && card.languages.length > 0 && (
+        <div className="flex gap-1.5 mb-6">
+          {card.languages.map((lang) => (
+            <Badge key={lang} variant="secondary" className="text-xs">{lang}</Badge>
+          ))}
         </div>
       )}
 
-      {/* Metadata below */}
+      {/* Metadata */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
         {metadataItems.length > 0 && (
-          <div className="rounded-lg border divide-y">
+          <div className="border divide-y">
             {metadataItems.map((item) => (
               <div key={item.label} className="flex items-baseline justify-between px-4 py-2.5">
                 <span className="text-xs text-muted-foreground">{item.label}</span>
@@ -151,7 +184,7 @@ export const PublicCardDetail: React.FC = () => {
 
         <div className="flex flex-col gap-5">
           {card.notes && (
-            <div className="rounded-lg bg-muted/40 p-4">
+            <div className="bg-muted/40 p-4">
               <p className="text-xs font-medium text-muted-foreground mb-1">Notes</p>
               <p className="text-sm leading-relaxed">{card.notes}</p>
             </div>
@@ -167,96 +200,6 @@ export const PublicCardDetail: React.FC = () => {
         </div>
       </div>
 
-      {lightboxUrl && (
-        <div
-          className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-8 cursor-zoom-out"
-          onClick={() => setLightboxUrl(null)}
-        >
-          <img
-            src={lightboxUrl}
-            alt="Full resolution panel"
-            className="max-w-full max-h-full object-contain rounded-lg shadow-2xl"
-            onClick={(e) => e.stopPropagation()}
-          />
-          <button
-            onClick={() => setLightboxUrl(null)}
-            className="absolute top-6 right-6 text-white/70 hover:text-white text-sm
-                       bg-black/40 rounded-full px-3 py-1.5 transition-colors"
-          >
-            Close
-          </button>
-        </div>
-      )}
     </div>
   );
 };
-
-const PanelSpread: React.FC<{
-  label: string;
-  panels: Panel[];
-  displayUrls: Record<string, string>;
-  fullUrls: Record<string, string>;
-  onZoom: (url: string) => void;
-}> = ({ label, panels, displayUrls, fullUrls, onZoom }) => (
-  <div>
-    <h2 className="text-sm font-medium text-muted-foreground mb-3">{label} Side</h2>
-    <div
-      className="grid gap-1"
-      style={{ gridTemplateColumns: `repeat(${panels.length}, 1fr)`, maxHeight: 350 }}
-    >
-      {panels.map((panel) => {
-        const displayUrl = displayUrls[panel.id] || panel.thumbnail_url;
-        const fullUrl = fullUrls[panel.id] || displayUrl;
-
-        return (
-          <div
-            key={panel.id}
-            className={cn(
-              'relative group rounded-sm overflow-hidden',
-              displayUrl ? 'bg-muted/50' : 'bg-muted/30 border border-dashed border-muted-foreground/20',
-            )}
-            style={{ maxHeight: 350 }}
-          >
-            {displayUrl ? (
-              <>
-                <img
-                  src={displayUrl}
-                  alt={`${label} Panel ${panel.panel_index + 1}`}
-                  className="w-full h-full object-contain block"
-                  loading="lazy"
-                />
-                {fullUrl && (
-                  <button
-                    onClick={() => onZoom(fullUrl)}
-                    className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors
-                               flex items-center justify-center opacity-0 group-hover:opacity-100"
-                  >
-                    <div className="bg-black/60 rounded-full p-2">
-                      <ZoomIn className="h-4 w-4 text-white" />
-                    </div>
-                  </button>
-                )}
-              </>
-            ) : (
-              <div className="aspect-[3/4] max-h-[350px] flex items-center justify-center">
-                <span className="text-xs text-muted-foreground">
-                  Panel {panel.panel_index + 1}
-                </span>
-              </div>
-            )}
-          </div>
-        );
-      })}
-    </div>
-    <div
-      className="grid gap-1 mt-1"
-      style={{ gridTemplateColumns: `repeat(${panels.length}, 1fr)` }}
-    >
-      {panels.map((panel) => (
-        <div key={panel.id} className="text-center text-[11px] text-muted-foreground">
-          Panel {panel.panel_index + 1}
-        </div>
-      ))}
-    </div>
-  </div>
-);

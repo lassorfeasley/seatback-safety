@@ -20,8 +20,12 @@ export const AdminCropEditor: React.FC = () => {
       editCardId={id}
       initialStep={3}
       initialSlot={initialSlot}
-      onSaveComplete={() => navigate(`/admin/cards/${id}?editing=1`)}
-      onBackToLibrary={() => navigate(`/admin/cards/${id}?editing=1`)}
+      onSaveComplete={() => navigate(`/admin/cards/${id}?editing=1#spreads`)}
+      onBackToLibrary={(savingSlot) => {
+        const params = new URLSearchParams({ editing: '1' });
+        if (savingSlot) params.set('saving', `${savingSlot.panelIndex}-${savingSlot.side}`);
+        navigate(`/admin/cards/${id}?${params}#spreads`);
+      }}
     />
   );
 };

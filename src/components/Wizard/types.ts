@@ -74,8 +74,9 @@ export const EMPTY_METADATA: CardMetadata = {
 // A scan image in the shared library (not assigned to any panel)
 export interface LibraryImage {
   id: string;
-  imageFile: File;
+  imageFile: File | null;
   imageUrl: string;
+  thumbnailUrl?: string;
   imageDimensions: ImageDimensions | null;
   label: string;
   rotation: number;
@@ -145,9 +146,11 @@ export interface CropStepProps {
     side: PanelSide,
     imageId: string,
     region: CropRegion,
-    thumbnailUrl: string
+    thumbnailUrl: string,
+    rotation: number
   ) => void;
   onClearSlot: (panelIndex: number, side: PanelSide) => void;
+  onResetWidthLock: (panelIndex: number, side: PanelSide) => void;
   onSetCropDimensions: (width: number, height: number) => void;
   onRotationChange: (imageId: string, rotation: number) => void;
   onBack: () => void;

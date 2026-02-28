@@ -30,6 +30,7 @@ export interface CropCanvasProps {
   onRegionUpdate: (region: CropRegion) => void;
   onRegionSelect: (id: string | null) => void;
   onRegionDelete: (id: string) => void;
+  panelSide?: PanelSide;
   onImageLoad: (dimensions: ImageDimensions) => void;
   onStraighten?: (angleDelta: number) => void;
 }

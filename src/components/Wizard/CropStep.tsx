@@ -9,6 +9,7 @@ import {
   RotateCcw,
   RotateCw,
   Lock,
+  Unlock,
   Ruler,
 } from 'lucide-react';
 import { CropCanvas } from '@/components/PanelCropper/CropCanvas';
@@ -28,8 +29,9 @@ export const CropStep: React.FC<CropStepProps> = ({
   onCancelCrop,
   onConfirmCrop,
   onClearSlot,
+  onResetWidthLock,
   onSetCropDimensions,
-  onRotationChange,
+  onRotationChange: _onRotationChange,
   onBack,
   onContinue,
   continueLabel,
@@ -59,8 +61,8 @@ export const CropStep: React.FC<CropStepProps> = ({
         onSelectImage={onSelectImage}
         onCancelCrop={onCancelCrop}
         onConfirmCrop={onConfirmCrop}
+        onResetWidthLock={onResetWidthLock}
         onSetCropDimensions={onSetCropDimensions}
-        onRotationChange={onRotationChange}
       />
     );
   }
@@ -326,10 +328,11 @@ interface CropSessionProps {
     side: 'front' | 'back',
     imageId: string,
     region: CropRegion,
-    thumbnailUrl: string
+    thumbnailUrl: string,
+    rotation: number
   ) => void;
+  onResetWidthLock: (panelIndex: number, side: 'front' | 'back') => void;
   onSetCropDimensions: (width: number, height: number) => void;
-  onRotationChange: (imageId: string, rotation: number) => void;
 }
 
 const CropSession: React.FC<CropSessionProps> = ({
@@ -343,8 +346,8 @@ const CropSession: React.FC<CropSessionProps> = ({
   onSelectImage,
   onCancelCrop,
   onConfirmCrop,
+  onResetWidthLock,
   onSetCropDimensions,
-  onRotationChange,
 }) => {
   // Local state for the crop region being drawn
   const [region, setRegion] = useState<CropRegion | null>(
@@ -447,19 +450,17 @@ const CropSession: React.FC<CropSessionProps> = ({
 
     const thumbnailUrl = thumbCanvas.toDataURL('image/jpeg', 0.8);
 
-    // Every crop reports its dimensions; the wizard handler locks height on first call
     onSetCropDimensions(region.width, region.height);
-
-    onRotationChange(selectedImageId, localRotation);
 
     onConfirmCrop(
       activeSlot.panelIndex,
       activeSlot.side,
       selectedImageId,
       region,
-      thumbnailUrl
+      thumbnailUrl,
+      localRotation
     );
-  }, [region, selectedImageId, selectedImage, localRotation, activeSlot, onSetCropDimensions, onConfirmCrop, onRotationChange]);
+  }, [region, selectedImageId, selectedImage, localRotation, activeSlot, onSetCropDimensions, onConfirmCrop]);
 
   const sideLabel = activeSlot.side === 'front' ? 'Front' : 'Back';
   const sideColor = activeSlot.side === 'front' ? 'bg-blue-500' : 'bg-amber-500';
@@ -514,6 +515,7 @@ const CropSession: React.FC<CropSessionProps> = ({
             rotation={localRotation}
             singleCropMode={true}
             straightenMode={straightenMode}
+            panelSide={activeSlot.side}
             onRegionAdd={handleRegionAdd}
             onRegionUpdate={handleRegionUpdate}
             onRegionSelect={handleRegionSelect}
@@ -539,6 +541,20 @@ const CropSession: React.FC<CropSessionProps> = ({
             </span>
           </div>
           {constraintMessage}
+          {dimensionsLocked && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                onResetWidthLock(activeSlot.panelIndex, activeSlot.side);
+                setRegion(null);
+              }}
+              className="w-full gap-1.5 text-destructive hover:text-destructive"
+            >
+              <Unlock className="h-3.5 w-3.5" />
+              Reset width lock
+            </Button>
+          )}
         </div>
 
         {/* Scan picker */}
@@ -558,7 +574,7 @@ const CropSession: React.FC<CropSessionProps> = ({
                 onClick={() => onSelectImage(img.id)}
               >
                 <img
-                  src={img.imageUrl}
+                  src={img.thumbnailUrl ?? img.imageUrl}
                   alt={img.label}
                   className="w-full h-full object-cover"
                   style={{ transform: `rotate(${img.rotation}deg)` }}
@@ -578,19 +594,19 @@ const CropSession: React.FC<CropSessionProps> = ({
 
         {/* Straighten tool */}
         {selectedImage && (
-          <div className="p-4 border-b flex flex-col gap-2">
-            <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Straighten</span>
+          <div className={`p-4 border-b flex flex-col gap-2 transition-colors ${straightenMode ? 'bg-cyan-600 border-cyan-600' : ''}`}>
+            <span className={`text-xs font-medium uppercase tracking-wider ${straightenMode ? 'text-white' : 'text-muted-foreground'}`}>Straighten</span>
             <Button
-              variant={straightenMode ? 'default' : 'outline'}
+              variant={straightenMode ? 'outline' : 'outline'}
               size="sm"
               onClick={() => setStraightenMode((m) => !m)}
-              className="w-full gap-1.5"
+              className={`w-full gap-1.5 ${straightenMode ? 'bg-white hover:bg-white/90 text-cyan-700 border-white' : ''}`}
             >
               <Ruler className="h-3.5 w-3.5" />
               {straightenMode ? 'Click two points on an edge…' : 'Straighten Edge'}
             </Button>
             {straightenMode && (
-              <p className="text-[11px] text-muted-foreground leading-tight">
+              <p className="text-[11px] text-white/80 leading-tight">
                 Click two points along a straight edge (like the card border). The image will auto-rotate to make that line perfectly vertical or horizontal.
               </p>
             )}

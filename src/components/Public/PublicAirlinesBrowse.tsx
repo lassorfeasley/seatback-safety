@@ -25,28 +25,27 @@ export const PublicAirlinesBrowse: React.FC = () => {
       ) : airlines.length === 0 ? (
         <p className="text-muted-foreground py-12 text-center">No airlines found.</p>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-5">
           {airlines.map((airline) => (
             <Link
               key={airline.id}
               to={`/airlines/${airline.id}`}
-              className="flex items-center gap-3 rounded-lg border p-4 hover:bg-accent/50
-                         transition-colors group"
+              className="group flex flex-col overflow-hidden
+                         focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
             >
-              <div className="h-10 w-10 rounded-md bg-muted/60 flex items-center justify-center
-                              overflow-hidden flex-shrink-0">
+              <div className="aspect-square bg-muted/60 relative overflow-hidden flex items-center justify-center">
                 {airline.logo_url ? (
                   <img src={airline.logo_url} alt={airline.name}
-                       className="h-full w-full object-contain" />
+                       className="w-3/4 h-3/4 object-contain" />
                 ) : (
-                  <span className="text-sm font-bold text-muted-foreground">
+                  <span className="text-4xl font-bold text-muted-foreground">
                     {airline.name.charAt(0)}
                   </span>
                 )}
               </div>
-              <div className="min-w-0">
+              <div className="pt-2 px-0.5">
                 <p className="text-sm font-medium truncate">{airline.name}</p>
-                <p className="text-xs text-muted-foreground">
+                <p className="text-xs text-muted-foreground truncate mt-0.5">
                   {airline.card_count} card{airline.card_count !== 1 ? 's' : ''}
                   {airline.country ? ` · ${airline.country}` : ''}
                 </p>

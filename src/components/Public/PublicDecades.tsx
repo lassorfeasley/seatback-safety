@@ -41,7 +41,7 @@ export const PublicDecadesBrowse: React.FC = () => {
           <Link
             key={decade}
             to={`/decades/${decade}`}
-            className="flex flex-col items-center justify-center rounded-lg border p-6
+            className="flex flex-col items-center justify-center border p-6
                        hover:bg-accent/50 transition-colors"
           >
             <span className="text-2xl font-bold">{decade}'s</span>

@@ -5,7 +5,7 @@ export const AboutPage: React.FC = () => {
   return (
     <div className="max-w-2xl mx-auto px-6 py-16">
       <div className="flex items-center gap-3 mb-8">
-        <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center">
+        <div className="h-10 w-10 bg-primary/10 flex items-center justify-center">
           <Plane className="h-5 w-5 text-primary" />
         </div>
         <h1 className="text-2xl font-semibold tracking-tight">About This Collection</h1>

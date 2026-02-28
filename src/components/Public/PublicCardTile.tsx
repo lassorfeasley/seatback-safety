@@ -10,10 +10,10 @@ export const PublicCardTile: React.FC<{ card: CardSummary }> = ({ card }) => {
   return (
     <Link
       to={`/cards/${card.id}`}
-      className="group flex flex-col rounded-lg overflow-hidden
+      className="group flex flex-col overflow-hidden
                  focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
     >
-      <div className="aspect-square bg-muted/60 relative overflow-hidden rounded-lg">
+      <div className="aspect-square bg-muted/60 relative overflow-hidden">
         {imgSrc ? (
           <img
             src={imgSrc}

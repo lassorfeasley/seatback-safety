@@ -54,7 +54,7 @@ function generateSlots(panelCount: number): PanelSlot[] {
 
 interface SafetyCardWizardProps {
   onSaveComplete?: (cardId: string) => void;
-  onBackToLibrary?: () => void;
+  onBackToLibrary?: (savingSlot?: { panelIndex: number; side: string }) => void;
   editCardId?: string;
   initialStep?: 3 | 4;
   initialSlot?: { panelIndex: number; side: 'front' | 'back' };
@@ -88,7 +88,7 @@ export const SafetyCardWizard: React.FC<SafetyCardWizardProps> = ({
   const [editSideIds, setEditSideIds] = useState<Record<string, string>>({});
   const [isSaving, setIsSaving] = useState(false);
   const [saveProgress, setSaveProgress] = useState('');
-  const [pendingSave, setPendingSave] = useState(false);
+
 
   // ─── Load existing card data for edit mode ─────────────────────
 
@@ -124,24 +124,15 @@ export const SafetyCardWizard: React.FC<SafetyCardWizardProps> = ({
 
         setEditSideIds(editData.sideIds);
 
-        const images: LibraryImage[] = [];
-        for (const scan of editData.scans) {
-          try {
-            const response = await fetch(scan.downloadUrl);
-            const blob = await response.blob();
-            const file = new File([blob], scan.originalFilename, { type: scan.mimeType });
-            images.push({
-              id: scan.id,
-              imageFile: file,
-              imageUrl: URL.createObjectURL(blob),
-              imageDimensions: null,
-              label: scan.originalFilename,
-              rotation: 0,
-            });
-          } catch (e) {
-            console.error('Failed to download scan', scan.id, e);
-          }
-        }
+        const images: LibraryImage[] = editData.scans.map((scan) => ({
+          id: scan.id,
+          imageFile: null,
+          imageUrl: scan.downloadUrl,
+          thumbnailUrl: scan.thumbnailUrl,
+          imageDimensions: null,
+          label: scan.originalFilename,
+          rotation: 0,
+        }));
 
         const slots: PanelSlot[] = [];
         for (let i = 0; i < editData.panelCount; i++) {
@@ -373,22 +364,44 @@ export const SafetyCardWizard: React.FC<SafetyCardWizardProps> = ({
       side: PanelSide,
       imageId: string,
       region: CropRegion,
-      thumbnailUrl: string
+      thumbnailUrl: string,
+      rotation: number
     ) => {
+      const updatedSlots = state.slots.map((slot) =>
+        slot.panelIndex === panelIndex && slot.side === side
+          ? { ...slot, imageId, cropRegion: region, thumbnailUrl, dirty: true }
+          : slot
+      );
+
+      const updatedImages = state.images.map((img) =>
+        img.id === imageId ? { ...img, rotation } : img
+      );
+
       setState((prev) => ({
         ...prev,
-        slots: prev.slots.map((slot) =>
-          slot.panelIndex === panelIndex && slot.side === side
-            ? { ...slot, imageId, cropRegion: region, thumbnailUrl, dirty: true }
-            : slot
-        ),
+        slots: updatedSlots,
+        images: updatedImages,
+        cropWidth: region.width,
+        cropHeight: prev.cropHeight ?? region.height,
         ...(initialSlot ? {} : { activeSlot: null, selectedImageId: null }),
       }));
-      if (initialSlot) {
-        setPendingSave(true);
+
+      if (initialSlot && editCardId) {
+        onBackToLibrary?.({ panelIndex, side });
+
+        const stateSnapshot: WizardState = {
+          ...state,
+          slots: updatedSlots,
+          images: updatedImages,
+          cropWidth: region.width,
+          cropHeight: state.cropHeight ?? region.height,
+        };
+        updateCardPanels(editCardId, stateSnapshot, editSideIds).catch((err) => {
+          console.error('Background crop save failed:', err);
+        });
       }
     },
-    [initialSlot]
+    [initialSlot, editCardId, editSideIds, onBackToLibrary, state]
   );
 
   const handleClearSlot = useCallback((panelIndex: number, side: PanelSide) => {
@@ -396,6 +409,18 @@ export const SafetyCardWizard: React.FC<SafetyCardWizardProps> = ({
       ...prev,
       slots: prev.slots.map((slot) =>
         slot.panelIndex === panelIndex && slot.side === side
+          ? { ...slot, imageId: null, cropRegion: null, thumbnailUrl: null, dirty: true }
+          : slot
+      ),
+    }));
+  }, []);
+
+  const handleResetWidthLock = useCallback((panelIndex: number, side: PanelSide) => {
+    const oppositeSide: PanelSide = side === 'front' ? 'back' : 'front';
+    setState((prev) => ({
+      ...prev,
+      slots: prev.slots.map((slot) =>
+        slot.panelIndex === panelIndex && slot.side === oppositeSide
           ? { ...slot, imageId: null, cropRegion: null, thumbnailUrl: null, dirty: true }
           : slot
       ),
@@ -579,13 +604,6 @@ export const SafetyCardWizard: React.FC<SafetyCardWizardProps> = ({
     }
   }, [state, editCardId, initialStep, editSideIds, onSaveComplete]);
 
-  // Auto-save after confirming a crop in direct mode
-  useEffect(() => {
-    if (pendingSave && !isSaving) {
-      setPendingSave(false);
-      handleSave();
-    }
-  }, [pendingSave, isSaving, handleSave]);
 
   // ─── Render ────────────────────────────────────────────────────
 
@@ -616,7 +634,7 @@ export const SafetyCardWizard: React.FC<SafetyCardWizardProps> = ({
         <div className="max-w-7xl mx-auto flex items-center">
           {onBackToLibrary && (
             <button
-              onClick={onBackToLibrary}
+              onClick={() => onBackToLibrary?.()}
               className="px-4 py-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
             >
               &larr; {isEditMode ? 'Back to Card' : 'Library'}
@@ -681,6 +699,7 @@ export const SafetyCardWizard: React.FC<SafetyCardWizardProps> = ({
             onCancelCrop={handleCancelCrop}
             onConfirmCrop={handleConfirmCrop}
             onClearSlot={handleClearSlot}
+            onResetWidthLock={handleResetWidthLock}
             onSetCropDimensions={handleSetCropDimensions}
             onRotationChange={handleRotationChange}
             onBack={isEditMode ? (onBackToLibrary ?? (() => {})) : () => goToStep(2)}

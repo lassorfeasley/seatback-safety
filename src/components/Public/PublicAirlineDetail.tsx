@@ -54,7 +54,7 @@ export const PublicAirlineDetail: React.FC = () => {
 
       <div className="flex items-center gap-4 mb-8">
         {airline.logo_url && (
-          <div className="h-14 w-14 rounded-lg bg-muted/60 flex items-center justify-center
+          <div className="h-14 w-14 bg-muted/60 flex items-center justify-center
                           overflow-hidden flex-shrink-0">
             <img src={airline.logo_url} alt={airline.name}
                  className="h-full w-full object-contain" />
