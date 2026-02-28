@@ -22,7 +22,8 @@ interface Spread {
 const FOLD_DURATION = 600;
 const FOLD_STAGGER = 100;
 const PAPER_THICKNESS = 0.6;
-const STACK_GAP = 3;
+const STACK_GAP = 6;
+const MIN_COS = 0.25;
 const PANEL_HEIGHT = 250;
 const PANEL_WIDTH_FALLBACK = 180;
 
@@ -360,8 +361,10 @@ export const CardVisualizer3D: React.FC<CardVisualizer3DProps> = ({
 
     const layerDiff = (layerOrder[index] ?? 0) - (layerOrder[index - 1] ?? 0);
     const cosP = Math.cos((parentCumAngle * Math.PI) / 180);
-    const desiredDelta = layerDiff * STACK_GAP * zSign * amount;
-    const localZ = Math.abs(cosP) > 0.01 ? desiredDelta / cosP : 0;
+    const zAmount = amount > 0 ? Math.max(amount, 0.35) : 0;
+    const desiredDelta = layerDiff * STACK_GAP * zSign * zAmount;
+    const safeCos = Math.abs(cosP) < MIN_COS ? MIN_COS * Math.sign(cosP || 1) : cosP;
+    const localZ = desiredDelta !== 0 ? desiredDelta / safeCos : 0;
 
     return (
       <div
@@ -396,8 +399,10 @@ export const CardVisualizer3D: React.FC<CardVisualizer3DProps> = ({
 
     const layerDiff = (layerOrder[index] ?? 0) - (layerOrder[index + 1] ?? 0);
     const cosP = Math.cos((parentCumAngle * Math.PI) / 180);
-    const desiredDelta = layerDiff * STACK_GAP * zSign * amount;
-    const localZ = Math.abs(cosP) > 0.01 ? desiredDelta / cosP : 0;
+    const zAmount = amount > 0 ? Math.max(amount, 0.35) : 0;
+    const desiredDelta = layerDiff * STACK_GAP * zSign * zAmount;
+    const safeCos = Math.abs(cosP) < MIN_COS ? MIN_COS * Math.sign(cosP || 1) : cosP;
+    const localZ = desiredDelta !== 0 ? desiredDelta / safeCos : 0;
 
     return (
       <div

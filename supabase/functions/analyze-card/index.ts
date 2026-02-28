@@ -19,10 +19,10 @@ Return ONLY valid JSON with this exact structure (use null for any field you can
 Guidelines:
 - For airline, use the full official name (e.g. "Republic Airways" not "Republic")
 - The aircraft array should contain one entry PER distinct model on the card. Many safety cards cover multiple models from the same manufacturer (e.g. "E170/175" = two entries: E170 and E175; "737-800/900" = two entries: 737 with variant -800 and 737 with variant -900; "A319/A320/A321" = three entries)
-- Separate manufacturer, model, and variant carefully
+- Separate manufacturer, model, and variant carefully. Variants include numeric suffixes like -800, -900ER AND letter suffixes like SR, LR, ER, NEO, MAX, F, Adv, Combi, etc. For example "A320 SR" → model "A320", variant "SR"; "747-400 Combi" → model "747", variant "-400 Combi"; "737 MAX 8" → model "737", variant "MAX 8"
 - Languages should be an array of language names found on the card
-- published_year should be a 4-digit number if visible
-- revision can be any revision identifier, date code, or document number visible on the card
+- published_year: Look carefully for a 4-digit year anywhere on the card. If no standalone year is visible, try to extract one from the revision string, date codes, or document numbers (e.g. "I/P 3 FEB 2002" → 2002, "05JAN22" → 2022, "REV 09/2019" → 2019, "10APR.12.092" → 2012). Revision codes are often cryptic alphanumeric strings that do NOT contain a date — only extract a year if you are confident one is embedded.
+- revision: Capture the full revision identifier, date code, or document number exactly as printed on the card, including any cryptic alphanumeric strings
 - suggested_title should combine airline + aircraft in a natural way (e.g. "Republic Airways E170/175 Safety Card")
 - Only include information you can actually see on the card. Do not guess.`;
 

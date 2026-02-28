@@ -51,7 +51,8 @@ export const CardVisualizer: React.FC<CardVisualizerProps> = ({ panels, creases 
     [panels]
   );
 
-  // Create spreads - each spread is a front/back pair at the same index
+  // Create spreads - each spread pairs front[i] with back[maxIndex - i]
+  // so that the back side reads in the correct order when the card is flipped
   const spreads: Spread[] = useMemo(() => {
     const maxIndex = Math.max(
       ...frontPanels.map((p) => p.panel_index),
@@ -64,7 +65,7 @@ export const CardVisualizer: React.FC<CardVisualizerProps> = ({ panels, creases 
       result.push({
         index: i,
         frontPanel: frontPanels.find((p) => p.panel_index === i),
-        backPanel: backPanels.find((p) => p.panel_index === i),
+        backPanel: backPanels.find((p) => p.panel_index === (maxIndex - i)),
       });
     }
     return result;
