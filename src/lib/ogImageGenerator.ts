@@ -30,66 +30,16 @@ interface LoadedPanel {
   img: HTMLImageElement;
 }
 
-function defaultPivot(coverIdx: number, panelCount: number): number {
-  if (panelCount <= 1) return 0;
-  if (coverIdx <= 0) return 1;
-  if (coverIdx >= panelCount - 1) return panelCount - 2;
-  return coverIdx - 1;
-}
-
-/**
- * Compute cumulative Y-rotation for each spread when fully folded.
- * Returns a map: spreadIndex → degrees of rotation.
- * A panel whose |rotation % 360| ≈ 0 shows its front face to the viewer;
- * |rotation % 360| ≈ 180 shows its back face.
- */
-function computeFoldedRotations(
-  spreadCount: number,
-  pivot: number,
-  frontCreases: Crease[],
-): Record<number, number> {
-  const map: Record<number, number> = {};
-  map[pivot] = 0;
-
-  let cumulative = 0;
-  for (let i = pivot + 1; i < spreadCount; i++) {
-    const crease = frontCreases.find((c) => c.between_panel === i - 1);
-    const sign = crease?.fold_direction === 'backward' ? -1 : 1;
-    cumulative += sign * 180;
-    map[i] = cumulative;
-  }
-
-  cumulative = 0;
-  for (let i = pivot - 1; i >= 0; i--) {
-    const crease = frontCreases.find((c) => c.between_panel === i);
-    const sign = crease?.fold_direction === 'backward' ? 1 : -1;
-    cumulative += sign * 180;
-    map[i] = cumulative;
-  }
-
-  return map;
-}
-
-function isFrontFaceVisible(rotation: number): boolean {
-  const norm = ((rotation % 360) + 360) % 360;
-  return norm < 45 || norm > 315;
-}
-
-function isBackFaceVisible(rotation: number): boolean {
-  const norm = ((rotation % 360) + 360) % 360;
-  return norm > 135 && norm < 225;
-}
-
 /**
  * Generate a 1200x1200 OG image as a JPEG Blob.
  *
- * Layout: straight-on view of the folded card. Uses crease data to compute
- * which panels are visible from the cover side, then draws them side-by-side.
+ * Shows the cover panel straight-on, matching the folded-card view
+ * from the visualizer.
  */
 export async function generateOgImage(
   input: OgImageInput
 ): Promise<Blob> {
-  const { panels, creases, cover, pivotIndex, displayUrls } = input;
+  const { panels, cover, displayUrls } = input;
 
   const coverSidePanels = panels
     .filter((p) => p.side === cover.side)
@@ -97,38 +47,15 @@ export async function generateOgImage(
 
   if (coverSidePanels.length === 0) throw new Error('No panels on cover side');
 
-  const loaded: LoadedPanel[] = [];
-  for (const p of coverSidePanels) {
-    const url = displayUrls[p.id] || p.thumbnail_url;
-    if (!url) continue;
-    try {
-      const img = await loadImage(url);
-      loaded.push({ panel: p, img });
-    } catch {
-      // skip panels that fail to load
-    }
-  }
-  if (loaded.length === 0) throw new Error('No panel images could be loaded');
+  // Only the cover panel is visible when the card is fully folded.
+  const coverPanelDef = coverSidePanels.find((p) => p.panel_index === cover.spreadIndex)
+    ?? coverSidePanels[0];
 
-  const spreadCount = Math.max(...coverSidePanels.map((p) => p.panel_index)) + 1;
-  const frontCreases = creases
-    .filter((c) => c.side === 'front')
-    .sort((a, b) => a.between_panel - b.between_panel);
-  const pivot = pivotIndex ?? defaultPivot(cover.spreadIndex, spreadCount);
+  const url = displayUrls[coverPanelDef.id] || coverPanelDef.thumbnail_url;
+  if (!url) throw new Error('No image URL for cover panel');
 
-  const rotations = computeFoldedRotations(spreadCount, pivot, frontCreases);
-
-  const visibleCheck = cover.side === 'front' ? isFrontFaceVisible : isBackFaceVisible;
-  const visible = loaded.filter((l) => visibleCheck(rotations[l.panel.panel_index] ?? 0));
-
-  if (visible.length === 0) {
-    // Fallback: if fold math hides everything, just show the cover panel
-    const coverPanel = loaded.find((l) => l.panel.panel_index === cover.spreadIndex);
-    if (coverPanel) visible.push(coverPanel);
-    else visible.push(loaded[0]);
-  }
-
-  visible.sort((a, b) => a.panel.panel_index - b.panel.panel_index);
+  const img = await loadImage(url);
+  const visible: LoadedPanel[] = [{ panel: coverPanelDef, img }];
 
   const canvas = document.createElement('canvas');
   canvas.width = OG_SIZE;
