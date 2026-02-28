@@ -6,6 +6,8 @@ export interface Panel {
   side: Side;
   panel_index: number;
   thumbnail_url: string;
+  width_px?: number;
+  height_px?: number;
 }
 
 export interface Crease {

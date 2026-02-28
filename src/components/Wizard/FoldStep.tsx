@@ -32,6 +32,8 @@ export const FoldStep: React.FC<FoldStepProps> = ({
       side: slot.side as Side,
       panel_index: slot.panelIndex,
       thumbnail_url: slot.thumbnailUrl || '',
+      width_px: slot.cropRegion?.width ?? slot.widthPx,
+      height_px: slot.cropRegion?.height ?? slot.heightPx,
     }));
   }, [slots]);
 
@@ -55,23 +57,36 @@ export const FoldStep: React.FC<FoldStepProps> = ({
   const getAspectRatio = useCallback(
     (panelIdx: number) => {
       const filledSlots = slots.filter((s) => s.cropRegion !== null);
-      if (filledSlots.length === 0) return 3 / 4;
 
-      const refHeight = filledSlots[0].cropRegion!.height;
-      const front = slots.find(
+      if (filledSlots.length > 0) {
+        const refHeight = filledSlots[0].cropRegion!.height;
+        const front = slots.find(
+          (s) => s.panelIndex === panelIdx && s.side === 'front'
+        )?.cropRegion;
+        const back = slots.find(
+          (s) => s.panelIndex === panelIdx && s.side === 'back'
+        )?.cropRegion;
+        const width = front?.width ?? back?.width;
+
+        if (width && refHeight) return width / refHeight;
+
+        const avgWidth =
+          filledSlots.reduce((sum, s) => sum + (s.cropRegion?.width ?? 0), 0) /
+          filledSlots.length;
+        return avgWidth / refHeight;
+      }
+
+      const frontSlot = slots.find(
         (s) => s.panelIndex === panelIdx && s.side === 'front'
-      )?.cropRegion;
-      const back = slots.find(
+      );
+      const backSlot = slots.find(
         (s) => s.panelIndex === panelIdx && s.side === 'back'
-      )?.cropRegion;
-      const width = front?.width ?? back?.width;
+      );
+      const w = frontSlot?.widthPx ?? backSlot?.widthPx;
+      const h = frontSlot?.heightPx ?? backSlot?.heightPx;
+      if (w && h) return w / h;
 
-      if (width && refHeight) return width / refHeight;
-
-      const avgWidth =
-        filledSlots.reduce((sum, s) => sum + (s.cropRegion?.width ?? 0), 0) /
-        filledSlots.length;
-      return avgWidth / refHeight;
+      return 3 / 4;
     },
     [slots]
   );

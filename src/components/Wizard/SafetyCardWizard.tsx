@@ -105,8 +105,8 @@ export const SafetyCardWizard: React.FC<SafetyCardWizardProps> = ({
         for (let i = 0; i < panelCount; i++) {
           const fp = card.panels.find((p) => p.side === 'front' && p.panel_index === i);
           const bp = card.panels.find((p) => p.side === 'back' && p.panel_index === i);
-          slots.push({ panelIndex: i, side: 'front', imageId: null, cropRegion: null, thumbnailUrl: fp?.thumbnail_url ?? null, dirty: false });
-          slots.push({ panelIndex: i, side: 'back', imageId: null, cropRegion: null, thumbnailUrl: bp?.thumbnail_url ?? null, dirty: false });
+          slots.push({ panelIndex: i, side: 'front', imageId: null, cropRegion: null, thumbnailUrl: fp?.thumbnail_url ?? null, dirty: false, widthPx: fp?.width_px, heightPx: fp?.height_px });
+          slots.push({ panelIndex: i, side: 'back', imageId: null, cropRegion: null, thumbnailUrl: bp?.thumbnail_url ?? null, dirty: false, widthPx: bp?.width_px, heightPx: bp?.height_px });
         }
 
         setState((prev) => ({

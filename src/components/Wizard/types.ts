@@ -90,6 +90,8 @@ export interface PanelSlot {
   cropRegion: CropRegion | null; // the single crop region
   thumbnailUrl: string | null; // generated thumbnail data URL
   dirty?: boolean; // true when crop was modified since last save
+  widthPx?: number;  // panel image pixel width (for aspect ratio when cropRegion is null)
+  heightPx?: number; // panel image pixel height
 }
 
 // Top-level wizard state

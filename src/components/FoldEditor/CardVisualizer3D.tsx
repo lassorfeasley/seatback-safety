@@ -313,10 +313,24 @@ export const CardVisualizer3D: React.FC<CardVisualizer3DProps> = ({
 
   // ─── Layout math ──────────────────────────────────────────────
 
-  const pw = measuredWidth || PANEL_WIDTH_FALLBACK;
-  const totalWidth = pw * spreads.length;
-  const flatCenterFromPivot = totalWidth / 2 - pivot * pw;
-  const foldedCenterFromPivot = pw / 2;
+  const fallbackWidth = measuredWidth || PANEL_WIDTH_FALLBACK;
+
+  const spreadWidths = useMemo(() => {
+    return spreads.map((spread) => {
+      const front = spread.frontPanel;
+      const back = spread.backPanel;
+      const w = front?.width_px ?? back?.width_px;
+      const h = front?.height_px ?? back?.height_px;
+      if (w && h) return PANEL_HEIGHT * (w / h);
+      return fallbackWidth;
+    });
+  }, [spreads, fallbackWidth]);
+
+  const totalWidth = spreadWidths.reduce((sum, w) => sum + w, 0);
+  const widthBeforePivot = spreadWidths.slice(0, pivot).reduce((sum, w) => sum + w, 0);
+  const pivotWidth = spreadWidths[pivot] ?? fallbackWidth;
+  const flatCenterFromPivot = totalWidth / 2 - widthBeforePivot;
+  const foldedCenterFromPivot = pivotWidth / 2;
   const centerX = foldedCenterFromPivot + (flatCenterFromPivot - foldedCenterFromPivot) * (1 - overallFoldProgress);
   const centerY = PANEL_HEIGHT / 2;
   const staticFlipY = coverDesignation.side === 'front' ? 180 : 0;
@@ -366,14 +380,17 @@ export const CardVisualizer3D: React.FC<CardVisualizer3DProps> = ({
     const safeCos = Math.abs(cosP) < MIN_COS ? MIN_COS * Math.sign(cosP || 1) : cosP;
     const localZ = desiredDelta !== 0 ? desiredDelta / safeCos : 0;
 
+    const parentW = spreadWidths[index - 1] ?? fallbackWidth;
+    const selfW = spreadWidths[index] ?? fallbackWidth;
+
     return (
       <div
         key={`r-${index}`}
         style={{
           position: 'absolute',
-          left: pw,
+          left: parentW,
           top: 0,
-          width: pw,
+          width: selfW,
           height: PANEL_HEIGHT,
           transformStyle: 'preserve-3d',
           transformOrigin: 'left center',
@@ -404,14 +421,16 @@ export const CardVisualizer3D: React.FC<CardVisualizer3DProps> = ({
     const safeCos = Math.abs(cosP) < MIN_COS ? MIN_COS * Math.sign(cosP || 1) : cosP;
     const localZ = desiredDelta !== 0 ? desiredDelta / safeCos : 0;
 
+    const selfW = spreadWidths[index] ?? fallbackWidth;
+
     return (
       <div
         key={`l-${index}`}
         style={{
           position: 'absolute',
-          left: -pw,
+          left: -selfW,
           top: 0,
-          width: pw,
+          width: selfW,
           height: PANEL_HEIGHT,
           transformStyle: 'preserve-3d',
           transformOrigin: 'right center',
@@ -436,6 +455,7 @@ export const CardVisualizer3D: React.FC<CardVisualizer3DProps> = ({
   const renderPanelFaces = (spread: Spread) => {
     const hasFront = spread.frontPanel && spread.frontPanel.thumbnail_url;
     const hasBack = spread.backPanel && spread.backPanel.thumbnail_url;
+    const sw = spreadWidths[spread.index] ?? fallbackWidth;
 
     return (
       <>
@@ -443,8 +463,9 @@ export const CardVisualizer3D: React.FC<CardVisualizer3DProps> = ({
           <img
             src={spread.frontPanel!.thumbnail_url}
             alt={`Front ${spread.index + 1}`}
-            className="w-auto object-contain pointer-events-none"
+            className="object-contain pointer-events-none"
             style={{
+              width: sw,
               height: PANEL_HEIGHT,
               backfaceVisibility: 'hidden',
               transform: `translateZ(${PAPER_THICKNESS / 2}px)`,
@@ -456,7 +477,7 @@ export const CardVisualizer3D: React.FC<CardVisualizer3DProps> = ({
             className="flex items-center justify-center text-xs text-indigo-400 bg-indigo-500/10 border border-indigo-300/20 rounded-sm"
             style={{
               height: PANEL_HEIGHT,
-              width: PANEL_WIDTH_FALLBACK,
+              width: sw,
               backfaceVisibility: 'hidden',
               transform: `translateZ(${PAPER_THICKNESS / 2}px)`,
             }}
@@ -469,8 +490,9 @@ export const CardVisualizer3D: React.FC<CardVisualizer3DProps> = ({
           <img
             src={spread.backPanel!.thumbnail_url}
             alt={`Back ${spread.index + 1}`}
-            className="absolute inset-0 w-auto object-contain pointer-events-none"
+            className="absolute inset-0 object-contain pointer-events-none"
             style={{
+              width: sw,
               height: PANEL_HEIGHT,
               backfaceVisibility: 'hidden',
               transform: `translateZ(${-PAPER_THICKNESS / 2}px) rotateY(180deg)`,
@@ -482,7 +504,7 @@ export const CardVisualizer3D: React.FC<CardVisualizer3DProps> = ({
             className="absolute inset-0 flex items-center justify-center text-xs text-violet-400 bg-violet-500/10 border border-violet-300/20 rounded-sm"
             style={{
               height: PANEL_HEIGHT,
-              width: PANEL_WIDTH_FALLBACK,
+              width: sw,
               backfaceVisibility: 'hidden',
               transform: `translateZ(${-PAPER_THICKNESS / 2}px) rotateY(180deg)`,
             }}
@@ -539,6 +561,8 @@ export const CardVisualizer3D: React.FC<CardVisualizer3DProps> = ({
               style={{
                 display: 'inline-block',
                 position: 'relative',
+                width: pivotWidth,
+                height: PANEL_HEIGHT,
                 transformStyle: 'preserve-3d',
               }}
             >

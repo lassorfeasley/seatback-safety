@@ -762,6 +762,8 @@ export async function fetchCardDetail(cardId: string): Promise<CardDetailData | 
         side: side.side as Side,
         panel_index: panel.panel_index,
         thumbnail_url: fallback ? derivativePublicUrl(fallback.file_path) : '',
+        width_px: fallback?.width_px ?? undefined,
+        height_px: fallback?.height_px ?? undefined,
       });
 
       if (display) {
