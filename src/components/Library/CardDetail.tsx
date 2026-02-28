@@ -1305,41 +1305,48 @@ const SpreadRow: React.FC<SpreadRowProps> = ({
   isEditing,
   onEditCrops,
 }) => {
-  const slots = Array.from({ length: Math.max(expectedCount, panels.length) }, (_, i) => {
-    return panels.find((p) => p.panel_index === i) ?? null;
+  const count = Math.max(expectedCount, panels.length);
+  const slots = Array.from({ length: count }, (_, rawI) => {
+    const panelIndex = side === 'back' ? count - 1 - rawI : rawI;
+    return { panel: panels.find((p) => p.panel_index === panelIndex) ?? null, panelIndex };
   });
 
   return (
     <div>
-      <h2 className="text-sm font-medium text-muted-foreground mb-3">
+      <h2 className="text-sm font-medium text-muted-foreground mb-1">
         {label} Side
       </h2>
+      {side === 'back' && (
+        <p className="text-[11px] text-muted-foreground mb-2">
+          Flipped — as if you turned the card over
+        </p>
+      )}
       <div
         className="grid gap-1"
         style={{ gridTemplateColumns: `repeat(${slots.length}, 1fr)`, maxHeight: 300 }}
       >
-        {slots.map((panel, i) => {
+        {slots.map(({ panel, panelIndex }) => {
           const displayUrl = panel ? (displayUrls[panel.id] || panel.thumbnail_url) : null;
           const fullUrl = panel ? (fullUrls[panel.id] || displayUrl) : null;
-          const isSavingThis = savingSlot?.panelIndex === i && savingSlot?.side === side;
+          const isSavingThis = savingSlot?.panelIndex === panelIndex && savingSlot?.side === side;
           const isProcessing = (!!panel && !displayUrl) || isSavingThis;
 
           return (
             <div
-              key={panel?.id ?? `empty-${i}`}
+              key={panel?.id ?? `empty-${panelIndex}`}
               className={cn(
                 'relative group rounded-sm overflow-hidden',
                 (displayUrl && !isSavingThis) ? 'bg-muted/50' : 'bg-muted/30 border border-dashed border-muted-foreground/20',
                 isEditing && onEditCrops && !isProcessing && 'cursor-pointer hover:ring-2 hover:ring-primary/50 transition-all',
               )}
               style={{ maxHeight: 300 }}
-              onClick={isEditing && onEditCrops && !isProcessing ? () => onEditCrops(i, side) : undefined}
+              onClick={isEditing && onEditCrops && !isProcessing ? () => onEditCrops(panelIndex, side) : undefined}
             >
               {displayUrl && !isSavingThis ? (
                 <>
                   <img
                     src={displayUrl}
-                    alt={`${label} Panel ${i + 1}`}
+                    alt={`${label} Panel ${panelIndex + 1}`}
                     className="w-full h-full object-contain block"
                     loading="lazy"
                   />
@@ -1375,7 +1382,7 @@ const SpreadRow: React.FC<SpreadRowProps> = ({
                       <span className="text-xs text-muted-foreground/60">Crop</span>
                     </>
                   ) : (
-                    <span className="text-xs text-muted-foreground">Panel {i + 1}</span>
+                    <span className="text-xs text-muted-foreground">Panel {panelIndex + 1}</span>
                   )}
                 </div>
               )}
@@ -1387,9 +1394,9 @@ const SpreadRow: React.FC<SpreadRowProps> = ({
         className="grid gap-1 mt-1"
         style={{ gridTemplateColumns: `repeat(${slots.length}, 1fr)` }}
       >
-        {slots.map((_, i) => (
-          <div key={i} className="text-center text-[11px] text-muted-foreground">
-            Panel {i + 1}
+        {slots.map(({ panelIndex }) => (
+          <div key={panelIndex} className="text-center text-[11px] text-muted-foreground">
+            Panel {panelIndex + 1}
           </div>
         ))}
       </div>

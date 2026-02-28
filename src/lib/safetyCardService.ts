@@ -1207,6 +1207,12 @@ export async function updateCardPanels(
     onProgress?.({ stage, current, total });
 
   try {
+    // Persist crop dimensions immediately so subsequent sessions see them
+    await supabase
+      .from('safety_cards')
+      .update({ crop_width: state.cropWidth, crop_height: state.cropHeight })
+      .eq('id', cardId);
+
     const dirtySlots = state.slots.filter((s) => s.dirty);
 
     if (dirtySlots.length === 0) {
@@ -1345,11 +1351,6 @@ export async function updateCardPanels(
       const { error: imgErr } = await supabase.from('panel_images').insert(panelImageRows);
       if (imgErr) return { success: false, error: `Failed to save panel images: ${imgErr.message}` };
     }
-
-    await supabase
-      .from('safety_cards')
-      .update({ crop_width: state.cropWidth, crop_height: state.cropHeight })
-      .eq('id', cardId);
 
     return { success: true };
   } catch (err) {
