@@ -863,8 +863,37 @@ const MetadataEditor: React.FC<MetadataEditorProps> = ({ card, onSave, onCancel,
   const [notes, setNotes] = useState(card.notes ?? '');
 
   const [analyzing, setAnalyzing] = useState(false);
-  const [suggestions, setSuggestions] = useState<CardSuggestions | null>(null);
-  const [acceptedFields, setAcceptedFields] = useState<Set<string>>(new Set());
+
+  const storageKey = `ai-suggestions-${card.id}`;
+  const [suggestions, setSuggestions] = useState<CardSuggestions | null>(() => {
+    try {
+      const stored = sessionStorage.getItem(storageKey);
+      return stored ? JSON.parse(stored) : null;
+    } catch { return null; }
+  });
+  const [acceptedFields, setAcceptedFields] = useState<Set<string>>(() => {
+    try {
+      const stored = sessionStorage.getItem(`${storageKey}-accepted`);
+      return stored ? new Set(JSON.parse(stored)) : new Set();
+    } catch { return new Set(); }
+  });
+
+  // Persist suggestions to sessionStorage so they survive navigation
+  useEffect(() => {
+    if (suggestions) {
+      sessionStorage.setItem(storageKey, JSON.stringify(suggestions));
+    } else {
+      sessionStorage.removeItem(storageKey);
+    }
+  }, [suggestions, storageKey]);
+
+  useEffect(() => {
+    if (acceptedFields.size > 0) {
+      sessionStorage.setItem(`${storageKey}-accepted`, JSON.stringify([...acceptedFields]));
+    } else {
+      sessionStorage.removeItem(`${storageKey}-accepted`);
+    }
+  }, [acceptedFields, storageKey]);
 
   const handleAnalyze = useCallback(async () => {
     if (scanUrls.length === 0) return;
