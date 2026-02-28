@@ -33,6 +33,82 @@ function defaultPivot(coverIdx: number, panelCount: number): number {
   return coverIdx - 1;
 }
 
+/**
+ * Simulate folding a 1D strip to determine the exact layer (Z-stack) order.
+ *
+ * The simulation maintains an ordered list of "columns" where each column is a
+ * bottom-to-top stack of spread indices.  Folds are applied in fold-order
+ * (reverse of unfold_sequence).  Each fold locates the two spreads adjacent to
+ * the crease, reflects the far side onto the near side, and merges the stacks.
+ *
+ * Returns a map: spreadIndex → layerIndex  (0 = bottom of stack, higher =
+ * closer to the viewer).
+ */
+function computeLayerOrder(
+  spreadCount: number,
+  frontCreases: Crease[],
+): Record<number, number> {
+  if (spreadCount <= 1) return { 0: 0 };
+
+  let columns: number[][] = [];
+  for (let i = 0; i < spreadCount; i++) columns.push([i]);
+
+  const foldOrder = [...frontCreases].sort(
+    (a, b) =>
+      (b.unfold_sequence ?? b.between_panel) -
+      (a.unfold_sequence ?? a.between_panel),
+  );
+
+  for (const crease of foldOrder) {
+    const cp = crease.between_panel;
+
+    let colC = -1;
+    let colC1 = -1;
+    for (let i = 0; i < columns.length; i++) {
+      if (columns[i].includes(cp)) colC = i;
+      if (columns[i].includes(cp + 1)) colC1 = i;
+    }
+    if (colC === -1 || colC1 === -1 || colC === colC1) continue;
+
+    const isNormal = colC < colC1;
+    const splitIdx = Math.min(colC, colC1);
+
+    const stayPart = columns.slice(0, splitIdx + 1);
+    const movePart = columns.slice(splitIdx + 1);
+    const refLen = movePart.length;
+
+    const reflected: number[][] = [];
+    for (let i = movePart.length - 1; i >= 0; i--) {
+      reflected.push([...movePart[i]].reverse());
+    }
+
+    const reflectedOnTop = isNormal
+      ? crease.fold_direction === 'forward'
+      : crease.fold_direction !== 'forward';
+
+    const leftmost = Math.min(0, splitIdx - refLen + 1);
+    const merged: number[][] = [];
+    for (let pos = leftmost; pos <= splitIdx; pos++) {
+      const si = pos;
+      const ri = pos - (splitIdx - refLen + 1);
+      const s = si >= 0 && si < stayPart.length ? stayPart[si] : [];
+      const r = ri >= 0 && ri < refLen ? reflected[ri] : [];
+      merged.push(reflectedOnTop ? [...s, ...r] : [...r, ...s]);
+    }
+
+    columns = merged;
+  }
+
+  const result: Record<number, number> = {};
+  let layer = 0;
+  for (const col of columns) {
+    for (const spreadIdx of col) {
+      result[spreadIdx] = layer++;
+    }
+  }
+  return result;
+}
+
 export const CardVisualizer3D: React.FC<CardVisualizer3DProps> = ({
   panels, creases, cover, pivotIndex, minimal,
 }) => {
@@ -243,23 +319,36 @@ export const CardVisualizer3D: React.FC<CardVisualizer3DProps> = ({
   const centerX = foldedCenterFromPivot + (flatCenterFromPivot - foldedCenterFromPivot) * (1 - overallFoldProgress);
   const centerY = PANEL_HEIGHT / 2;
   const staticFlipY = coverDesignation.side === 'front' ? 180 : 0;
-  const zDirection = coverDesignation.side === 'front' ? -1 : 1;
   const foldTransition = isSliderActive
     ? 'none'
     : `transform ${FOLD_DURATION}ms cubic-bezier(0.4, 0, 0.2, 1)`;
+
+  // ─── Layer-order simulation ──────────────────────────────────
+  // Simulate the physical fold sequence to determine the exact
+  // stacking position of each spread in the folded card.
+
+  const layerOrder = useMemo(
+    () => computeLayerOrder(spreads.length, frontCreases),
+    [spreads.length, frontCreases],
+  );
+
+  // Z-sign: maps layer differences to the correct local-Z direction so that
+  // the cover spread always ends up closest to the viewer.
+  //   flipSign:  with a 180° Y flip, "deeper into the stack" = +Z local
+  //              (becomes −Z world = farther from viewer).  Without flip, −Z.
+  //   layerSign: if the cover sits at a lower layer than the pivot, higher
+  //              layers are deeper (+1).  If cover is higher, the reverse.
+  const coverLayer = layerOrder[coverDesignation.spreadIndex] ?? 0;
+  const pivotLayer = layerOrder[pivot] ?? 0;
+  const zSign = (staticFlipY === 180 ? 1 : -1) * (coverLayer <= pivotLayer ? 1 : -1);
 
   // ─── Nested panel chain builders ────────────────────────────
   // Each panel is nested inside the previous one so CSS preserve-3d
   // cascading keeps panels connected at their crease edges.
   //
-  // Z-stacking: the cover's chain pushes toward the viewer so the
-  // cover ends up on top; the opposite chain pushes away.  Because
-  // nested rotations flip the local Z axis, we compensate each
-  // level's translateZ by dividing by cos(parentCumAngle).
-
-  const coverIdx = coverDesignation.spreadIndex;
-  const rightChainSign = coverIdx > pivot ? 1 : -1;
-  const leftChainSign  = coverIdx < pivot ? 1 : -1;
+  // Z-stacking uses the simulation-derived layer order.  Each
+  // crease's Z contribution is the layer difference between the two
+  // adjacent spreads, compensated for nested rotations via cos().
 
   const buildRightChain = (index: number, parentCumAngle: number): React.ReactNode => {
     if (index >= spreads.length) return null;
@@ -269,8 +358,9 @@ export const CardVisualizer3D: React.FC<CardVisualizer3DProps> = ({
     const sign = crease?.fold_direction === 'backward' ? -1 : 1;
     const angle = sign * amount * 180;
 
+    const layerDiff = (layerOrder[index] ?? 0) - (layerOrder[index - 1] ?? 0);
     const cosP = Math.cos((parentCumAngle * Math.PI) / 180);
-    const desiredDelta = STACK_GAP * zDirection * rightChainSign * amount;
+    const desiredDelta = layerDiff * STACK_GAP * zSign * amount;
     const localZ = Math.abs(cosP) > 0.01 ? desiredDelta / cosP : 0;
 
     return (
@@ -304,8 +394,9 @@ export const CardVisualizer3D: React.FC<CardVisualizer3DProps> = ({
     const sign = crease?.fold_direction === 'backward' ? 1 : -1;
     const angle = sign * amount * 180;
 
+    const layerDiff = (layerOrder[index] ?? 0) - (layerOrder[index + 1] ?? 0);
     const cosP = Math.cos((parentCumAngle * Math.PI) / 180);
-    const desiredDelta = STACK_GAP * zDirection * leftChainSign * amount;
+    const desiredDelta = layerDiff * STACK_GAP * zSign * amount;
     const localZ = Math.abs(cosP) > 0.01 ? desiredDelta / cosP : 0;
 
     return (
@@ -323,7 +414,11 @@ export const CardVisualizer3D: React.FC<CardVisualizer3DProps> = ({
           transition: foldTransition,
         }}
       >
-        <div className="relative" style={{ transformStyle: 'preserve-3d' }}>
+        <div className="relative" style={{
+          transformStyle: 'preserve-3d',
+          marginLeft: 'auto',
+          width: 'fit-content',
+        }}>
           {renderPanelFaces(spreads[index])}
         </div>
         {buildLeftChain(index - 1, parentCumAngle + angle)}
@@ -422,7 +517,7 @@ export const CardVisualizer3D: React.FC<CardVisualizer3DProps> = ({
               transformStyle: 'preserve-3d',
               transformOrigin: `${centerX}px ${centerY}px`,
               transition: !settled ? 'none' : (
-                isDragging ? 'none' : `transform 300ms ease-out, left ${FOLD_DURATION}ms cubic-bezier(0.4, 0, 0.2, 1)`
+                isDragging || isSliderActive ? 'none' : `transform 300ms ease-out, left ${FOLD_DURATION}ms cubic-bezier(0.4, 0, 0.2, 1)`
               ),
               transform: [
                 minimal ? 'scale(1.5)' : '',
