@@ -4,6 +4,8 @@ import { fetchCardDetail, type CardDetailData } from '@/lib/safetyCardService';
 import { Loader2, ArrowLeft, Printer } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
+const ACCENT = 'oklch(50% 0.134 242.749)';
+
 const PRINT_STYLES = `
   @media print {
     @page {
@@ -27,6 +29,8 @@ const PRINT_STYLES = `
       height: 10.5in !important;
       margin: 0 !important;
       box-shadow: none !important;
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
     }
   }
 `;
@@ -64,10 +68,23 @@ export const PrintLabel: React.FC = () => {
   }
 
   const airlineName = card.airline_name || 'Unknown Airline';
-  const aircraftLabel = card.aircraft_label || '';
   const year = card.published_year ? String(card.published_year) : '';
+
+  const makes = [...new Set(card.aircraft?.map((a) => a.manufacturerName).filter(Boolean))];
+  const models = [...new Set(
+    card.aircraft?.map((a) => [a.modelName, a.variantName].filter(Boolean).join(' ')).filter(Boolean)
+  )];
+
   const revision = card.revision || '';
-  const rightInfo = [year, revision].filter(Boolean).join(' \u00b7 ');
+
+  const crumbs = [
+    makes.join(', '),
+    models.join(', '),
+    year,
+    revision,
+  ].filter(Boolean);
+
+  const ogUrl = card.preview_url?.replace(/preview\.jpg$/, 'og.jpg') || '';
 
   return (
     <>
@@ -97,6 +114,8 @@ export const PrintLabel: React.FC = () => {
             background: 'white',
             boxShadow: '0 2px 16px rgba(0,0,0,0.1), 0 0 0 1px rgba(0,0,0,0.05)',
             flexShrink: 0,
+            position: 'relative' as const,
+            overflow: 'hidden',
           }}
         >
           {/* Label strip: top 1.5 inches */}
@@ -104,88 +123,90 @@ export const PrintLabel: React.FC = () => {
             style={{
               width: '100%',
               height: '1.5in',
-              padding: '0.1in 0.18in',
+              backgroundColor: 'white',
               boxSizing: 'border-box',
+              display: 'flex',
+              flexDirection: 'column',
+              justifyContent: 'flex-start',
+              padding: '0 0.3in',
             }}
           >
-            {/* Outer border */}
             <div
               style={{
-                width: '100%',
-                height: '100%',
-                border: '1.5px solid black',
-                padding: '3px',
-                boxSizing: 'border-box',
+                fontFamily: '"Funnel Display", system-ui, sans-serif',
+                fontSize: '20pt',
+                fontWeight: 700,
+                letterSpacing: '0.14em',
+                textTransform: 'uppercase',
+                color: 'black',
+                lineHeight: 1.15,
               }}
             >
-              {/* Inner border */}
-              <div
+              {airlineName}
+            </div>
+
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                marginTop: '6px',
+                fontFamily: '"Funnel Display", system-ui, sans-serif',
+                fontSize: '8pt',
+                fontWeight: 600,
+                letterSpacing: '0.12em',
+                textTransform: 'uppercase',
+                color: '#a8a7b2',
+                lineHeight: 1.2,
+              }}
+            >
+              {crumbs.map((crumb, i) => (
+                <span key={i} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  {i > 0 && (
+                    <span style={{ color: '#a8a7b2' }}>→</span>
+                  )}
+                  <span>{crumb}</span>
+                </span>
+              ))}
+            </div>
+          </div>
+
+          {/* Background fill from 1.8in down — matches OG image bg */}
+          <div
+            style={{
+              position: 'absolute',
+              top: '1.8in',
+              left: 0,
+              right: 0,
+              bottom: 0,
+              backgroundColor: '#a8a7b2',
+              filter: 'grayscale(1)',
+            }}
+          />
+
+          {/* OG image — 4in square, centered in shaded area */}
+          {ogUrl && (
+            <div
+              style={{
+                position: 'absolute',
+                top: '1.8in',
+                left: '0px',
+                width: '4in',
+                height: '4in',
+              }}
+            >
+              <img
+                src={ogUrl}
+                alt=""
                 style={{
                   width: '100%',
                   height: '100%',
-                  border: '0.5px solid black',
-                  boxSizing: 'border-box',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  justifyContent: 'center',
-                  alignItems: 'center',
-                  padding: '0 0.2in',
+                  objectFit: 'contain',
+                  filter: 'grayscale(1)',
                 }}
-              >
-                {/* Airline name */}
-                <div
-                  style={{
-                    fontFamily: 'system-ui, -apple-system, sans-serif',
-                    fontSize: '18pt',
-                    fontWeight: 700,
-                    letterSpacing: '0.14em',
-                    textTransform: 'uppercase',
-                    textAlign: 'center',
-                    color: 'black',
-                    lineHeight: 1.15,
-                  }}
-                >
-                  {airlineName}
-                </div>
-
-                {/* Ornamental divider */}
-                <div
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    width: '50%',
-                    margin: '4px 0 3px',
-                    gap: '8px',
-                  }}
-                >
-                  <div style={{ flex: 1, height: '0.5px', background: 'black' }} />
-                  <span style={{ fontSize: '5pt', color: 'black', lineHeight: 1 }}>&#9670;</span>
-                  <div style={{ flex: 1, height: '0.5px', background: 'black' }} />
-                </div>
-
-                {/* Aircraft + Year/Revision */}
-                <div
-                  style={{
-                    display: 'flex',
-                    justifyContent: aircraftLabel && rightInfo ? 'space-between' : 'center',
-                    alignItems: 'baseline',
-                    width: '100%',
-                    fontFamily: 'system-ui, -apple-system, sans-serif',
-                    fontSize: '10pt',
-                    color: 'black',
-                    lineHeight: 1.2,
-                  }}
-                >
-                  <span>{aircraftLabel}</span>
-                  {rightInfo && (
-                    <span style={{ whiteSpace: 'nowrap', marginLeft: '1em' }}>
-                      {rightInfo}
-                    </span>
-                  )}
-                </div>
-              </div>
+              />
             </div>
-          </div>
+          )}
         </div>
       </div>
     </>
