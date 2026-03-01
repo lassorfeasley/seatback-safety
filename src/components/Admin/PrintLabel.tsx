@@ -4,8 +4,6 @@ import { fetchCardDetail, type CardDetailData } from '@/lib/safetyCardService';
 import { Loader2, ArrowLeft, Printer } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
-const ACCENT = 'oklch(50% 0.134 242.749)';
-
 const PRINT_STYLES = `
   @media print {
     @page {
