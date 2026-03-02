@@ -1,6 +1,6 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { Outlet, Link, NavLink, useNavigate } from 'react-router-dom';
-import { Search, Send, ChevronDown, Cloud } from 'lucide-react';
+import { Search, Send, ChevronDown, Cloud, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { BreadcrumbProvider, useBreadcrumbs } from './BreadcrumbContext';
 
@@ -24,19 +24,50 @@ export const PublicLayout: React.FC = () => (
 
 const PublicLayoutInner: React.FC = () => {
   const [decadesOpen, setDecadesOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
   const decadesRef = useRef<HTMLDivElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const searchContainerRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
-  const { breadcrumbs } = useBreadcrumbs();
+  const { breadcrumbs, toolbar } = useBreadcrumbs();
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       if (decadesRef.current && !decadesRef.current.contains(e.target as Node)) {
         setDecadesOpen(false);
       }
+      if (searchOpen && searchContainerRef.current && !searchContainerRef.current.contains(e.target as Node)) {
+        setSearchOpen(false);
+        setSearchQuery('');
+      }
     };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
+  }, [searchOpen]);
+
+  const openSearch = useCallback(() => {
+    setSearchOpen(true);
+    setTimeout(() => searchInputRef.current?.focus(), 0);
   }, []);
+
+  const closeSearch = useCallback(() => {
+    setSearchOpen(false);
+    setSearchQuery('');
+  }, []);
+
+  const handleSearchSubmit = useCallback((e: React.FormEvent) => {
+    e.preventDefault();
+    const q = searchQuery.trim();
+    if (q) {
+      navigate(`/search?q=${encodeURIComponent(q)}`);
+      closeSearch();
+    }
+  }, [searchQuery, navigate, closeSearch]);
+
+  const handleSearchKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (e.key === 'Escape') closeSearch();
+  }, [closeSearch]);
 
   return (
     <div className="min-h-dvh flex flex-col bg-background">
@@ -86,34 +117,70 @@ const PublicLayoutInner: React.FC = () => {
               </div>
             </nav>
 
-            {/* Right icons */}
-            <div className="flex items-center gap-3">
-              <button
-                onClick={() => navigate('/search')}
-                className="text-white/70 hover:text-white transition-colors"
-                aria-label="Search"
-              >
-                <Search className="h-5 w-5" />
-              </button>
-              <Link
-                to="/about"
-                className="text-white/70 hover:text-white transition-colors"
-                aria-label="About"
-              >
-                <Send className="h-5 w-5" />
-              </Link>
-            </div>
+            {/* Right side: search or icons */}
+            {searchOpen ? (
+              <div ref={searchContainerRef} className="flex items-stretch gap-3 h-14">
+                <form onSubmit={handleSearchSubmit} className="relative w-72 flex">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-white/50" />
+                  <input
+                    ref={searchInputRef}
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    onKeyDown={handleSearchKeyDown}
+                    placeholder="Search cards..."
+                    className="w-full bg-[#ebeaef] pl-10 pr-10 text-sm placeholder:opacity-60
+                               focus:outline-none transition-colors"
+                    style={{ color: 'oklch(50% 0.134 242.749)' }}
+                  />
+                  {searchQuery && (
+                    <button
+                      type="button"
+                      onClick={() => setSearchQuery('')}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-white/50 hover:text-white"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  )}
+                </form>
+                <button
+                  onClick={closeSearch}
+                  className="text-white/70 hover:text-white transition-colors"
+                  aria-label="Close search"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={openSearch}
+                  className="text-white/70 hover:text-white transition-colors"
+                  aria-label="Search"
+                >
+                  <Search className="h-5 w-5" />
+                </button>
+                <Link
+                  to="/about"
+                  className="text-white/70 hover:text-white transition-colors"
+                  aria-label="About"
+                >
+                  <Send className="h-5 w-5" />
+                </Link>
+              </div>
+            )}
           </div>
 
         </div>
 
-        {/* Tagline / Breadcrumb bar */}
-        <div className="border-t border-white/10">
-          <div className="max-w-6xl mx-auto px-6 py-2 flex items-center gap-3
-                          text-xs text-white/60 tracking-wide uppercase"
-               style={{ justifyContent: breadcrumbs.length > 0 ? 'flex-start' : 'center' }}
+        {/* Tagline / Breadcrumb / Toolbar bar */}
+        <div className="border-t border-white/20">
+          <div className={`max-w-6xl mx-auto h-10 flex items-center gap-3
+                          text-xs text-white tracking-wide uppercase ${toolbar ? '' : 'px-6'}`}
           >
-            {breadcrumbs.length > 0 ? (
+            {toolbar ? (
+              <div className="flex items-stretch w-full h-full">{toolbar}</div>
+            ) : breadcrumbs.length > 0 ? (
               breadcrumbs.map((crumb, i) => (
                 <span key={i} className="flex items-center gap-2">
                   {i > 0 && <span className="text-white/30">→</span>}
@@ -127,10 +194,10 @@ const PublicLayoutInner: React.FC = () => {
                 </span>
               ))
             ) : (
-              <>
-                <span>We collect seatback safety cards.</span>
-                <span>Created by Lassor Feasley.</span>
-              </>
+              <a href="https://www.lassor.com" target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 hover:text-white/80 transition-colors">
+                <span>✈️ We collect seatback safety cards.</span>
+                <span>🧳 Created by Lassor Feasley.</span>
+              </a>
             )}
           </div>
         </div>

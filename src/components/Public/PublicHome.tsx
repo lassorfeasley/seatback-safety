@@ -4,6 +4,7 @@ import { Loader2, ArrowRight } from 'lucide-react';
 import { fetchCards, type CardSummary } from '@/lib/safetyCardService';
 import { fetchAirlinesBrowse, fetchManufacturersBrowse, type AirlineBrowse, type ManufacturerBrowse } from '@/lib/lookupService';
 import { PublicCardTile } from './PublicCardTile';
+import { CardCarousel } from './CardCarousel';
 
 export const PublicHome: React.FC = () => {
   const [cards, setCards] = useState<CardSummary[]>([]);
@@ -36,6 +37,9 @@ export const PublicHome: React.FC = () => {
 
   return (
     <div className="min-h-[calc(100dvh-4rem)] bg-background">
+      {/* Hero Carousel */}
+      <CardCarousel />
+
       {/* Recent Additions */}
       {recentCards.length > 0 && (
         <section className="max-w-6xl mx-auto px-6 py-12">
@@ -69,7 +73,6 @@ export const PublicHome: React.FC = () => {
                 to={`/airlines/${airline.id}`}
                 name={airline.name}
                 logoUrl={airline.logo_url}
-                subtitle={`${airline.card_count} card${airline.card_count !== 1 ? 's' : ''}`}
               />
             ))}
           </div>
@@ -95,7 +98,6 @@ export const PublicHome: React.FC = () => {
                 to={`/manufacturers/${mfr.id}`}
                 name={mfr.name}
                 logoUrl={mfr.logo_url}
-                subtitle={`${mfr.card_count} card${mfr.card_count !== 1 ? 's' : ''}`}
               />
             ))}
           </div>
@@ -109,14 +111,13 @@ const EntityTile: React.FC<{
   to: string;
   name: string;
   logoUrl: string | null;
-  subtitle: string;
-}> = ({ to, name, logoUrl, subtitle }) => (
+}> = ({ to, name, logoUrl }) => (
   <Link
     to={to}
     className="group flex flex-col overflow-hidden
                focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
   >
-    <div className="aspect-square bg-muted/60 relative overflow-hidden flex items-center justify-center">
+    <div className="aspect-square bg-[#ebeaef] relative overflow-hidden flex items-center justify-center">
       {logoUrl ? (
         <img src={logoUrl} alt={name} className="w-3/4 h-3/4 object-contain" />
       ) : (
@@ -127,7 +128,6 @@ const EntityTile: React.FC<{
     </div>
     <div className="pt-2 px-0.5">
       <p className="text-sm font-medium truncate">{name}</p>
-      <p className="text-xs text-muted-foreground truncate mt-0.5">{subtitle}</p>
     </div>
   </Link>
 );

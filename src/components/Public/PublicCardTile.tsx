@@ -13,7 +13,7 @@ export const PublicCardTile: React.FC<{ card: CardSummary }> = ({ card }) => {
       className="group flex flex-col overflow-hidden
                  focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
     >
-      <div className="aspect-square bg-muted/60 relative overflow-hidden">
+      <div className="aspect-square bg-[#ebeaef] relative overflow-hidden">
         {imgSrc ? (
           <img
             src={imgSrc}
@@ -39,9 +39,6 @@ export const PublicCardTile: React.FC<{ card: CardSummary }> = ({ card }) => {
         <p className="text-sm font-medium truncate">
           {card.title || card.airline_name || 'Untitled Card'}
         </p>
-        {card.aircraft_label && (
-          <p className="text-xs text-muted-foreground truncate mt-0.5">{card.aircraft_label}</p>
-        )}
       </div>
     </Link>
   );

@@ -152,6 +152,7 @@ export const PublicCardDetail: React.FC = () => {
               cover={card.cover}
               pivotIndex={card.pivotIndex ?? undefined}
               minimal
+              hintOnLoad
             />
           </div>
         </div>

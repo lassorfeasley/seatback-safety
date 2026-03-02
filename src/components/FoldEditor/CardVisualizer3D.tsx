@@ -11,6 +11,7 @@ interface CardVisualizer3DProps {
   cover?: CoverDesignation;
   pivotIndex?: number;
   minimal?: boolean;
+  hintOnLoad?: boolean;
 }
 
 interface Spread {
@@ -45,7 +46,7 @@ function defaultPivot(coverIdx: number, panelCount: number): number {
  * Returns a map: spreadIndex → layerIndex  (0 = bottom of stack, higher =
  * closer to the viewer).
  */
-function computeLayerOrder(
+export function computeLayerOrder(
   spreadCount: number,
   frontCreases: Crease[],
 ): Record<number, number> {
@@ -111,7 +112,7 @@ function computeLayerOrder(
 }
 
 export const CardVisualizer3D: React.FC<CardVisualizer3DProps> = ({
-  panels, creases, cover, pivotIndex, minimal,
+  panels, creases, cover, pivotIndex, minimal, hintOnLoad,
 }) => {
   const [targetFoldState, setTargetFoldState] = useState<0 | 1>(1);
   const [rotation, setRotation] = useState({ x: 0, y: 0 });
@@ -310,6 +311,36 @@ export const CardVisualizer3D: React.FC<CardVisualizer3DProps> = ({
       handleFold();
     }
   }, [minimal, targetFoldState, handleUnfold, handleFold]);
+
+  // Hint animation: quickly unfold then refold on load
+  useEffect(() => {
+    if (!hintOnLoad || creasesByUnfoldOrder.length === 0) return;
+
+    const n = creasesByUnfoldOrder.length;
+    const unfoldTime = n * (FOLD_DURATION - FOLD_STAGGER);
+    const timeouts: NodeJS.Timeout[] = [];
+
+    // Unfold after initial delay
+    creasesByUnfoldOrder.forEach((crease, i) => {
+      const delay = 600 + i * (FOLD_DURATION - FOLD_STAGGER);
+      timeouts.push(setTimeout(() => {
+        setCreaseFolds((prev) => ({ ...prev, [crease.between_panel]: 0 }));
+      }, delay));
+    });
+
+    // Refold after pause
+    const refoldStart = 600 + unfoldTime + 800;
+    const foldOrder = [...creasesByUnfoldOrder].reverse();
+    foldOrder.forEach((crease, i) => {
+      const delay = refoldStart + i * (FOLD_DURATION - FOLD_STAGGER);
+      timeouts.push(setTimeout(() => {
+        setCreaseFolds((prev) => ({ ...prev, [crease.between_panel]: 1 }));
+      }, delay));
+    });
+
+    return () => timeouts.forEach(clearTimeout);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // ─── Layout math ──────────────────────────────────────────────
 
