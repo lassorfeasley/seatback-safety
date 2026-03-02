@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { fetchCards, fetchCardDetail, type CardDetailData } from '@/lib/safetyCardService';
+import { fetchCards, fetchCardDetail } from '@/lib/safetyCardService';
 import { computeLayerOrder } from '@/components/FoldEditor';
 import type { Panel, Crease, CoverDesignation } from '@/components/FoldEditor/types';
 
