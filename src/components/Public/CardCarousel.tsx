@@ -238,7 +238,7 @@ export const CardCarousel: React.FC = () => {
         if (idx < PHASE_ORDER.length - 1) {
           anim.phase = PHASE_ORDER[idx + 1];
         } else {
-          anim.cardIdx = (anim.cardIdx + 1) % cards.length;
+          anim.cardIdx = (anim.cardIdx + 1 + Math.floor(Math.random() * (cards.length - 1))) % cards.length;
           anim.phase = 'presenting';
         }
         anim.phaseElapsed = overflow;
