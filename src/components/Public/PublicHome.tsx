@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { Loader2, ArrowRight } from 'lucide-react';
 import { fetchCards, type CardSummary } from '@/lib/safetyCardService';
@@ -6,9 +6,63 @@ import { fetchAirlinesBrowse, fetchManufacturersBrowse, type AirlineBrowse, type
 import { PublicCardTile } from './PublicCardTile';
 import { CardCarousel } from './CardCarousel';
 
+function AutoSizeText({ className, children }: { className?: string; children: React.ReactNode }) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const textRef = useRef<HTMLParagraphElement>(null);
+  const [fontSize, setFontSize] = useState(16);
+
+  const fit = useCallback(() => {
+    const container = containerRef.current;
+    const text = textRef.current;
+    if (!container || !text) return;
+
+    const pad = 20;
+    const maxH = container.offsetHeight - pad * 2;
+    if (maxH <= 0) return;
+
+    let lo = 8;
+    let hi = 80;
+    let best = lo;
+
+    while (lo <= hi) {
+      const mid = Math.floor((lo + hi) / 2);
+      text.style.fontSize = `${mid}px`;
+      text.style.lineHeight = '1.35';
+
+      if (text.scrollHeight <= maxH) {
+        best = mid;
+        lo = mid + 1;
+      } else {
+        hi = mid - 1;
+      }
+    }
+
+    setFontSize(best);
+  }, []);
+
+  useEffect(() => {
+    fit();
+    const ro = new ResizeObserver(fit);
+    if (containerRef.current) ro.observe(containerRef.current);
+    return () => ro.disconnect();
+  }, [fit, children]);
+
+  return (
+    <div ref={containerRef} className={`${className ?? ''} relative overflow-hidden`}>
+      <p
+        ref={textRef}
+        style={{ fontSize: `${fontSize}px`, lineHeight: '1.35', padding: 20 }}
+      >
+        {children}
+      </p>
+    </div>
+  );
+}
+
 export const PublicHome: React.FC = () => {
   const [cards, setCards] = useState<CardSummary[]>([]);
   const [airlines, setAirlines] = useState<AirlineBrowse[]>([]);
+  const [allAirlines, setAllAirlines] = useState<AirlineBrowse[]>([]);
   const [manufacturers, setManufacturers] = useState<ManufacturerBrowse[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -19,7 +73,9 @@ export const PublicHome: React.FC = () => {
       fetchManufacturersBrowse(),
     ]).then(([c, a, m]) => {
       setCards(c);
-      setAirlines(a.filter((x) => x.card_count > 0).slice(0, 8));
+      const airlinesWithCards = a.filter((x) => x.card_count > 0);
+      setAllAirlines(airlinesWithCards);
+      setAirlines(airlinesWithCards.slice(0, 8));
       setManufacturers(m.filter((x) => x.card_count > 0).slice(0, 8));
       setLoading(false);
     });
@@ -33,26 +89,44 @@ export const PublicHome: React.FC = () => {
     );
   }
 
-  const recentCards = cards.slice(0, 8);
+  const recentCards = cards.slice(0, 5);
+
+  const cardCount = cards.length;
+  const years = cards.map((c) => c.published_year).filter((y): y is number => y != null);
+  const minYear = years.length > 0 ? Math.min(...years) : null;
+  const maxYear = years.length > 0 ? Math.max(...years) : null;
+  const yearSpan = minYear && maxYear ? maxYear - minYear : null;
+  const airlineCount = allAirlines.length;
+  const countryCount = new Set(allAirlines.map((a) => a.country).filter(Boolean)).size;
 
   return (
     <div className="min-h-[calc(100dvh-4rem)] bg-background">
-      {/* Hero Carousel */}
-      <CardCarousel />
-
       {/* Recent Additions */}
       {recentCards.length > 0 && (
-        <section className="max-w-6xl mx-auto px-6 py-12">
-          <div className="flex items-center justify-between mb-6">
-            <h2 className="text-xl font-semibold tracking-tight">Recent Additions</h2>
-          </div>
+        <section className="max-w-6xl mx-auto px-6 pt-12 pb-0">
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-5">
+            <AutoSizeText className="col-span-2 sm:col-span-2 md:col-span-3 aspect-square md:aspect-auto bg-[#ebeaef]">
+              <span className="text-foreground/70 font-medium">
+                Seatback Safety is <a href="https://www.lassor.com" target="_blank" rel="noopener noreferrer" className="text-red-600 hover:underline">Lassor Feasley's</a>
+                {' '}personal collection of airline seatback safety procedure cards.
+                The collection spans{yearSpan ? ` ${yearSpan} years` : ''}, {cardCount} examples, {airlineCount} airlines, and {countryCount} countries.
+                The artifacts document the intersection of aviation, graphic design, and mass media.
+              </span>
+              {' '}
+              <span className="text-muted-foreground">
+                Lassor designed, developed, and maintains this digital showcase, which features a museum-grade database archive.
+                He also personally acquires, documents, files, and maintains the specimens in his personal archive.
+              </span>
+            </AutoSizeText>
             {recentCards.map((card) => (
               <PublicCardTile key={card.id} card={card} />
             ))}
           </div>
         </section>
       )}
+
+      {/* Hero Carousel */}
+      <CardCarousel />
 
       {/* Featured Airlines */}
       {airlines.length > 0 && (

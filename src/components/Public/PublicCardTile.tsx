@@ -35,11 +35,6 @@ export const PublicCardTile: React.FC<{ card: CardSummary }> = ({ card }) => {
           </div>
         )}
       </div>
-      <div className="pt-2 px-0.5">
-        <p className="text-sm font-medium truncate">
-          {card.title || card.airline_name || 'Untitled Card'}
-        </p>
-      </div>
     </Link>
   );
 };
