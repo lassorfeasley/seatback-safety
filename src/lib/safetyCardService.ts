@@ -705,16 +705,9 @@ export async function fetchCardDetail(cardId: string): Promise<CardDetailData | 
     rawScans.map(async (s) => {
       const filePath = s.file_path as string | null;
       if (!filePath) return { url: null, thumbnailUrl: null };
-      const [{ data: signed }, { data: thumb }] = await Promise.all([
-        supabase.storage.from('scans').createSignedUrl(filePath, 3600),
-        supabase.storage.from('scans').createSignedUrl(filePath, 3600, {
-          transform: { width: 120, resize: 'contain' },
-        }),
-      ]);
-      return {
-        url: signed?.signedUrl ?? null,
-        thumbnailUrl: thumb?.signedUrl ?? signed?.signedUrl ?? null,
-      };
+      const { data: signed } = await supabase.storage.from('scans').createSignedUrl(filePath, 3600);
+      const url = signed?.signedUrl ?? null;
+      return { url, thumbnailUrl: url };
     })
   );
 
@@ -1167,17 +1160,13 @@ export async function fetchCardForCropEditing(cardId: string): Promise<CropEditD
 
   const scanEntries: CropEditScan[] = [];
   for (const scan of (scans ?? []) as Array<{ id: string; file_path: string; original_filename: string | null; mime_type: string | null }>) {
-    const [{ data: signed }, { data: thumb }] = await Promise.all([
-      supabase.storage.from('scans').createSignedUrl(scan.file_path, 3600),
-      supabase.storage.from('scans').createSignedUrl(scan.file_path, 3600, {
-        transform: { width: 200, resize: 'contain' },
-      }),
-    ]);
+    const { data: signed } = await supabase.storage.from('scans').createSignedUrl(scan.file_path, 3600);
+    const url = signed?.signedUrl ?? '';
     scanEntries.push({
       id: scan.id,
       filePath: scan.file_path,
-      downloadUrl: signed?.signedUrl ?? '',
-      thumbnailUrl: thumb?.signedUrl ?? signed?.signedUrl ?? '',
+      downloadUrl: url,
+      thumbnailUrl: url,
       originalFilename: scan.original_filename ?? 'scan',
       mimeType: scan.mime_type ?? 'image/jpeg',
     });

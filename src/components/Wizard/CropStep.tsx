@@ -578,6 +578,14 @@ const CropSession: React.FC<CropSessionProps> = ({
                   alt={img.label}
                   className="w-full h-full object-cover"
                   style={{ transform: `rotate(${img.rotation}deg)` }}
+                  onError={(e) => {
+                    const el = e.currentTarget;
+                    if (img.imageUrl && el.src !== img.imageUrl) el.src = img.imageUrl;
+                  }}
+                  onLoad={(e) => {
+                    const el = e.currentTarget;
+                    if (el.naturalWidth === 0 && img.imageUrl && el.src !== img.imageUrl) el.src = img.imageUrl;
+                  }}
                 />
               </button>
             ))}

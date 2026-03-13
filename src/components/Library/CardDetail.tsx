@@ -508,6 +508,14 @@ export const CardDetail: React.FC<CardDetailProps> = ({ cardId, onBack, onEditCr
                                 alt={scan.original_filename ?? 'Scan'}
                                 className="h-10 w-10 object-cover flex-shrink-0"
                                 loading="lazy"
+                                onError={(e) => {
+                                  const img = e.currentTarget;
+                                  if (scan.url && img.src !== scan.url) img.src = scan.url;
+                                }}
+                                onLoad={(e) => {
+                                  const img = e.currentTarget;
+                                  if (img.naturalWidth === 0 && scan.url && img.src !== scan.url) img.src = scan.url;
+                                }}
                               />
                             ) : (
                               <div className="h-10 w-10 flex items-center justify-center flex-shrink-0 bg-muted">
