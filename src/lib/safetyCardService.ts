@@ -66,6 +66,7 @@ export interface DetailAircraftEntry {
   modelName: string;
   variantId: string | null;
   variantName: string;
+  variants: Array<{ id: string; name: string }>;
   manufacturerId: string | null;
   manufacturerName: string;
 }
@@ -107,7 +108,7 @@ export interface CardMetadataUpdate {
   airlineId: string | null;
   aircraft: Array<{
     modelId: string;
-    variantId: string | null;
+    variantIds: string[];
   }>;
   languages: string[];
   publishedYear: number | null;
@@ -842,23 +843,35 @@ export async function fetchCardDetail(cardId: string): Promise<CardDetailData | 
     languageLabel = card.language ?? null;
   }
 
-  // Structured aircraft entries for the edit form
-  const structuredAircraft: DetailAircraftEntry[] = cardAircraft
-    .sort((a, b) => ((a.sort_order as number) ?? 0) - ((b.sort_order as number) ?? 0))
-    .map((ca) => {
-      const v = unwrap(ca.aircraft_variants);
-      const m = unwrap(ca.aircraft_models);
-      const model = v ? unwrap(v.aircraft_models) : m;
-      const mfr = model ? unwrap(model.aircraft_manufacturers) : null;
-      return {
-        modelId: (ca.aircraft_model_id as string) ?? null,
+  // Structured aircraft entries for the edit form (group by model, collect variants)
+  const aircraftByModel = new Map<string, DetailAircraftEntry>();
+  for (const ca of cardAircraft.sort((a, b) => ((a.sort_order as number) ?? 0) - ((b.sort_order as number) ?? 0))) {
+    const v = unwrap(ca.aircraft_variants);
+    const m = unwrap(ca.aircraft_models);
+    const model = v ? unwrap(v.aircraft_models) : m;
+    const mfr = model ? unwrap(model.aircraft_manufacturers) : null;
+    const modelId = (ca.aircraft_model_id as string) ?? '';
+    const variantId = (ca.aircraft_variant_id as string) ?? null;
+    const variantName = (v?.name as string) ?? '';
+
+    const existing = aircraftByModel.get(modelId);
+    if (existing) {
+      if (variantId && !existing.variants.some((ev) => ev.id === variantId)) {
+        existing.variants.push({ id: variantId, name: variantName });
+      }
+    } else {
+      aircraftByModel.set(modelId, {
+        modelId: modelId || null,
         modelName: (model?.name as string) ?? '',
-        variantId: (ca.aircraft_variant_id as string) ?? null,
-        variantName: (v?.name as string) ?? '',
+        variantId: variantId,
+        variantName: variantName,
+        variants: variantId ? [{ id: variantId, name: variantName }] : [],
         manufacturerId: mfr ? ((mfr.id as string) ?? null) : null,
         manufacturerName: (mfr?.name as string) ?? '',
-      };
-    });
+      });
+    }
+  }
+  const structuredAircraft: DetailAircraftEntry[] = [...aircraftByModel.values()];
 
   let manufacturerLogoUrl: string | null = null;
   for (const ca of cardAircraft) {
@@ -995,7 +1008,7 @@ export async function updateCardMetadata(
   cardId: string,
   update: CardMetadataUpdate
 ): Promise<{ success: boolean; error?: string }> {
-  const primaryVariantId = update.aircraft.find((a) => a.variantId)?.variantId ?? null;
+  const primaryVariantId = update.aircraft.flatMap((a) => a.variantIds).find(Boolean) ?? null;
   const legacyLanguage = update.languages.join(', ') || null;
 
   const { error: cardErr } = await supabase
@@ -1015,14 +1028,28 @@ export async function updateCardMetadata(
 
   await supabase.from('card_aircraft').delete().eq('card_id', cardId);
   if (update.aircraft.length > 0) {
-    const rows = update.aircraft
-      .filter((a) => a.modelId)
-      .map((a, i) => ({
-        card_id: cardId,
-        aircraft_model_id: a.modelId,
-        aircraft_variant_id: a.variantId || null,
-        sort_order: i,
-      }));
+    const rows: Array<{ card_id: string; aircraft_model_id: string; aircraft_variant_id: string | null; sort_order: number }> = [];
+    let sortOrder = 0;
+    for (const a of update.aircraft) {
+      if (!a.modelId) continue;
+      if (a.variantIds.length === 0) {
+        rows.push({
+          card_id: cardId,
+          aircraft_model_id: a.modelId,
+          aircraft_variant_id: null,
+          sort_order: sortOrder++,
+        });
+      } else {
+        for (const vid of a.variantIds) {
+          rows.push({
+            card_id: cardId,
+            aircraft_model_id: a.modelId,
+            aircraft_variant_id: vid,
+            sort_order: sortOrder++,
+          });
+        }
+      }
+    }
     if (rows.length > 0) {
       const { error: acErr } = await supabase.from('card_aircraft').insert(rows);
       if (acErr) return { success: false, error: acErr.message };

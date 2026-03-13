@@ -12,6 +12,7 @@ import {
   type AirlineUpdate,
 } from '@/lib/lookupService';
 import { fetchCards, type CardSummary } from '@/lib/safetyCardService';
+import { CountrySelect } from '@/components/ui/country-select';
 
 const INPUT_CLASS =
   'h-9 rounded-md border border-input bg-transparent px-3 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring';
@@ -276,7 +277,9 @@ const AirlineProfileEditor: React.FC<{
           <input className={cn(INPUT_CLASS, 'col-span-2')} value={name} onChange={(e) => setName(e.target.value)} placeholder="Name" />
           <input className={INPUT_CLASS} value={iata} onChange={(e) => setIata(e.target.value)} placeholder="IATA (e.g. AA)" maxLength={3} />
           <input className={INPUT_CLASS} value={icao} onChange={(e) => setIcao(e.target.value)} placeholder="ICAO (e.g. AAL)" maxLength={4} />
-          <input className={cn(INPUT_CLASS, 'col-span-2')} value={country} onChange={(e) => setCountry(e.target.value)} placeholder="Country" />
+          <div className="col-span-2">
+            <CountrySelect value={country} onChange={setCountry} placeholder="Country" />
+          </div>
         </div>
       </div>
 

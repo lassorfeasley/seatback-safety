@@ -11,6 +11,7 @@ import {
   type AirlineBrowse,
   type AirlineUpdate,
 } from '@/lib/lookupService';
+import { CountrySelect } from '@/components/ui/country-select';
 
 interface AirlinesPageProps {
   onSelectAirline?: (id: string) => void;
@@ -269,7 +270,9 @@ const AirlineEditForm: React.FC<{
           <input className={cn(INPUT_CLASS, 'col-span-2')} value={name} onChange={(e) => setName(e.target.value)} placeholder="Name" />
           <input className={INPUT_CLASS} value={iata} onChange={(e) => setIata(e.target.value)} placeholder="IATA (e.g. AA)" maxLength={3} />
           <input className={INPUT_CLASS} value={icao} onChange={(e) => setIcao(e.target.value)} placeholder="ICAO (e.g. AAL)" maxLength={4} />
-          <input className={cn(INPUT_CLASS, 'col-span-2')} value={country} onChange={(e) => setCountry(e.target.value)} placeholder="Country" />
+          <div className="col-span-2">
+            <CountrySelect value={country} onChange={setCountry} placeholder="Country" />
+          </div>
         </div>
       </div>
       <textarea

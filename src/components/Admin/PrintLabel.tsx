@@ -70,7 +70,10 @@ export const PrintLabel: React.FC = () => {
 
   const makes = [...new Set(card.aircraft?.map((a) => a.manufacturerName).filter(Boolean))];
   const models = [...new Set(
-    card.aircraft?.map((a) => [a.modelName, a.variantName].filter(Boolean).join(' ')).filter(Boolean)
+    card.aircraft?.map((a) => {
+      const variantStr = a.variants.length > 0 ? a.variants.map((v) => v.name).join(', ') : a.variantName;
+      return [a.modelName, variantStr].filter(Boolean).join(' ');
+    }).filter(Boolean)
   )];
 
   const revision = card.revision || '';

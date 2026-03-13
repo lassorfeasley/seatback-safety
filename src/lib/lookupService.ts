@@ -170,6 +170,31 @@ export async function updateAirline(id: string, update: AirlineUpdate): Promise<
   if (error) throw new Error(error.message);
 }
 
+export interface CollectionStats {
+  totalCards: number;
+  totalAirlines: number;
+  totalCountries: number;
+}
+
+export async function fetchCollectionStats(): Promise<CollectionStats> {
+  const { data } = await supabase
+    .from('airline_browse')
+    .select('country, card_count');
+
+  const rows = (data ?? []) as Array<{ country: string | null; card_count: number }>;
+  const withCards = rows.filter((r) => r.card_count > 0);
+  const countries = new Set(
+    withCards.map((r) => r.country).filter(Boolean)
+  );
+  const totalCards = rows.reduce((sum, r) => sum + r.card_count, 0);
+
+  return {
+    totalCards,
+    totalAirlines: withCards.length,
+    totalCountries: countries.size,
+  };
+}
+
 // ─── Aircraft Manufacturers ──────────────────────────────────────
 
 export async function fetchManufacturers(): Promise<LookupItem[]> {

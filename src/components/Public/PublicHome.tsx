@@ -2,7 +2,7 @@ import { useEffect, useState, useRef, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { Loader2, ArrowRight } from 'lucide-react';
 import { fetchCards, type CardSummary } from '@/lib/safetyCardService';
-import { fetchAirlinesBrowse, fetchManufacturersBrowse, type AirlineBrowse, type ManufacturerBrowse } from '@/lib/lookupService';
+import { fetchAirlinesBrowse, fetchManufacturersBrowse, fetchCollectionStats, type AirlineBrowse, type ManufacturerBrowse, type CollectionStats } from '@/lib/lookupService';
 import { PublicCardTile } from './PublicCardTile';
 import { CardCarousel } from './CardCarousel';
 
@@ -64,6 +64,7 @@ export const PublicHome: React.FC = () => {
   const [airlines, setAirlines] = useState<AirlineBrowse[]>([]);
   const [allAirlines, setAllAirlines] = useState<AirlineBrowse[]>([]);
   const [manufacturers, setManufacturers] = useState<ManufacturerBrowse[]>([]);
+  const [stats, setStats] = useState<CollectionStats | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -71,12 +72,14 @@ export const PublicHome: React.FC = () => {
       fetchCards(),
       fetchAirlinesBrowse(),
       fetchManufacturersBrowse(),
-    ]).then(([c, a, m]) => {
+      fetchCollectionStats(),
+    ]).then(([c, a, m, s]) => {
       setCards(c);
       const airlinesWithCards = a.filter((x) => x.card_count > 0);
       setAllAirlines(airlinesWithCards);
       setAirlines(airlinesWithCards.slice(0, 8));
       setManufacturers(m.filter((x) => x.card_count > 0).slice(0, 8));
+      setStats(s);
       setLoading(false);
     });
   }, []);
@@ -101,6 +104,26 @@ export const PublicHome: React.FC = () => {
 
   return (
     <div className="min-h-[calc(100dvh-4rem)] bg-background">
+      {/* Collection Description */}
+      {stats && (stats.totalCards > 0 || stats.totalCountries > 0) && (
+        <section className="max-w-6xl mx-auto px-6 pt-12 pb-4">
+          <p className="text-base text-muted-foreground leading-relaxed">
+            A curated collection of{' '}
+            <span className="text-foreground font-medium">{stats.totalCards.toLocaleString()}</span>{' '}
+            airline seatback safety cards from{' '}
+            <span className="text-foreground font-medium">{stats.totalAirlines.toLocaleString()}</span>{' '}
+            airline{stats.totalAirlines !== 1 ? 's' : ''}
+            {stats.totalCountries > 0 && (
+              <> representing{' '}
+                <span className="text-foreground font-medium">{stats.totalCountries.toLocaleString()}</span>{' '}
+                {stats.totalCountries === 1 ? 'country' : 'countries'}
+              </>
+            )}
+            , spanning decades of aviation history.
+          </p>
+        </section>
+      )}
+
       {/* Recent Additions */}
       {recentCards.length > 0 && (
         <section className="max-w-6xl mx-auto px-6 pt-12 pb-0">

@@ -31,7 +31,10 @@ export const PublicCardDetail: React.FC = () => {
     const manufacturerName = mfr?.manufacturerName || null;
     const manufacturerId = mfr?.manufacturerId || null;
     const modelParts = card.aircraft
-      .map((a) => [a.modelName, a.variantName].filter(Boolean).join(' '))
+      .map((a) => {
+        const variantStr = a.variants.length > 0 ? a.variants.map((v) => v.name).join(', ') : a.variantName;
+        return [a.modelName, variantStr].filter(Boolean).join(' ');
+      })
       .filter(Boolean)
       .join(', ');
     const airlineModel = [card.airline_name, modelParts].filter(Boolean).join(' ') || null;

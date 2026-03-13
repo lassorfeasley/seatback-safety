@@ -89,34 +89,31 @@ const SetupStep: React.FC<{
   summary?: string;
   children: React.ReactNode;
 }> = ({ id, number, title, icon, complete, disabled, summary, children }) => (
-  <section id={id} className={`rounded-lg border p-4 ${disabled ? 'opacity-50' : ''}`}>
-    <div className="flex items-center gap-2.5 mb-3">
-      <div className={`flex items-center justify-center w-6 h-6 rounded-full text-xs font-bold flex-shrink-0 ${
+  <section id={id} className={cn('rounded-xl border bg-card p-5 transition-opacity', disabled && 'opacity-40')}>
+    <div className="flex items-center gap-2.5 mb-4">
+      <div className={cn(
+        'flex items-center justify-center w-6 h-6 rounded-full text-xs font-semibold flex-shrink-0 transition-colors',
         complete
-          ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900 dark:text-emerald-300'
+          ? 'bg-emerald-500/10 text-emerald-600 ring-1 ring-emerald-500/20'
           : 'bg-muted text-muted-foreground'
-      }`}>
+      )}>
         {complete ? <Check className="h-3.5 w-3.5" /> : number}
       </div>
       <div className="flex items-center gap-1.5 flex-1 min-w-0">
-        {icon}
+        <span className="text-muted-foreground">{icon}</span>
         <span className="text-sm font-medium">{title}</span>
       </div>
       {summary && (
-        <span className="text-xs text-muted-foreground flex-shrink-0">{summary}</span>
+        <span className="text-[11px] text-muted-foreground/70 flex-shrink-0 tabular-nums">{summary}</span>
       )}
     </div>
     <div className="pl-[34px]">{children}</div>
   </section>
 );
 
-const SectionHeading: React.FC<{ children: React.ReactNode; noMargin?: boolean }> = ({ children, noMargin }) => (
-  <h2 className={`text-base font-medium text-muted-foreground ${noMargin ? '' : 'mb-4'}`}>{children}</h2>
-);
-
 const EditorField: React.FC<{ label: string; children: React.ReactNode }> = ({ label, children }) => (
-  <div className="flex flex-col gap-1">
-    <label className="text-xs font-medium text-muted-foreground">{label}</label>
+  <div className="flex flex-col gap-1.5">
+    <label className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">{label}</label>
     {children}
   </div>
 );
@@ -129,20 +126,20 @@ const InlineSuggestion: React.FC<{
 }> = ({ value, label, accepted, onAccept }) => {
   if (!value) return null;
   return (
-    <div className="flex items-center gap-1.5 mt-1 rounded-md bg-primary/5 border border-primary/15 px-2 py-1">
-      <Sparkles className="h-3 w-3 text-primary/60 flex-shrink-0" />
-      <span className="text-xs text-foreground/80 truncate flex-1">
-        {label ? `${label}: ` : ''}{value}
+    <div className="flex items-center gap-1.5 mt-1 rounded-lg bg-primary/5 border border-primary/10 px-2.5 py-1.5">
+      <Sparkles className="h-3 w-3 text-primary/50 flex-shrink-0" />
+      <span className="text-xs text-foreground/70 truncate flex-1">
+        {label ? <span className="text-muted-foreground">{label}: </span> : ''}{value}
       </span>
       {accepted ? (
-        <span className="flex items-center gap-0.5 text-xs text-emerald-600 flex-shrink-0">
+        <span className="flex items-center gap-0.5 text-[11px] text-emerald-600 flex-shrink-0 font-medium">
           <Check className="h-3 w-3" /> Applied
         </span>
       ) : (
         <button
           type="button"
           onClick={onAccept}
-          className="flex items-center gap-0.5 text-xs text-primary hover:underline flex-shrink-0 font-medium"
+          className="flex items-center gap-0.5 text-[11px] text-primary hover:text-primary/80 flex-shrink-0 font-semibold transition-colors"
         >
           Apply
         </button>
@@ -337,7 +334,7 @@ export const CardDetail: React.FC<CardDetailProps> = ({ cardId, onBack, onEditCr
     return (
       <div className="h-dvh flex items-center justify-center bg-background">
         <div className="flex flex-col items-center gap-3">
-          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+          <Loader2 className="h-6 w-6 animate-spin text-primary/40" />
           <p className="text-sm text-muted-foreground">Loading card...</p>
         </div>
       </div>
@@ -347,14 +344,14 @@ export const CardDetail: React.FC<CardDetailProps> = ({ cardId, onBack, onEditCr
   if (error || !card) {
     return (
       <div className="h-dvh flex flex-col items-center justify-center bg-background gap-4">
-        <div className="rounded-full bg-destructive/10 p-4">
-          <Info className="h-8 w-8 text-destructive" />
+        <div className="rounded-full bg-destructive/10 p-5">
+          <Info className="h-6 w-6 text-destructive/70" />
         </div>
         <div className="text-center">
-          <p className="font-medium">Could not load card</p>
-          <p className="text-sm text-muted-foreground mt-1">{error || 'Card not found.'}</p>
+          <p className="font-semibold">Could not load card</p>
+          <p className="text-sm text-muted-foreground mt-1 max-w-sm">{error || 'Card not found.'}</p>
         </div>
-        <Button variant="outline" onClick={onBack}>
+        <Button variant="outline" size="sm" onClick={onBack}>
           Back to Library
         </Button>
       </div>
@@ -383,30 +380,35 @@ export const CardDetail: React.FC<CardDetailProps> = ({ cardId, onBack, onEditCr
 
   return (
     <div className="h-dvh flex flex-col bg-background overflow-hidden">
-      <header className="flex-shrink-0 bg-card border-b">
-        <div className="max-w-6xl mx-auto px-6 py-4">
+      <header className="flex-shrink-0 bg-card/80 backdrop-blur-sm border-b sticky top-0 z-10">
+        <div className="max-w-6xl mx-auto px-6 py-3">
           <div className="flex items-center justify-between gap-4">
             <div className="flex items-center gap-3 min-w-0">
               <button
                 onClick={handleBack}
-                className="text-muted-foreground hover:text-foreground transition-colors flex-shrink-0"
+                className="text-muted-foreground hover:text-foreground transition-colors flex-shrink-0 -ml-1 p-1 rounded-md hover:bg-muted"
               >
-                <ArrowLeft className="h-5 w-5" />
+                <ArrowLeft className="h-4 w-4" />
               </button>
-              <h1 className="text-xl font-semibold tracking-tight truncate">
-                {card.title || 'Untitled Card'}
-              </h1>
+              <div className="min-w-0">
+                <h1 className="text-lg font-semibold tracking-tight truncate">
+                  {card.title || 'Untitled Card'}
+                </h1>
+                {card.airline_name && !isEditing && (
+                  <p className="text-xs text-muted-foreground truncate">{card.airline_name}{card.aircraft_label ? ` · ${card.aircraft_label}` : ''}</p>
+                )}
+              </div>
             </div>
             <div className="flex items-center gap-1.5 flex-shrink-0">
               {onPrintLabel && !isEditing && (
                 <Button
-                  variant="outline"
+                  variant="ghost"
                   size="sm"
                   onClick={onPrintLabel}
-                  className="gap-1.5"
+                  className="gap-1.5 text-muted-foreground"
                 >
-                  <Printer className="h-4 w-4" />
-                  Print Label
+                  <Printer className="h-3.5 w-3.5" />
+                  Print
                 </Button>
               )}
               <Button
@@ -420,23 +422,24 @@ export const CardDetail: React.FC<CardDetailProps> = ({ cardId, onBack, onEditCr
                 disabled={saving}
                 className="gap-1.5"
               >
-                {isEditing ? <XIcon className="h-4 w-4" /> : <Pencil className="h-4 w-4" />}
+                {isEditing ? <XIcon className="h-3.5 w-3.5" /> : <Pencil className="h-3.5 w-3.5" />}
                 {isEditing ? 'Cancel' : 'Edit'}
               </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={handleDelete}
-                disabled={deleting || isEditing}
-                className="text-muted-foreground hover:text-destructive gap-1.5"
-              >
-                {deleting ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Trash2 className="h-4 w-4" />
-                )}
-                Delete
-              </Button>
+              {!isEditing && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={handleDelete}
+                  disabled={deleting}
+                  className="text-muted-foreground hover:text-destructive h-8 w-8"
+                >
+                  {deleting ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Trash2 className="h-3.5 w-3.5" />
+                  )}
+                </Button>
+              )}
             </div>
           </div>
         </div>
@@ -445,7 +448,7 @@ export const CardDetail: React.FC<CardDetailProps> = ({ cardId, onBack, onEditCr
       <main className="flex-1 min-h-0 overflow-auto">
         <div className="max-w-6xl mx-auto px-6 py-6 flex flex-col gap-8">
           <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_340px] gap-8">
-            <div className="min-w-0 flex flex-col gap-6">
+            <div className="min-w-0 flex flex-col gap-5">
               {/* ── Card Visualizer (only when all crops are complete) ── */}
               {allCropsComplete && (
                 <CardVisualizer3D
@@ -467,7 +470,7 @@ export const CardDetail: React.FC<CardDetailProps> = ({ cardId, onBack, onEditCr
                 {isEditing ? (
                   <>
                     <div
-                      className="flex flex-col items-center justify-center py-6 border-2 border-dashed border-muted-foreground/20 rounded-lg cursor-pointer hover:border-muted-foreground/40 hover:bg-muted/20 transition-colors"
+                      className="flex flex-col items-center justify-center py-8 border-2 border-dashed border-muted-foreground/15 rounded-xl cursor-pointer hover:border-primary/30 hover:bg-primary/5 transition-all"
                       onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
                       onDrop={(e) => { e.preventDefault(); e.stopPropagation(); if (e.dataTransfer.files.length > 0) handleScanUpload(e.dataTransfer.files); }}
                       onClick={() => scanFileInputRef.current?.click()}
@@ -498,7 +501,7 @@ export const CardDetail: React.FC<CardDetailProps> = ({ cardId, onBack, onEditCr
                     {hasScans && (
                       <div className="mt-3 flex flex-wrap gap-2">
                         {card.scans.map((scan) => (
-                          <div key={scan.id} className="flex items-center gap-1.5 rounded-md border bg-muted overflow-hidden" title={scan.original_filename ?? 'Scan'}>
+                          <div key={scan.id} className="flex items-center gap-1.5 rounded-lg border bg-card overflow-hidden" title={scan.original_filename ?? 'Scan'}>
                             {(scan.thumbnailUrl || scan.url) ? (
                               <img
                                 src={scan.thumbnailUrl ?? scan.url!}
@@ -624,8 +627,8 @@ export const CardDetail: React.FC<CardDetailProps> = ({ cardId, onBack, onEditCr
 
               {(ogExists && ogImageUrl || generatingOg || isEditing) && (
                 <section>
-                  <div className="flex items-center justify-between">
-                    <SectionHeading>OG Image</SectionHeading>
+                  <div className="flex items-center justify-between mb-2">
+                    <h2 className="text-sm font-medium text-muted-foreground">OG Image</h2>
                     {isEditing && (
                       <Button
                         variant="outline"
@@ -639,7 +642,7 @@ export const CardDetail: React.FC<CardDetailProps> = ({ cardId, onBack, onEditCr
                       </Button>
                     )}
                   </div>
-                  <div className="rounded-lg border bg-card overflow-hidden mt-1.5">
+                  <div className="rounded-xl border bg-card overflow-hidden">
                     {generatingOg ? (
                       <div className="flex items-center justify-center gap-2 py-8 text-sm text-muted-foreground">
                         <Loader2 className="h-4 w-4 animate-spin" />
@@ -689,17 +692,17 @@ export const CardDetail: React.FC<CardDetailProps> = ({ cardId, onBack, onEditCr
                   ]} />
 
                   {card.notes && (
-                    <div className="rounded-lg bg-muted/40 p-4">
-                      <p className="text-xs font-medium text-muted-foreground mb-1">Notes</p>
-                      <p className="text-sm leading-relaxed">{card.notes}</p>
+                    <div className="rounded-xl border bg-card p-4">
+                      <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide mb-2">Notes</p>
+                      <p className="text-sm leading-relaxed text-foreground/80">{card.notes}</p>
                     </div>
                   )}
                 </>
               )}
 
               <div>
-                <div className="flex items-center justify-between mb-2">
-                  <p className="text-xs font-medium text-muted-foreground">Provenance</p>
+                <div className="flex items-center justify-between mb-2.5">
+                  <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">Provenance</p>
                   {isEditing && !showAddProvenance && (
                     <button
                       type="button"
@@ -736,8 +739,8 @@ export const CardDetail: React.FC<CardDetailProps> = ({ cardId, onBack, onEditCr
               </div>
 
               <div>
-                <div className="flex items-center justify-between mb-2">
-                  <p className="text-xs font-medium text-muted-foreground">Price History</p>
+                <div className="flex items-center justify-between mb-2.5">
+                  <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">Price History</p>
                   {isEditing && !showAddPrice && (
                     <button
                       type="button"
@@ -807,11 +810,14 @@ const MetadataTable: React.FC<{
   const visible = items.filter((i) => i.value);
   if (visible.length === 0) return null;
   return (
-    <div className="rounded-lg border divide-y">
-      {visible.map((item) => (
-        <div key={item.label} className="flex items-baseline justify-between px-4 py-2.5">
-          <span className="text-xs text-muted-foreground">{item.label}</span>
-          <span className="text-sm font-medium text-right">{item.value}</span>
+    <div className="rounded-xl border bg-card overflow-hidden">
+      {visible.map((item, i) => (
+        <div key={item.label} className={cn(
+          'flex items-baseline justify-between px-4 py-3',
+          i < visible.length - 1 && 'border-b border-border/50'
+        )}>
+          <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">{item.label}</span>
+          <span className="text-sm font-medium text-right max-w-[60%] truncate">{item.value}</span>
         </div>
       ))}
     </div>
@@ -821,13 +827,13 @@ const MetadataTable: React.FC<{
 // ─── Metadata Editor ─────────────────────────────────────────────
 
 const INPUT_CLASS =
-  'w-full rounded-md border border-border bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 placeholder:text-muted-foreground/40';
+  'w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary/40 placeholder:text-muted-foreground/40 transition-colors';
 
 interface AircraftRow {
   modelId: string;
   modelName: string;
-  variantId: string | null;
-  variantName: string;
+  variantIds: string[];
+  variantNames: string[];
 }
 
 interface MetadataEditorProps {
@@ -849,10 +855,10 @@ const MetadataEditor: React.FC<MetadataEditorProps> = ({ card, onSave, onCancel,
       ? card.aircraft.map((a) => ({
           modelId: a.modelId ?? '',
           modelName: a.modelName,
-          variantId: a.variantId,
-          variantName: a.variantName,
+          variantIds: a.variants.map((v) => v.id),
+          variantNames: a.variants.map((v) => v.name),
         }))
-      : [{ modelId: '', modelName: '', variantId: null, variantName: '' }]
+      : [{ modelId: '', modelName: '', variantIds: [], variantNames: [] }]
   );
   const [languages, setLanguages] = useState<string[]>(card.languages);
   const [langInput, setLangInput] = useState('');
@@ -903,7 +909,14 @@ const MetadataEditor: React.FC<MetadataEditorProps> = ({ card, onSave, onCancel,
     const result = await analyzeCardScans(scanUrls);
     setAnalyzing(false);
     if (result.suggestions) {
-      setSuggestions(result.suggestions);
+      const normalized = {
+        ...result.suggestions,
+        aircraft: result.suggestions.aircraft?.map((a) => ({
+          ...a,
+          variant: a.variant?.replace(/^-+/, '').trim() || null,
+        })) ?? [],
+      };
+      setSuggestions(normalized);
     } else {
       alert(`AI analysis failed: ${result.error}`);
     }
@@ -952,14 +965,33 @@ const MetadataEditor: React.FC<MetadataEditorProps> = ({ card, onSave, onCancel,
     }
   }, [manufacturerId]);
 
+  const [loadingVariants, setLoadingVariants] = useState<Set<string>>(new Set());
+
   const loadVariants = useCallback(async (modelId: string) => {
     if (variantsByModel[modelId]) return;
-    const items = await fetchVariants(modelId);
-    setVariantsByModel((prev) => ({
-      ...prev,
-      [modelId]: items.map((i) => ({ value: i.id, label: i.name })),
-    }));
+    setLoadingVariants((prev) => new Set(prev).add(modelId));
+    try {
+      const items = await fetchVariants(modelId);
+      setVariantsByModel((prev) => ({
+        ...prev,
+        [modelId]: items.map((i) => ({ value: i.id, label: i.name })),
+      }));
+    } finally {
+      setLoadingVariants((prev) => {
+        const next = new Set(prev);
+        next.delete(modelId);
+        return next;
+      });
+    }
   }, [variantsByModel]);
+
+  useEffect(() => {
+    for (const row of aircraftRows) {
+      if (row.modelId && !variantsByModel[row.modelId]) {
+        loadVariants(row.modelId);
+      }
+    }
+  }, [aircraftRows, variantsByModel, loadVariants]);
 
   const updateAircraftRow = useCallback((idx: number, patch: Partial<AircraftRow>) => {
     setAircraftRows((prev) => prev.map((r, i) => (i === idx ? { ...r, ...patch } : r)));
@@ -984,7 +1016,7 @@ const MetadataEditor: React.FC<MetadataEditorProps> = ({ card, onSave, onCancel,
       airlineId,
       aircraft: aircraftRows.filter((r) => r.modelId).map((r) => ({
         modelId: r.modelId,
-        variantId: r.variantId,
+        variantIds: r.variantIds,
       })),
       languages,
       publishedYear: year && !isNaN(year) ? year : null,
@@ -1006,47 +1038,121 @@ const MetadataEditor: React.FC<MetadataEditorProps> = ({ card, onSave, onCancel,
     setAcceptedFields((prev) => new Set(prev).add('airline'));
   }, [suggestions, airlines]);
 
-  const acceptAircraft = useCallback(async () => {
+  const acceptManufacturer = useCallback(async () => {
     if (!suggestions?.aircraft?.length) return;
     const firstMfr = suggestions.aircraft.find((a) => a.manufacturer)?.manufacturer;
-    if (firstMfr) {
-      const mfrMatch = manufacturers.find((m) => m.label.toLowerCase() === firstMfr.toLowerCase());
-      let mfrId: string;
-      if (mfrMatch) {
-        mfrId = mfrMatch.value;
-      } else {
-        const item = await createManufacturer(firstMfr);
-        setManufacturers((prev) => [...prev, { value: item.id, label: item.name }]);
-        mfrId = item.id;
-      }
-      setManufacturerId(mfrId);
-
-      const rows: typeof aircraftRows = [];
-      for (const a of suggestions.aircraft) {
-        if (!a.model) continue;
-        const modelMatch = models.find((m) => m.label.toLowerCase() === a.model!.toLowerCase());
-        let modelId: string;
-        let modelName: string;
-        if (modelMatch) {
-          modelId = modelMatch.value;
-          modelName = modelMatch.label;
-        } else {
-          const item = await createModel(mfrId, a.model);
-          setModels((prev) => [...prev, { value: item.id, label: item.name }]);
-          modelId = item.id;
-          modelName = item.name;
-        }
-        rows.push({ modelId, modelName, variantId: null, variantName: '' });
-      }
-      if (rows.length > 0) setAircraftRows(rows);
+    if (!firstMfr) return;
+    const mfrMatch = manufacturers.find((m) => m.label.toLowerCase() === firstMfr.toLowerCase());
+    if (mfrMatch) {
+      setManufacturerId(mfrMatch.value);
+    } else {
+      const item = await createManufacturer(firstMfr);
+      setManufacturers((prev) => [...prev, { value: item.id, label: item.name }]);
+      setManufacturerId(item.id);
     }
-    setAcceptedFields((prev) => new Set(prev).add('aircraft'));
-  }, [suggestions, manufacturers, models, aircraftRows]);
+    setAcceptedFields((prev) => new Set(prev).add('manufacturer'));
+  }, [suggestions, manufacturers]);
+
+  const acceptModels = useCallback(async () => {
+    if (!suggestions?.aircraft?.length || !manufacturerId) return;
+    const rows: typeof aircraftRows = [];
+    for (const a of suggestions.aircraft) {
+      if (!a.model) continue;
+      const modelMatch = models.find((m) => m.label.toLowerCase() === a.model!.toLowerCase());
+      let modelId: string;
+      let modelName: string;
+      if (modelMatch) {
+        modelId = modelMatch.value;
+        modelName = modelMatch.label;
+      } else {
+        const item = await createModel(manufacturerId, a.model);
+        setModels((prev) => [...prev, { value: item.id, label: item.name }]);
+        modelId = item.id;
+        modelName = item.name;
+      }
+      rows.push({ modelId, modelName, variantIds: [], variantNames: [] });
+    }
+    if (rows.length > 0) setAircraftRows(rows);
+    setAcceptedFields((prev) => new Set(prev).add('models'));
+  }, [suggestions, manufacturerId, models]);
+
+  const acceptVariants = useCallback(async () => {
+    if (!suggestions?.aircraft?.length) return;
+    try {
+      const variantUpdates: Array<{ rowIdx: number; varId: string; varName: string }> = [];
+
+      for (let si = 0; si < suggestions.aircraft.length; si++) {
+        const a = suggestions.aircraft[si];
+        if (!a.variant) continue;
+        const variantText = a.variant.replace(/^-+/, '').trim();
+        if (!variantText) continue;
+
+        const currentRows = aircraftRows;
+        let rowIdx = -1;
+        if (a.model) {
+          rowIdx = currentRows.findIndex(
+            (r) => r.modelId && r.modelName.toLowerCase().trim() === a.model!.toLowerCase().trim()
+          );
+        }
+        if (rowIdx === -1 && si < currentRows.length && currentRows[si].modelId) {
+          rowIdx = si;
+        }
+        if (rowIdx === -1) continue;
+
+        const row = currentRows[rowIdx];
+        let existingVariants = variantsByModel[row.modelId];
+        if (!existingVariants) {
+          const items = await fetchVariants(row.modelId);
+          existingVariants = items.map((i) => ({ value: i.id, label: i.name }));
+          setVariantsByModel((prev) => ({ ...prev, [row.modelId]: existingVariants! }));
+        }
+
+        const varMatch = existingVariants.find(
+          (v) => v.label.toLowerCase().trim() === variantText.toLowerCase()
+        );
+        let varId: string;
+        let varName: string;
+        if (varMatch) {
+          varId = varMatch.value;
+          varName = varMatch.label;
+        } else {
+          const item = await createVariant(row.modelId, variantText);
+          existingVariants = [...existingVariants, { value: item.id, label: item.name }];
+          setVariantsByModel((prev) => ({ ...prev, [row.modelId]: existingVariants! }));
+          varId = item.id;
+          varName = item.name;
+        }
+
+        variantUpdates.push({ rowIdx, varId, varName });
+      }
+
+      if (variantUpdates.length > 0) {
+        setAircraftRows((prev) => {
+          const next = [...prev];
+          for (const { rowIdx, varId, varName } of variantUpdates) {
+            const row = next[rowIdx];
+            if (row && !row.variantIds.includes(varId)) {
+              next[rowIdx] = {
+                ...row,
+                variantIds: [...row.variantIds, varId],
+                variantNames: [...row.variantNames, varName],
+              };
+            }
+          }
+          return next;
+        });
+      }
+      setAcceptedFields((prev) => new Set(prev).add('variants'));
+    } catch (err) {
+      console.error('Failed to apply variant suggestions:', err);
+      alert(`Failed to apply variant: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }, [suggestions, aircraftRows, variantsByModel]);
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-4 rounded-xl border bg-card p-4">
       {scanUrls.length > 0 && (
-        <div className="flex items-center gap-2">
+        <div>
           {!suggestions && !analyzing && (
             <Button
               variant="outline"
@@ -1059,19 +1165,19 @@ const MetadataEditor: React.FC<MetadataEditorProps> = ({ card, onSave, onCancel,
             </Button>
           )}
           {analyzing && (
-            <div className="flex items-center justify-center gap-2 rounded-lg border border-dashed p-3 w-full">
-              <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-              <span className="text-sm text-muted-foreground">Analyzing card scans...</span>
+            <div className="flex items-center justify-center gap-2 rounded-lg border border-dashed border-primary/20 bg-primary/5 p-3 w-full">
+              <Loader2 className="h-4 w-4 animate-spin text-primary/60" />
+              <span className="text-sm text-primary/70">Analyzing card scans...</span>
             </div>
           )}
           {suggestions && (
-            <div className="flex items-center justify-between w-full rounded-lg border bg-muted/30 px-3 py-2">
-              <p className="text-xs font-medium text-muted-foreground flex items-center gap-1">
-                <Sparkles className="h-3 w-3" /> AI suggestions shown below
+            <div className="flex items-center justify-between w-full rounded-lg bg-primary/5 border border-primary/10 px-3 py-2">
+              <p className="text-xs font-medium text-primary/70 flex items-center gap-1.5">
+                <Sparkles className="h-3 w-3" /> AI suggestions ready
               </p>
               <button
                 onClick={() => setSuggestions(null)}
-                className="text-xs text-muted-foreground hover:text-foreground"
+                className="text-xs text-muted-foreground hover:text-foreground transition-colors"
               >
                 Dismiss
               </button>
@@ -1115,7 +1221,7 @@ const MetadataEditor: React.FC<MetadataEditorProps> = ({ card, onSave, onCancel,
             value={manufacturerId}
             onChange={(value) => {
               setManufacturerId(value);
-              setAircraftRows([{ modelId: '', modelName: '', variantId: null, variantName: '' }]);
+              setAircraftRows([{ modelId: '', modelName: '', variantIds: [], variantNames: [] }]);
             }}
             onCreateNew={async (name) => {
               const item = await createManufacturer(name);
@@ -1126,35 +1232,39 @@ const MetadataEditor: React.FC<MetadataEditorProps> = ({ card, onSave, onCancel,
             searchPlaceholder="Search manufacturers..."
           />
           <InlineSuggestion
-            value={suggestions?.aircraft?.length
-              ? suggestions.aircraft.map((a) => [a.manufacturer, a.model, a.variant].filter(Boolean).join(' ')).join(', ')
-              : undefined}
-            accepted={acceptedFields.has('aircraft')}
-            onAccept={acceptAircraft}
+            value={suggestions?.aircraft?.find((a) => a.manufacturer)?.manufacturer ?? undefined}
+            accepted={acceptedFields.has('manufacturer')}
+            onAccept={acceptManufacturer}
           />
         </EditorField>
 
-        {manufacturerId && (
-          <EditorField label="Aircraft">
-            <div className="flex flex-col gap-2">
-              {aircraftRows.map((row, idx) => (
-                <div key={idx} className="flex flex-col gap-1.5 rounded-md border p-2">
+        <EditorField label="Aircraft">
+          <div className="flex flex-col gap-2">
+            {aircraftRows.map((row, idx) => {
+              const matchedSuggestion = suggestions?.aircraft?.[idx]
+                ?? suggestions?.aircraft?.find(
+                  (a) => a.model && row.modelName && a.model.toLowerCase() === row.modelName.toLowerCase()
+                );
+              const suggestedVariant = matchedSuggestion?.variant?.replace(/^-+/, '').trim() || null;
+              return (
+                <div key={idx} className="flex flex-col gap-1.5 rounded-lg border border-border/60 p-2.5">
                   <div className="flex items-center gap-1.5">
                     <div className="flex-1">
                       <Combobox
                         options={models}
                         value={row.modelId || null}
                         onChange={(value, label) => {
-                          updateAircraftRow(idx, { modelId: value, modelName: label, variantId: null, variantName: '' });
+                          updateAircraftRow(idx, { modelId: value, modelName: label, variantIds: [], variantNames: [] });
                           loadVariants(value);
                         }}
-                        onCreateNew={async (name) => {
+                        onCreateNew={manufacturerId ? async (name) => {
                           const item = await createModel(manufacturerId, name);
                           setModels((prev) => [...prev, { value: item.id, label: item.name }]);
                           return { value: item.id, label: item.name };
-                        }}
+                        } : undefined}
                         placeholder="Model..."
                         searchPlaceholder="Search models..."
+                        disabled={!manufacturerId}
                       />
                     </div>
                     {aircraftRows.length > 1 && (
@@ -1163,39 +1273,76 @@ const MetadataEditor: React.FC<MetadataEditorProps> = ({ card, onSave, onCancel,
                       </button>
                     )}
                   </div>
-                  {row.modelId && (
+                  <div className="flex flex-col gap-1.5">
+                    {row.variantIds.length > 0 && (
+                      <div className="flex flex-wrap gap-1">
+                        {row.variantIds.map((vid, vi) => (
+                              <span key={vid} className="inline-flex items-center gap-1 bg-primary/5 text-primary/80 rounded-full px-2.5 py-0.5 text-xs font-medium">
+                            {row.variantNames[vi] || vid}
+                            <button
+                              className="text-muted-foreground hover:text-destructive"
+                              onClick={() => updateAircraftRow(idx, {
+                                variantIds: row.variantIds.filter((_, j) => j !== vi),
+                                variantNames: row.variantNames.filter((_, j) => j !== vi),
+                              })}
+                            >
+                              <XIcon className="h-3 w-3" />
+                            </button>
+                          </span>
+                        ))}
+                      </div>
+                    )}
                     <Combobox
-                      options={variantsByModel[row.modelId] ?? []}
-                      value={row.variantId}
-                      onChange={(value, label) => updateAircraftRow(idx, { variantId: value, variantName: label })}
-                      onCreateNew={async (name) => {
+                      options={(variantsByModel[row.modelId] ?? []).filter((o) => !row.variantIds.includes(o.value))}
+                      value={null}
+                      onChange={(value, label) => updateAircraftRow(idx, {
+                        variantIds: [...row.variantIds, value],
+                        variantNames: [...row.variantNames, label],
+                      })}
+                      onCreateNew={row.modelId ? async (name) => {
                         const item = await createVariant(row.modelId, name);
                         setVariantsByModel((prev) => ({
                           ...prev,
                           [row.modelId]: [...(prev[row.modelId] ?? []), { value: item.id, label: item.name }],
                         }));
                         return { value: item.id, label: item.name };
-                      }}
-                      placeholder="Variant (optional)..."
+                      } : undefined}
+                      placeholder={loadingVariants.has(row.modelId) ? 'Loading variants...' : 'Add variant (optional)...'}
                       searchPlaceholder="Search variants..."
+                      disabled={!row.modelId || loadingVariants.has(row.modelId)}
                     />
-                  )}
+                    {suggestedVariant && (
+                      <InlineSuggestion
+                        value={suggestedVariant}
+                        label="Variant"
+                        accepted={acceptedFields.has('variants')}
+                        onAccept={acceptVariants}
+                      />
+                    )}
+                  </div>
                 </div>
-              ))}
-              <button
-                className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
-                onClick={() => setAircraftRows((prev) => [...prev, { modelId: '', modelName: '', variantId: null, variantName: '' }])}
-              >
-                <Plus className="h-3 w-3" /> Add aircraft
-              </button>
-            </div>
-          </EditorField>
-        )}
+              );
+            })}
+            <InlineSuggestion
+              value={suggestions?.aircraft?.length
+                ? suggestions.aircraft.map((a) => a.model).filter(Boolean).join(', ')
+                : undefined}
+              accepted={acceptedFields.has('models')}
+              onAccept={acceptModels}
+            />
+            <button
+              className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+              onClick={() => setAircraftRows((prev) => [...prev, { modelId: '', modelName: '', variantIds: [], variantNames: [] }])}
+            >
+              <Plus className="h-3 w-3" /> Add aircraft
+            </button>
+          </div>
+        </EditorField>
 
         <EditorField label="Languages">
           <div className="flex flex-wrap gap-1.5 mb-1.5">
             {languages.map((lang) => (
-              <span key={lang} className="inline-flex items-center gap-1 bg-muted rounded-md px-2 py-0.5 text-xs">
+              <span key={lang} className="inline-flex items-center gap-1 bg-muted rounded-full px-2.5 py-0.5 text-xs font-medium">
                 {lang}
                 <button className="text-muted-foreground hover:text-destructive" onClick={() => setLanguages((prev) => prev.filter((l) => l !== lang))}>
                   <XIcon className="h-3 w-3" />
@@ -1246,12 +1393,12 @@ const MetadataEditor: React.FC<MetadataEditorProps> = ({ card, onSave, onCancel,
         </EditorField>
       </div>
 
-      <div className="flex gap-2">
+      <div className="flex gap-2 pt-2 border-t mt-1">
         <Button size="sm" onClick={handleSubmit} disabled={saving} className="flex-1 gap-1.5">
           {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
           {saving ? 'Saving...' : 'Save Changes'}
         </Button>
-        <Button variant="outline" size="sm" onClick={onCancel} disabled={saving}>
+        <Button variant="ghost" size="sm" onClick={onCancel} disabled={saving} className="text-muted-foreground">
           Cancel
         </Button>
       </div>
@@ -1266,7 +1413,7 @@ const CollapsibleHeading: React.FC<{
 }> = ({ children, open, onToggle }) => (
   <button
     onClick={onToggle}
-    className="flex items-center gap-2 text-base font-medium text-muted-foreground
+    className="flex items-center gap-2 text-[11px] font-medium text-muted-foreground uppercase tracking-wide
                hover:text-foreground transition-colors w-full"
   >
     {children}
@@ -1313,16 +1460,18 @@ const SpreadRow: React.FC<SpreadRowProps> = ({
 
   return (
     <div>
-      <h2 className="text-sm font-medium text-muted-foreground mb-1">
-        {label} Side
-      </h2>
-      {side === 'back' && (
-        <p className="text-[11px] text-muted-foreground mb-2">
-          Flipped — as if you turned the card over
-        </p>
-      )}
+      <div className="flex items-baseline gap-2 mb-2">
+        <h2 className="text-sm font-medium">
+          {label} Side
+        </h2>
+        {side === 'back' && (
+          <span className="text-[10px] text-muted-foreground">
+            Flipped — as if you turned the card over
+          </span>
+        )}
+      </div>
       <div
-        className="grid gap-1"
+        className="grid gap-1.5"
         style={{ gridTemplateColumns: `repeat(${slots.length}, 1fr)`, maxHeight: 300 }}
       >
         {slots.map(({ panel, panelIndex }) => {
@@ -1335,9 +1484,9 @@ const SpreadRow: React.FC<SpreadRowProps> = ({
             <div
               key={panel?.id ?? `empty-${panelIndex}`}
               className={cn(
-                'relative group rounded-sm overflow-hidden',
-                (displayUrl && !isSavingThis) ? 'bg-muted/50' : 'bg-muted/30 border border-dashed border-muted-foreground/20',
-                isEditing && onEditCrops && !isProcessing && 'cursor-pointer hover:ring-2 hover:ring-primary/50 transition-all',
+                'relative group rounded-md overflow-hidden transition-all',
+                (displayUrl && !isSavingThis) ? 'bg-muted/50' : 'bg-muted/20 border-2 border-dashed border-muted-foreground/15',
+                isEditing && onEditCrops && !isProcessing && 'cursor-pointer hover:ring-2 hover:ring-primary/40',
               )}
               style={{ maxHeight: 300 }}
               onClick={isEditing && onEditCrops && !isProcessing ? () => onEditCrops(panelIndex, side) : undefined}
@@ -1391,11 +1540,11 @@ const SpreadRow: React.FC<SpreadRowProps> = ({
         })}
       </div>
       <div
-        className="grid gap-1 mt-1"
+        className="grid gap-1.5 mt-1.5"
         style={{ gridTemplateColumns: `repeat(${slots.length}, 1fr)` }}
       >
         {slots.map(({ panelIndex }) => (
-          <div key={panelIndex} className="text-center text-[11px] text-muted-foreground">
+          <div key={panelIndex} className="text-center text-[10px] text-muted-foreground/60 font-medium">
             Panel {panelIndex + 1}
           </div>
         ))}
@@ -1408,12 +1557,12 @@ const SpreadRow: React.FC<SpreadRowProps> = ({
 
 const ScanCard: React.FC<{ scan: ScanInfo }> = ({ scan }) => {
   return (
-    <div className="flex items-start gap-3 p-4 rounded-lg bg-muted/40">
+    <div className="flex items-start gap-3 p-3.5 rounded-lg border bg-card">
       <div className="min-w-0 flex-1">
         <p className="text-sm font-medium truncate">
           {scan.original_filename || 'Unknown file'}
         </p>
-        <p className="text-xs text-muted-foreground mt-1">
+        <p className="text-xs text-muted-foreground mt-0.5">
           {scan.width_px} &times; {scan.height_px} px
           {' · '}{scan.dpi} DPI
           {scan.file_size_bytes ? ` · ${formatBytes(scan.file_size_bytes)}` : ''}
@@ -1456,21 +1605,20 @@ const DocumentLinks: React.FC<{ documents: DetailDocumentInfo[] }> = ({ document
 const ProvenanceCard: React.FC<{ entry: DetailProvenanceEntry; onDelete?: () => void }> = ({ entry, onDelete }) => {
   const [confirming, setConfirming] = useState(false);
   return (
-    <div className="p-4 rounded-lg bg-muted/40 group relative">
+    <div className="p-3.5 rounded-lg border bg-card group relative">
       {onDelete && (
-        <div className="absolute top-2 right-2">
+        <div className="absolute top-2.5 right-2.5">
           {confirming ? (
-            <div className="flex items-center gap-1">
-              <button onClick={onDelete} className="text-[10px] text-destructive hover:underline">Remove</button>
-              <span className="text-[10px] text-muted-foreground">/</span>
+            <div className="flex items-center gap-1.5">
+              <button onClick={onDelete} className="text-[10px] text-destructive hover:underline font-medium">Remove</button>
               <button onClick={() => setConfirming(false)} className="text-[10px] text-muted-foreground hover:underline">Cancel</button>
             </div>
           ) : (
             <button
               onClick={() => setConfirming(true)}
-              className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive"
+              className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive p-0.5"
             >
-              <Trash2 className="h-3.5 w-3.5" />
+              <Trash2 className="h-3 w-3" />
             </button>
           )}
         </div>
@@ -1510,21 +1658,20 @@ const PriceObservationCard: React.FC<{ observation: DetailPriceObservation; onDe
 
   const [confirming, setConfirming] = useState(false);
   return (
-    <div className="p-4 rounded-lg bg-muted/40 group relative">
+    <div className="p-3.5 rounded-lg border bg-card group relative">
       {onDelete && (
-        <div className="absolute top-2 right-2">
+        <div className="absolute top-2.5 right-2.5">
           {confirming ? (
-            <div className="flex items-center gap-1">
-              <button onClick={onDelete} className="text-[10px] text-destructive hover:underline">Remove</button>
-              <span className="text-[10px] text-muted-foreground">/</span>
+            <div className="flex items-center gap-1.5">
+              <button onClick={onDelete} className="text-[10px] text-destructive hover:underline font-medium">Remove</button>
               <button onClick={() => setConfirming(false)} className="text-[10px] text-muted-foreground hover:underline">Cancel</button>
             </div>
           ) : (
             <button
               onClick={() => setConfirming(true)}
-              className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive"
+              className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive p-0.5"
             >
-              <Trash2 className="h-3.5 w-3.5" />
+              <Trash2 className="h-3 w-3" />
             </button>
           )}
         </div>
@@ -1559,7 +1706,7 @@ const PriceObservationCard: React.FC<{ observation: DetailPriceObservation; onDe
 // ─── Inline Add Forms ────────────────────────────────────────────
 
 const INLINE_INPUT =
-  'w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 placeholder:text-muted-foreground/40';
+  'w-full rounded-lg border border-border bg-background px-2.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary/40 placeholder:text-muted-foreground/40 transition-colors';
 
 function fileToDocInput(file: File): AddDocumentInput {
   return {
@@ -1640,7 +1787,7 @@ const AddProvenanceForm: React.FC<{
   };
 
   return (
-    <div className="rounded-lg border p-3 mb-2 flex flex-col gap-2">
+    <div className="rounded-xl border bg-card p-3 mb-2 flex flex-col gap-2">
       <input
         className={INLINE_INPUT}
         placeholder="Source (e.g. eBay, gift, estate sale)"
@@ -1708,7 +1855,7 @@ const AddPriceForm: React.FC<{
   };
 
   return (
-    <div className="rounded-lg border p-3 mb-2 flex flex-col gap-2">
+    <div className="rounded-xl border bg-card p-3 mb-2 flex flex-col gap-2">
       <div className="flex gap-2">
         <div className="relative flex-1">
           <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">$</span>
@@ -1763,21 +1910,21 @@ const AddPriceForm: React.FC<{
 const Lightbox: React.FC<{ url: string; onClose: () => void }> = ({ url, onClose }) => {
   return (
     <div
-      className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-8 cursor-zoom-out"
+      className="fixed inset-0 z-50 bg-black/95 flex items-center justify-center p-8 cursor-zoom-out animate-in fade-in duration-200"
       onClick={onClose}
     >
       <img
         src={url}
         alt="Full resolution panel"
-        className="max-w-full max-h-full object-contain rounded-lg shadow-2xl"
+        className="max-w-full max-h-full object-contain rounded-lg shadow-2xl animate-in zoom-in-95 duration-200"
         onClick={(e) => e.stopPropagation()}
       />
       <button
         onClick={onClose}
-        className="absolute top-6 right-6 text-white/70 hover:text-white text-sm
-                   bg-black/40 rounded-full px-3 py-1.5 transition-colors"
+        className="absolute top-4 right-4 text-white/60 hover:text-white transition-colors
+                   bg-white/10 hover:bg-white/20 backdrop-blur-sm rounded-full p-2"
       >
-        Close
+        <XIcon className="h-5 w-5" />
       </button>
     </div>
   );
