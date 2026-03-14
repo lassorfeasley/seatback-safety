@@ -313,14 +313,20 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
       // Crosshair — shape varies by mode; hidden once a crop region exists (unless straightening)
       if (regions.length === 0 || straightenMode) {
         const crosshairColor = straightenMode ? '#22d3ee' : '#ff0000';
-        const isCornerCursor = hasConstrainedHeight && !hasLockedDimensions && !straightenMode && !clickCropPoint;
+        const isLockedCornerCursor = hasLockedDimensions && !straightenMode;
+        const isCornerCursor = isLockedCornerCursor || (hasConstrainedHeight && !hasLockedDimensions && !straightenMode && !clickCropPoint);
         const isLineCursor = hasConstrainedHeight && !hasLockedDimensions && !straightenMode && !!clickCropPoint;
 
         ctx.save();
         ctx.strokeStyle = crosshairColor;
         ctx.lineWidth = 0.75;
         ctx.beginPath();
-        if (isCornerCursor && isBackFace) {
+        if (isLockedCornerCursor) {
+          ctx.moveTo(r, r);
+          ctx.lineTo(r, size - 8);
+          ctx.moveTo(r, r);
+          ctx.lineTo(size - 8, r);
+        } else if (isCornerCursor && isBackFace) {
           ctx.moveTo(r, r);
           ctx.lineTo(r, size - 8);
           ctx.moveTo(r, r);
@@ -398,6 +404,9 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
       // Clicked on an existing crop region -> select it, don't start drawing
       if (clickedOnRegion) return;
 
+      // In single-crop mode, block drawing when a crop already exists
+      if (singleCropMode && regions.length > 0) return;
+
       // Clicked on empty canvas/image -> deselect + start drawing
       onRegionSelect(null);
 
@@ -416,12 +425,10 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
         }
       }
 
-      // ── Locked dimensions: place a fixed-size rectangle ──
+      // ── Locked dimensions: place a fixed-size rectangle at the clicked top-left corner ──
       if (hasLockedDimensions) {
-        const halfW = lockedWidth! / 2;
-        const halfH = lockedHeight! / 2;
-        let rx = coords.x - halfW;
-        let ry = coords.y - halfH;
+        let rx = coords.x;
+        let ry = coords.y;
 
         if (rotatedBounds) {
           rx = Math.max(0, Math.min(rotatedBounds.width - lockedWidth!, rx));
@@ -724,6 +731,8 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
       cursor = cursorSvg(
         `<line x1='16' y1='0' x2='16' y2='32' stroke='#22d3ee' stroke-width='1'/><line x1='0' y1='16' x2='32' y2='16' stroke='#22d3ee' stroke-width='1'/>`
       );
+    } else if (hasLockedDimensions && regions.length === 0) {
+      cursor = cursorSvg(`<line x1='16' y1='16' x2='16' y2='32' stroke='red' stroke-width='1'/><line x1='16' y1='16' x2='32' y2='16' stroke='red' stroke-width='1'/>`);
     } else if (regions.length > 0) {
       cursor = 'default';
     } else if (hasConstrainedHeight && !hasLockedDimensions && !clickCropPoint) {
@@ -1011,6 +1020,11 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
             border: '2px solid rgba(255,255,255,0.35)',
           }}
         />
+        {hasLockedDimensions && !straightenMode && regions.length === 0 && (
+          <div className="mt-1 text-center text-[10px] font-medium text-white bg-black/60 rounded px-1.5 py-0.5 whitespace-nowrap">
+            select top-left corner
+          </div>
+        )}
         {hasConstrainedHeight && !hasLockedDimensions && !straightenMode && (
           <div className="mt-1 text-center text-[10px] font-medium text-white bg-black/60 rounded px-1.5 py-0.5 whitespace-nowrap">
             {clickCropPoint
@@ -1084,7 +1098,7 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
               ? (isBackFace ? 'Now click the left boundary | Esc to cancel' : 'Now click the right boundary | Esc to cancel')
               : 'Click the opposite corner to complete the crop | Esc to cancel')
             : hasLockedDimensions
-              ? 'Click to place crop | Drag to reposition | Scroll to zoom'
+              ? 'Click the top-left corner of this panel | Scroll to zoom'
               : hasConstrainedHeight
                 ? (isBackFace
                   ? 'Click the top-right corner of this panel (height is locked) | Scroll to zoom'

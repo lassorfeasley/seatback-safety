@@ -1063,10 +1063,12 @@ const MetadataEditor: React.FC<MetadataEditorProps> = ({ card, onSave, onCancel,
 
   const acceptModels = useCallback(async () => {
     if (!suggestions?.aircraft?.length || !manufacturerId) return;
-    const rows: typeof aircraftRows = [];
+    const rowsByModel = new Map<string, typeof aircraftRows[number]>();
     for (const a of suggestions.aircraft) {
       if (!a.model) continue;
-      const modelMatch = models.find((m) => m.label.toLowerCase() === a.model!.toLowerCase());
+      const key = a.model.toLowerCase();
+      if (rowsByModel.has(key)) continue;
+      const modelMatch = models.find((m) => m.label.toLowerCase() === key);
       let modelId: string;
       let modelName: string;
       if (modelMatch) {
@@ -1078,8 +1080,9 @@ const MetadataEditor: React.FC<MetadataEditorProps> = ({ card, onSave, onCancel,
         modelId = item.id;
         modelName = item.name;
       }
-      rows.push({ modelId, modelName, variantIds: [], variantNames: [] });
+      rowsByModel.set(key, { modelId, modelName, variantIds: [], variantNames: [] });
     }
+    const rows = [...rowsByModel.values()];
     if (rows.length > 0) setAircraftRows(rows);
     setAcceptedFields((prev) => new Set(prev).add('models'));
   }, [suggestions, manufacturerId, models]);
