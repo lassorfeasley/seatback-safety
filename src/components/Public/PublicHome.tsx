@@ -249,15 +249,15 @@ export const PublicHome: React.FC = () => {
               ))}
             </div>
           </div>
-          <div className="relative z-10 grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 md:grid-rows-[repeat(5,1fr)] gap-3 auto-rows-fr">
-            <AutoSizeText className="col-span-4 md:col-start-1 md:row-start-1 md:row-span-2 bg-black/60 backdrop-blur-xl">
+          <div className="relative z-10 grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 md:grid-rows-[repeat(5,1fr)] gap-3 auto-rows-fr pointer-events-none">
+            <AutoSizeText className="col-span-4 md:col-start-1 md:row-start-1 md:row-span-2 bg-black/60 backdrop-blur-xl pointer-events-auto">
               <span className="text-white font-medium">
                 Seatback Safety is <a href="https://www.lassor.com" target="_blank" rel="noopener noreferrer" className="text-red-400 hover:underline">Lassor Feasley's</a>
                 {' '}personal collection of airline seatback safety procedure cards.
                 The artifacts document the intersection of aviation, graphic design, and mass media.
               </span>
             </AutoSizeText>
-            <div className="col-span-3 md:col-start-6 md:row-start-3 md:row-span-1 bg-black/60 backdrop-blur-xl relative overflow-hidden h-full flex items-center p-5">
+            <div className="col-span-3 md:col-start-6 md:row-start-3 md:row-span-1 bg-black/60 backdrop-blur-xl relative overflow-hidden h-full flex items-center p-5 pointer-events-auto">
               <p className="text-white text-sm leading-relaxed">
                 Lassor designed, developed, and maintains this digital showcase, which features a museum-grade database archive.
                 He also personally acquires, documents, files, and maintains the specimens in his personal archive.
@@ -265,7 +265,7 @@ export const PublicHome: React.FC = () => {
             </div>
             <Link
               to="/airlines"
-              className="md:col-start-6 md:row-start-1 group flex flex-col overflow-hidden
+              className="md:col-start-6 md:row-start-1 group flex flex-col overflow-hidden pointer-events-auto
                          focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
             >
               <div className="aspect-square bg-black/60 backdrop-blur-xl relative overflow-hidden transition-all duration-200 group-hover:scale-[1.02] group-hover:bg-black/70">
@@ -282,7 +282,7 @@ export const PublicHome: React.FC = () => {
             </Link>
             <Link
               to="/decades"
-              className="md:col-start-8 md:row-start-2 group flex flex-col overflow-hidden
+              className="md:col-start-8 md:row-start-2 group flex flex-col overflow-hidden pointer-events-auto
                          focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
             >
               <div className="aspect-square bg-black/60 backdrop-blur-xl relative overflow-hidden transition-all duration-200 group-hover:scale-[1.02] group-hover:bg-black/70">
@@ -299,7 +299,7 @@ export const PublicHome: React.FC = () => {
             </Link>
             <Link
               to="/search"
-              className="md:col-start-1 md:row-start-4 group flex flex-col overflow-hidden
+              className="md:col-start-1 md:row-start-4 group flex flex-col overflow-hidden pointer-events-auto
                          focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
             >
               <div className="aspect-square bg-black/60 backdrop-blur-xl relative overflow-hidden transition-all duration-200 group-hover:scale-[1.02] group-hover:bg-black/70">
@@ -316,7 +316,7 @@ export const PublicHome: React.FC = () => {
             </Link>
             <Link
               to="/countries"
-              className="md:col-start-3 md:row-start-4 group flex flex-col overflow-hidden
+              className="md:col-start-3 md:row-start-4 group flex flex-col overflow-hidden pointer-events-auto
                          focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
             >
               <div className="aspect-square bg-black/60 backdrop-blur-xl relative overflow-hidden transition-all duration-200 group-hover:scale-[1.02] group-hover:bg-black/70">
@@ -333,7 +333,7 @@ export const PublicHome: React.FC = () => {
             </Link>
             <Link
               to="/manufacturers"
-              className="md:col-start-4 md:row-start-5 group flex flex-col overflow-hidden
+              className="md:col-start-4 md:row-start-5 group flex flex-col overflow-hidden pointer-events-auto
                          focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
             >
               <div className="aspect-square bg-black/60 backdrop-blur-xl relative overflow-hidden transition-all duration-200 group-hover:scale-[1.02] group-hover:bg-black/70">
