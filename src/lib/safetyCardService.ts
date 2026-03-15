@@ -97,6 +97,7 @@ export interface CardDetailData {
   priceObservations: DetailPriceObservation[];
   preview_url: string | null;
   airline_id: string | null;
+  airline_country: string | null;
   airline_logo_url: string | null;
   manufacturer_logo_url: string | null;
   aircraft: DetailAircraftEntry[];
@@ -657,7 +658,7 @@ export async function fetchCardDetail(cardId: string): Promise<CardDetailData | 
         id, title, panel_count, crop_width, crop_height,
         cover_spread_index, cover_side, pivot_index, created_at,
         published_year, revision, language, notes, airline_id,
-        airlines ( name, logo_path ),
+        airlines ( name, logo_path, country ),
         aircraft_variants ( name, aircraft_models ( name, aircraft_manufacturers ( name, logo_path ) ) ),
         card_aircraft ( aircraft_variant_id, aircraft_model_id, sort_order,
           aircraft_variants ( name, aircraft_models ( id, name, manufacturer_id, aircraft_manufacturers ( id, name, logo_path ) ) ),
@@ -988,6 +989,7 @@ export async function fetchCardDetail(cardId: string): Promise<CardDetailData | 
     priceObservations,
     preview_url: derivativePublicUrl(`${cardId}/preview.jpg`),
     airline_id: (card.airline_id as string) ?? null,
+    airline_country: (airline?.country as string) ?? null,
     airline_logo_url: airlineLogoUrl,
     manufacturer_logo_url: manufacturerLogoUrl,
     aircraft: structuredAircraft,

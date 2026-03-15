@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { Loader2, Info } from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
 import { fetchCardDetail, type CardDetailData } from '@/lib/safetyCardService';
 import { CardVisualizer3D } from '@/components/FoldEditor/CardVisualizer3D';
 import { useBreadcrumbs, type Breadcrumb } from './BreadcrumbContext';
@@ -39,6 +38,10 @@ export const PublicCardDetail: React.FC = () => {
       .join(', ');
 
     const crumbs: Breadcrumb[] = [];
+    if (card.airline_country) {
+      crumbs.push({ label: 'Countries', to: '/countries' });
+      crumbs.push({ label: card.airline_country, to: `/airlines?q=${encodeURIComponent(card.airline_country)}` });
+    }
     if (card.airline_name) {
       crumbs.push({
         label: card.airline_name,
@@ -157,18 +160,6 @@ export const PublicCardDetail: React.FC = () => {
               hintOnLoad
             />
           </div>
-        </div>
-      )}
-
-      {/* Aircraft & Languages */}
-      {card.aircraft_label && (
-        <p className="text-muted-foreground mb-2">{card.aircraft_label}</p>
-      )}
-      {card.languages && card.languages.length > 0 && (
-        <div className="flex gap-1.5 mb-6">
-          {card.languages.map((lang) => (
-            <Badge key={lang} variant="secondary" className="text-xs">{lang}</Badge>
-          ))}
         </div>
       )}
 

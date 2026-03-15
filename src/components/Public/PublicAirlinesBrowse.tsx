@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo, useCallback } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { Loader2, Search, X } from 'lucide-react';
 import { fetchAirlinesBrowse, type AirlineBrowse } from '@/lib/lookupService';
 import { useBreadcrumbs } from './BreadcrumbContext';
@@ -27,9 +27,10 @@ function sortAirlines(list: AirlineBrowse[], key: SortKey): AirlineBrowse[] {
 }
 
 export const PublicAirlinesBrowse: React.FC = () => {
+  const [searchParams] = useSearchParams();
   const [airlines, setAirlines] = useState<AirlineBrowse[]>([]);
   const [loading, setLoading] = useState(true);
-  const [query, setQuery] = useState('');
+  const [query, setQuery] = useState(() => searchParams.get('q') ?? '');
   const [sort, setSort] = useState<SortKey>('name-asc');
   const { setToolbar } = useBreadcrumbs();
 

@@ -63,6 +63,7 @@ export const PublicHome: React.FC = () => {
   const [cards, setCards] = useState<CardSummary[]>([]);
   const [airlines, setAirlines] = useState<AirlineBrowse[]>([]);
   const [allAirlines, setAllAirlines] = useState<AirlineBrowse[]>([]);
+  const [allManufacturers, setAllManufacturers] = useState<ManufacturerBrowse[]>([]);
   const [manufacturers, setManufacturers] = useState<ManufacturerBrowse[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -74,9 +75,11 @@ export const PublicHome: React.FC = () => {
     ]).then(([c, a, m]) => {
       setCards(c);
       const airlinesWithCards = a.filter((x) => x.card_count > 0);
+      const manufacturersWithCards = m.filter((x) => x.card_count > 0);
       setAllAirlines(airlinesWithCards);
+      setAllManufacturers(manufacturersWithCards);
       setAirlines(airlinesWithCards.slice(0, 8));
-      setManufacturers(m.filter((x) => x.card_count > 0).slice(0, 8));
+      setManufacturers(manufacturersWithCards.slice(0, 8));
       setLoading(false);
     });
   }, []);
@@ -89,7 +92,7 @@ export const PublicHome: React.FC = () => {
     );
   }
 
-  const recentCards = cards.slice(0, 5);
+  const recentCards = cards.slice(0, 4);
 
   const cardCount = cards.length;
   const years = cards.map((c) => c.published_year).filter((y): y is number => y != null);
@@ -109,7 +112,6 @@ export const PublicHome: React.FC = () => {
               <span className="text-foreground/70 font-medium">
                 Seatback Safety is <a href="https://www.lassor.com" target="_blank" rel="noopener noreferrer" className="text-red-600 hover:underline">Lassor Feasley's</a>
                 {' '}personal collection of airline seatback safety procedure cards.
-                The collection spans{yearSpan ? ` ${yearSpan} years` : ''}, {cardCount} examples, {airlineCount} airlines, and {countryCount} countries.
                 The artifacts document the intersection of aviation, graphic design, and mass media.
               </span>
               {' '}
@@ -118,6 +120,76 @@ export const PublicHome: React.FC = () => {
                 He also personally acquires, documents, files, and maintains the specimens in his personal archive.
               </span>
             </AutoSizeText>
+            <Link
+              to="/airlines"
+              className="group flex flex-col overflow-hidden
+                         focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+            >
+              <div className="aspect-square bg-[#ebeaef] flex flex-col items-center justify-center">
+                <span className="text-8xl md:text-9xl font-bold tracking-tight text-foreground">
+                  {airlineCount}
+                </span>
+                <span className="text-sm font-medium text-muted-foreground mt-1">
+                  Airlines
+                </span>
+              </div>
+            </Link>
+            <Link
+              to="/decades"
+              className="group flex flex-col overflow-hidden
+                         focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+            >
+              <div className="aspect-square bg-[#ebeaef] flex flex-col items-center justify-center">
+                <span className="text-8xl md:text-9xl font-bold tracking-tight text-foreground">
+                  {yearSpan ?? 0}
+                </span>
+                <span className="text-sm font-medium text-muted-foreground mt-1">
+                  Years
+                </span>
+              </div>
+            </Link>
+            <Link
+              to="/search"
+              className="group flex flex-col overflow-hidden
+                         focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+            >
+              <div className="aspect-square bg-[#ebeaef] flex flex-col items-center justify-center">
+                <span className="text-8xl md:text-9xl font-bold tracking-tight text-foreground">
+                  {cardCount}
+                </span>
+                <span className="text-sm font-medium text-muted-foreground mt-1">
+                  Cards
+                </span>
+              </div>
+            </Link>
+            <Link
+              to="/countries"
+              className="group flex flex-col overflow-hidden
+                         focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+            >
+              <div className="aspect-square bg-[#ebeaef] flex flex-col items-center justify-center">
+                <span className="text-8xl md:text-9xl font-bold tracking-tight text-foreground">
+                  {countryCount}
+                </span>
+                <span className="text-sm font-medium text-muted-foreground mt-1">
+                  Countries
+                </span>
+              </div>
+            </Link>
+            <Link
+              to="/manufacturers"
+              className="group flex flex-col overflow-hidden
+                         focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+            >
+              <div className="aspect-square bg-[#ebeaef] flex flex-col items-center justify-center">
+                <span className="text-8xl md:text-9xl font-bold tracking-tight text-foreground">
+                  {allManufacturers.length}
+                </span>
+                <span className="text-sm font-medium text-muted-foreground mt-1">
+                  Manufacturers
+                </span>
+              </div>
+            </Link>
             {recentCards.map((card) => (
               <PublicCardTile key={card.id} card={card} />
             ))}

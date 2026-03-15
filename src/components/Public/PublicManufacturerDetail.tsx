@@ -31,10 +31,13 @@ export const PublicManufacturerDetail: React.FC = () => {
 
   useEffect(() => {
     if (!manufacturer) return;
-    const crumbs: Breadcrumb[] = [
-      { label: 'Manufacturers', to: '/manufacturers' },
-      { label: manufacturer.name },
-    ];
+    const crumbs: Breadcrumb[] = [];
+    if (manufacturer.country) {
+      crumbs.push({ label: 'Countries', to: '/countries' });
+      crumbs.push({ label: manufacturer.country, to: `/manufacturers?q=${encodeURIComponent(manufacturer.country)}` });
+    }
+    crumbs.push({ label: 'Manufacturers', to: '/manufacturers' });
+    crumbs.push({ label: manufacturer.name });
     setBreadcrumbs(crumbs);
     return () => clearBreadcrumbs();
   }, [manufacturer, setBreadcrumbs, clearBreadcrumbs]);

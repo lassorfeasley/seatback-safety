@@ -147,7 +147,7 @@ const AirlineTile: React.FC<{
 
   return (
     <div
-      className="group relative flex items-center gap-4 p-4 rounded-lg border bg-card
+      className="group relative flex items-center gap-4 pr-4 rounded-lg border bg-card overflow-hidden
                  hover:shadow-md transition-shadow cursor-pointer"
       onClick={onClick}
     >
@@ -247,7 +247,7 @@ const AirlineEditForm: React.FC<{
           <input ref={fileRef} type="file" accept="image/*" onChange={handleImageUpload} className="hidden" />
           <button
             onClick={() => fileRef.current?.click()}
-            className="absolute inset-0 rounded-full bg-black/0 group-hover/logo:bg-black/40
+            className="absolute inset-0 bg-black/0 group-hover/logo:bg-black/40
                        flex items-center justify-center opacity-0 group-hover/logo:opacity-100 transition-all"
           >
             {uploading ? (
@@ -296,11 +296,11 @@ const AirlineEditForm: React.FC<{
 // ─── Shared ─────────────────────────────────────────────────────
 
 const LogoCircle: React.FC<{ url: string | null; name: string }> = ({ url, name }) => (
-  <div className="h-10 w-10 rounded-full bg-muted flex-shrink-0 flex items-center justify-center overflow-hidden">
+  <div className="h-20 w-20 bg-[#ebeaef] flex-shrink-0 flex items-center justify-center overflow-hidden">
     {url ? (
-      <img src={url} alt={name} className="h-full w-full object-cover" />
+      <img src={url} alt={name} className="w-3/4 h-3/4 object-contain" />
     ) : (
-      <span className="text-xs font-bold text-muted-foreground">
+      <span className="text-lg font-bold text-muted-foreground">
         {name.charAt(0).toUpperCase()}
       </span>
     )}

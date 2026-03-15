@@ -17,6 +17,7 @@ import { RequireAuth } from './components/Auth/RequireAuth';
 import { PublicLayout } from './components/Public/PublicLayout';
 import { PublicHome } from './components/Public/PublicHome';
 import { PublicAirlinesBrowse } from './components/Public/PublicAirlinesBrowse';
+import { PublicCountriesBrowse } from './components/Public/PublicCountriesBrowse';
 import { PublicAirlineDetail } from './components/Public/PublicAirlineDetail';
 import { PublicManufacturersBrowse } from './components/Public/PublicManufacturersBrowse';
 import { PublicManufacturerDetail } from './components/Public/PublicManufacturerDetail';
@@ -34,6 +35,7 @@ function App() {
           <Route index element={<PublicHome />} />
           <Route path="airlines" element={<PublicAirlinesBrowse />} />
           <Route path="airlines/:id" element={<PublicAirlineDetail />} />
+          <Route path="countries" element={<PublicCountriesBrowse />} />
           <Route path="manufacturers" element={<PublicManufacturersBrowse />} />
           <Route path="manufacturers/:id" element={<PublicManufacturerDetail />} />
           <Route path="cards/:id" element={<PublicCardDetail />} />

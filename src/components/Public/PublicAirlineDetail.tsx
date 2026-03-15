@@ -27,10 +27,13 @@ export const PublicAirlineDetail: React.FC = () => {
 
   useEffect(() => {
     if (!airline) return;
-    const crumbs: Breadcrumb[] = [
-      { label: 'Airlines', to: '/airlines' },
-      { label: airline.name },
-    ];
+    const crumbs: Breadcrumb[] = [];
+    if (airline.country) {
+      crumbs.push({ label: 'Countries', to: '/countries' });
+      crumbs.push({ label: airline.country, to: `/airlines?q=${encodeURIComponent(airline.country)}` });
+    }
+    crumbs.push({ label: 'Airlines', to: '/airlines' });
+    crumbs.push({ label: airline.name });
     setBreadcrumbs(crumbs);
     return () => clearBreadcrumbs();
   }, [airline, setBreadcrumbs, clearBreadcrumbs]);

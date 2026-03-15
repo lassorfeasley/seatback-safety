@@ -61,6 +61,11 @@ export interface ManufacturerBrowse extends ManufacturerDetail {
   card_count: number;
 }
 
+export interface CountryBrowse {
+  name: string;
+  card_count: number;
+}
+
 export interface ModelBrowse extends ModelDetail {
   manufacturer_name: string;
   manufacturer_slug: string;
@@ -193,6 +198,23 @@ export async function fetchCollectionStats(): Promise<CollectionStats> {
     totalAirlines: withCards.length,
     totalCountries: countries.size,
   };
+}
+
+export async function fetchCountriesBrowse(): Promise<CountryBrowse[]> {
+  const { data } = await supabase
+    .from('airline_browse')
+    .select('country, card_count');
+
+  const rows = (data ?? []) as Array<{ country: string | null; card_count: number }>;
+  const byCountry = new Map<string, number>();
+  for (const r of rows) {
+    if (r.country && r.card_count > 0) {
+      byCountry.set(r.country, (byCountry.get(r.country) ?? 0) + r.card_count);
+    }
+  }
+  return [...byCountry.entries()]
+    .map(([name, card_count]) => ({ name, card_count }))
+    .sort((a, b) => a.name.localeCompare(b.name));
 }
 
 // ─── Aircraft Manufacturers ──────────────────────────────────────
