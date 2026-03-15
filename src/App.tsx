@@ -16,6 +16,7 @@ import { RequireAuth } from './components/Auth/RequireAuth';
 
 import { PublicLayout } from './components/Public/PublicLayout';
 import { PublicHome } from './components/Public/PublicHome';
+import { PublicHomeLegacy } from './components/Public/PublicHomeLegacy';
 import { PublicAirlinesBrowse } from './components/Public/PublicAirlinesBrowse';
 import { PublicCountriesBrowse } from './components/Public/PublicCountriesBrowse';
 import { PublicAirlineDetail } from './components/Public/PublicAirlineDetail';
@@ -43,6 +44,7 @@ function App() {
           <Route path="decades/:decade" element={<PublicDecadeDetail />} />
           <Route path="search" element={<PublicSearch />} />
           <Route path="about" element={<AboutPage />} />
+          <Route path="legacy" element={<PublicHomeLegacy />} />
         </Route>
 
         {/* Auth */}

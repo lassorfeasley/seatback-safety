@@ -1,9 +1,10 @@
 import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import { Loader2 } from 'lucide-react';
+import { Loader2, ArrowRight } from 'lucide-react';
 import { fetchCards, type CardSummary } from '@/lib/safetyCardService';
 import { fetchAirlinesBrowse, fetchManufacturersBrowse, type AirlineBrowse, type ManufacturerBrowse } from '@/lib/lookupService';
 import { PublicCardTile } from './PublicCardTile';
+import { CardCarousel } from './CardCarousel';
 import { countryToFlag } from '@/lib/countryFlags';
 
 function AutoSizeText({ className, children }: { className?: string; children: React.ReactNode }) {
@@ -48,7 +49,7 @@ function AutoSizeText({ className, children }: { className?: string; children: R
   }, [fit, children]);
 
   return (
-    <div ref={containerRef} className={`${className ?? ''} relative overflow-hidden h-full`}>
+    <div ref={containerRef} className={`${className ?? ''} relative overflow-hidden`}>
       <p
         ref={textRef}
         style={{ fontSize: `${fontSize}px`, lineHeight: '1.35', padding: 20 }}
@@ -190,15 +191,17 @@ function DecadeTicker({ years, delayMs = 0 }: { years: number[]; delayMs?: numbe
   const label = `'${String(decade).slice(-2)}s`;
   return (
     <CrossfadeShell itemKey={String(decade)}>
-      <span className="text-7xl md:text-8xl font-bold tracking-tight text-white/20">{label}</span>
+      <span className="text-7xl md:text-8xl font-bold tracking-tight text-foreground/20">{label}</span>
     </CrossfadeShell>
   );
 }
 
-export const PublicHome: React.FC = () => {
+export const PublicHomeLegacy: React.FC = () => {
   const [cards, setCards] = useState<CardSummary[]>([]);
+  const [airlines, setAirlines] = useState<AirlineBrowse[]>([]);
   const [allAirlines, setAllAirlines] = useState<AirlineBrowse[]>([]);
   const [allManufacturers, setAllManufacturers] = useState<ManufacturerBrowse[]>([]);
+  const [manufacturers, setManufacturers] = useState<ManufacturerBrowse[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -212,6 +215,8 @@ export const PublicHome: React.FC = () => {
       const manufacturersWithCards = m.filter((x) => x.card_count > 0);
       setAllAirlines(airlinesWithCards);
       setAllManufacturers(manufacturersWithCards);
+      setAirlines(airlinesWithCards.slice(0, 8));
+      setManufacturers(manufacturersWithCards.slice(0, 8));
       setLoading(false);
     });
   }, []);
@@ -224,7 +229,7 @@ export const PublicHome: React.FC = () => {
     );
   }
 
-  const recentCards = cards.slice(0, 30);
+  const recentCards = cards.slice(0, 4);
 
   const cardCount = cards.length;
   const years = cards.map((c) => c.published_year).filter((y): y is number => y != null);
@@ -239,118 +244,190 @@ export const PublicHome: React.FC = () => {
     <div className="min-h-[calc(100dvh-4rem)] bg-background">
       {/* Recent Additions */}
       {recentCards.length > 0 && (
-        <section className="max-w-6xl mx-auto px-6 pt-12 pb-0 relative min-h-dvh">
-          <div
-            className="absolute inset-0 overflow-hidden"
-          >
-            <div className="marquee-scroll grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 gap-3 px-6">
-              {Array.from({ length: 10 }, () => recentCards).flat().map((card, i) => (
-                <PublicCardTile key={`${card.id}-${i}`} card={card} />
-              ))}
-            </div>
-          </div>
-          <div className="relative z-10 grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 md:grid-rows-[repeat(4,1fr)] gap-3 auto-rows-fr">
-            <AutoSizeText className="col-span-4 md:col-start-1 md:row-start-1 md:row-span-2 bg-black/60 backdrop-blur-xl">
-              <span className="text-white font-medium">
-                Seatback Safety is <a href="https://www.lassor.com" target="_blank" rel="noopener noreferrer" className="text-red-400 hover:underline">Lassor Feasley's</a>
+        <section className="max-w-6xl mx-auto px-6 pt-12 pb-0">
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-5">
+            <AutoSizeText className="col-span-2 aspect-[2/1] bg-[#ebeaef]">
+              <span className="text-foreground/70 font-medium">
+                Seatback Safety is <a href="https://www.lassor.com" target="_blank" rel="noopener noreferrer" className="text-red-600 hover:underline">Lassor Feasley's</a>
                 {' '}personal collection of airline seatback safety procedure cards.
                 The artifacts document the intersection of aviation, graphic design, and mass media.
               </span>
             </AutoSizeText>
-            <div className="col-span-3 md:col-start-6 md:row-start-3 md:row-span-1 bg-black/60 backdrop-blur-xl relative overflow-hidden h-full flex items-center p-5">
-              <p className="text-white text-sm leading-relaxed">
+            <AutoSizeText className="col-span-2 aspect-[2/1] bg-[#ebeaef]">
+              <span className="text-muted-foreground">
                 Lassor designed, developed, and maintains this digital showcase, which features a museum-grade database archive.
                 He also personally acquires, documents, files, and maintains the specimens in his personal archive.
-              </p>
-            </div>
+              </span>
+            </AutoSizeText>
             <Link
               to="/airlines"
-              className="md:col-start-6 md:row-start-1 group flex flex-col overflow-hidden
+              className="group flex flex-col overflow-hidden
                          focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
             >
-              <div className="aspect-square bg-black/60 backdrop-blur-xl relative overflow-hidden transition-all duration-200 group-hover:scale-[1.02] group-hover:bg-black/70">
+              <div className="aspect-square bg-[#ebeaef] relative overflow-hidden">
                 <AirlineLogoTicker airlines={allAirlines} delayMs={0} />
-                <div className="absolute inset-x-0 bottom-0 bg-black px-3 py-2 flex items-center justify-between">
-                  <span className="text-sm font-medium text-white">
-                    Airlines
-                  </span>
-                  <span className="text-sm font-bold text-white">
+                <div className="absolute inset-x-0 bottom-3 flex flex-col items-center gap-0.5">
+                  <span className="text-lg font-bold tracking-tight text-foreground">
                     {airlineCount}
+                  </span>
+                  <span className="text-sm font-medium text-muted-foreground">
+                    Airlines
                   </span>
                 </div>
               </div>
             </Link>
             <Link
               to="/decades"
-              className="md:col-start-8 md:row-start-2 group flex flex-col overflow-hidden
+              className="group flex flex-col overflow-hidden
                          focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
             >
-              <div className="aspect-square bg-black/60 backdrop-blur-xl relative overflow-hidden transition-all duration-200 group-hover:scale-[1.02] group-hover:bg-black/70">
+              <div className="aspect-square bg-[#ebeaef] relative overflow-hidden">
                 <DecadeTicker years={years} delayMs={600} />
-                <div className="absolute inset-x-0 bottom-0 bg-black px-3 py-2 flex items-center justify-between">
-                  <span className="text-sm font-medium text-white">
-                    Years
-                  </span>
-                  <span className="text-sm font-bold text-white">
+                <div className="absolute inset-x-0 bottom-3 flex flex-col items-center gap-0.5">
+                  <span className="text-lg font-bold tracking-tight text-foreground">
                     {yearSpan ?? 0}
+                  </span>
+                  <span className="text-sm font-medium text-muted-foreground">
+                    Years
                   </span>
                 </div>
               </div>
             </Link>
             <Link
               to="/search"
-              className="md:col-start-1 md:row-start-3 group flex flex-col overflow-hidden
+              className="group flex flex-col overflow-hidden
                          focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
             >
-              <div className="aspect-square bg-black/60 backdrop-blur-xl relative overflow-hidden transition-all duration-200 group-hover:scale-[1.02] group-hover:bg-black/70">
+              <div className="aspect-square bg-[#ebeaef] relative overflow-hidden">
                 <CardThumbnailTicker cards={cards} delayMs={1200} />
-                <div className="absolute inset-x-0 bottom-0 bg-black px-3 py-2 flex items-center justify-between">
-                  <span className="text-sm font-medium text-white">
-                    Cards
-                  </span>
-                  <span className="text-sm font-bold text-white">
+                <div className="absolute inset-x-0 bottom-3 flex flex-col items-center gap-0.5">
+                  <span className="text-lg font-bold tracking-tight text-foreground">
                     {cardCount}
+                  </span>
+                  <span className="text-sm font-medium text-muted-foreground">
+                    Cards
                   </span>
                 </div>
               </div>
             </Link>
             <Link
               to="/countries"
-              className="md:col-start-3 md:row-start-3 group flex flex-col overflow-hidden
+              className="group flex flex-col overflow-hidden
                          focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
             >
-              <div className="aspect-square bg-black/60 backdrop-blur-xl relative overflow-hidden transition-all duration-200 group-hover:scale-[1.02] group-hover:bg-black/70">
+              <div className="aspect-square bg-[#ebeaef] relative overflow-hidden">
                 <CountryFlagTicker countries={countries} delayMs={1800} />
-                <div className="absolute inset-x-0 bottom-0 bg-black px-3 py-2 flex items-center justify-between">
-                  <span className="text-sm font-medium text-white">
-                    Countries
-                  </span>
-                  <span className="text-sm font-bold text-white">
+                <div className="absolute inset-x-0 bottom-3 flex flex-col items-center gap-0.5">
+                  <span className="text-lg font-bold tracking-tight text-foreground">
                     {countryCount}
+                  </span>
+                  <span className="text-sm font-medium text-muted-foreground">
+                    Countries
                   </span>
                 </div>
               </div>
             </Link>
             <Link
               to="/manufacturers"
-              className="md:col-start-4 md:row-start-4 group flex flex-col overflow-hidden
+              className="group flex flex-col overflow-hidden
                          focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
             >
-              <div className="aspect-square bg-black/60 backdrop-blur-xl relative overflow-hidden transition-all duration-200 group-hover:scale-[1.02] group-hover:bg-black/70">
+              <div className="aspect-square bg-[#ebeaef] relative overflow-hidden">
                 <ManufacturerLogoTicker manufacturers={allManufacturers} delayMs={2400} />
-                <div className="absolute inset-x-0 bottom-0 bg-black px-3 py-2 flex items-center justify-between">
-                  <span className="text-sm font-medium text-white">
-                    Manufacturers
-                  </span>
-                  <span className="text-sm font-bold text-white">
+                <div className="absolute inset-x-0 bottom-3 flex flex-col items-center gap-0.5">
+                  <span className="text-lg font-bold tracking-tight text-foreground">
                     {allManufacturers.length}
+                  </span>
+                  <span className="text-sm font-medium text-muted-foreground">
+                    Manufacturers
                   </span>
                 </div>
               </div>
             </Link>
+            {recentCards.map((card) => (
+              <PublicCardTile key={card.id} card={card} />
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* Hero Carousel */}
+      <CardCarousel />
+
+      {/* Featured Airlines */}
+      {airlines.length > 0 && (
+        <section className="max-w-6xl mx-auto px-6 py-12">
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="text-xl font-semibold tracking-tight">Airlines</h2>
+            <Link
+              to="/airlines"
+              className="text-sm text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1"
+            >
+              View all <ArrowRight className="h-3.5 w-3.5" />
+            </Link>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-5">
+            {airlines.map((airline) => (
+              <EntityTile
+                key={airline.id}
+                to={`/airlines/${airline.id}`}
+                name={airline.name}
+                logoUrl={airline.logo_url}
+              />
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* Featured Manufacturers */}
+      {manufacturers.length > 0 && (
+        <section className="max-w-6xl mx-auto px-6 py-12">
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="text-xl font-semibold tracking-tight">Manufacturers</h2>
+            <Link
+              to="/manufacturers"
+              className="text-sm text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1"
+            >
+              View all <ArrowRight className="h-3.5 w-3.5" />
+            </Link>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-5">
+            {manufacturers.map((mfr) => (
+              <EntityTile
+                key={mfr.id}
+                to={`/manufacturers/${mfr.id}`}
+                name={mfr.name}
+                logoUrl={mfr.logo_url}
+              />
+            ))}
           </div>
         </section>
       )}
     </div>
   );
 };
+
+const EntityTile: React.FC<{
+  to: string;
+  name: string;
+  logoUrl: string | null;
+}> = ({ to, name, logoUrl }) => (
+  <Link
+    to={to}
+    className="group flex flex-col overflow-hidden
+               focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+  >
+    <div className="aspect-square bg-[#ebeaef] relative overflow-hidden flex items-center justify-center">
+      {logoUrl ? (
+        <img src={logoUrl} alt={name} className="w-3/4 h-3/4 object-contain" />
+      ) : (
+        <span className="text-4xl font-bold text-muted-foreground">
+          {name.charAt(0)}
+        </span>
+      )}
+    </div>
+    <div className="pt-2 px-0.5">
+      <p className="text-sm font-medium truncate">{name}</p>
+    </div>
+  </Link>
+);
