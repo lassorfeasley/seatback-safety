@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { Loader2, ArrowLeft } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { fetchCards, type CardSummary } from '@/lib/safetyCardService';
 import { PublicCardTile } from './PublicCardTile';
+import { useBreadcrumbs, type Breadcrumb } from './BreadcrumbContext';
 
 const DECADES = ['1960', '1970', '1980', '1990', '2000', '2010', '2020'];
 
@@ -59,6 +60,7 @@ export const PublicDecadeDetail: React.FC = () => {
   const { decade } = useParams<{ decade: string }>();
   const [cards, setCards] = useState<CardSummary[]>([]);
   const [loading, setLoading] = useState(true);
+  const { setBreadcrumbs, clearBreadcrumbs } = useBreadcrumbs();
 
   const start = parseInt(decade ?? '0');
   const end = start + 10;
@@ -74,6 +76,16 @@ export const PublicDecadeDetail: React.FC = () => {
     });
   }, [start, end]);
 
+  useEffect(() => {
+    if (!decade) return;
+    const crumbs: Breadcrumb[] = [
+      { label: 'Decades', to: '/decades' },
+      { label: `${decade}'s` },
+    ];
+    setBreadcrumbs(crumbs);
+    return () => clearBreadcrumbs();
+  }, [decade, setBreadcrumbs, clearBreadcrumbs]);
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-32">
@@ -84,16 +96,6 @@ export const PublicDecadeDetail: React.FC = () => {
 
   return (
     <div className="max-w-6xl mx-auto px-6 py-10">
-      <Link
-        to="/decades"
-        className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground
-                   transition-colors mb-6"
-      >
-        <ArrowLeft className="h-4 w-4" /> Decades
-      </Link>
-
-      <h1 className="text-2xl font-semibold tracking-tight mb-8">{decade}'s</h1>
-
       {cards.length === 0 ? (
         <p className="text-muted-foreground py-12 text-center">No cards from this decade yet.</p>
       ) : (

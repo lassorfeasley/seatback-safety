@@ -37,7 +37,6 @@ export const PublicCardDetail: React.FC = () => {
       })
       .filter(Boolean)
       .join(', ');
-    const airlineModel = [card.airline_name, modelParts].filter(Boolean).join(' ') || null;
 
     const crumbs: Breadcrumb[] = [];
     if (card.airline_name) {
@@ -52,7 +51,7 @@ export const PublicCardDetail: React.FC = () => {
         to: manufacturerId ? `/manufacturers/${manufacturerId}` : undefined,
       });
     }
-    if (airlineModel) crumbs.push({ label: airlineModel });
+    if (modelParts) crumbs.push({ label: modelParts });
     if (card.published_year) {
       const decade = Math.floor(card.published_year / 10) * 10;
       crumbs.push({ label: String(card.published_year), to: `/decades/${decade}` });

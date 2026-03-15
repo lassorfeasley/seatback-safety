@@ -1,15 +1,17 @@
 import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { Loader2, ArrowLeft } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { fetchAirlineDetail, type AirlineDetail } from '@/lib/lookupService';
 import { fetchCards, type CardSummary } from '@/lib/safetyCardService';
 import { PublicCardTile } from './PublicCardTile';
+import { useBreadcrumbs, type Breadcrumb } from './BreadcrumbContext';
 
 export const PublicAirlineDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const [airline, setAirline] = useState<AirlineDetail | null>(null);
   const [cards, setCards] = useState<CardSummary[]>([]);
   const [loading, setLoading] = useState(true);
+  const { setBreadcrumbs, clearBreadcrumbs } = useBreadcrumbs();
 
   useEffect(() => {
     if (!id) return;
@@ -22,6 +24,16 @@ export const PublicAirlineDetail: React.FC = () => {
       setLoading(false);
     });
   }, [id]);
+
+  useEffect(() => {
+    if (!airline) return;
+    const crumbs: Breadcrumb[] = [
+      { label: 'Airlines', to: '/airlines' },
+      { label: airline.name },
+    ];
+    setBreadcrumbs(crumbs);
+    return () => clearBreadcrumbs();
+  }, [airline, setBreadcrumbs, clearBreadcrumbs]);
 
   if (loading) {
     return (
@@ -44,32 +56,6 @@ export const PublicAirlineDetail: React.FC = () => {
 
   return (
     <div className="max-w-6xl mx-auto px-6 py-10">
-      <Link
-        to="/airlines"
-        className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground
-                   transition-colors mb-6"
-      >
-        <ArrowLeft className="h-4 w-4" /> Airlines
-      </Link>
-
-      <div className="flex items-center gap-4 mb-8">
-        {airline.logo_url && (
-          <div className="h-14 w-14 bg-muted/60 flex items-center justify-center
-                          overflow-hidden flex-shrink-0">
-            <img src={airline.logo_url} alt={airline.name}
-                 className="h-full w-full object-contain" />
-          </div>
-        )}
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">{airline.name}</h1>
-          <p className="text-sm text-muted-foreground">
-            {[airline.country, airline.iata_code ? `IATA: ${airline.iata_code}` : null]
-              .filter(Boolean)
-              .join(' · ') || 'Airline'}
-          </p>
-        </div>
-      </div>
-
       {airline.description && (
         <p className="text-sm text-muted-foreground mb-8 max-w-2xl">{airline.description}</p>
       )}
