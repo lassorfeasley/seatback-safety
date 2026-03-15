@@ -5,8 +5,6 @@ import { fetchCountriesBrowse, type CountryBrowse } from '@/lib/lookupService';
 import { countryToFlag } from '@/lib/countryFlags';
 import { useBreadcrumbs } from './BreadcrumbContext';
 
-const ACCENT = 'oklch(50% 0.134 242.749)';
-
 type SortKey = 'name-asc' | 'name-desc' | 'cards-desc';
 
 const SORT_OPTIONS: { value: SortKey; label: string }[] = [
