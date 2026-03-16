@@ -200,6 +200,18 @@ export const PublicHome: React.FC = () => {
   const [allAirlines, setAllAirlines] = useState<AirlineBrowse[]>([]);
   const [allManufacturers, setAllManufacturers] = useState<ManufacturerBrowse[]>([]);
   const [loading, setLoading] = useState(true);
+  const [mouse, setMouse] = useState({ x: 50, y: 50 });
+
+  useEffect(() => {
+    const onMove = (e: MouseEvent) => {
+      setMouse({
+        x: (e.clientX / window.innerWidth) * 100,
+        y: (e.clientY / window.innerHeight) * 100,
+      });
+    };
+    window.addEventListener('mousemove', onMove);
+    return () => window.removeEventListener('mousemove', onMove);
+  }, []);
 
   useEffect(() => {
     Promise.all([
@@ -250,15 +262,22 @@ export const PublicHome: React.FC = () => {
               ))}
             </div>
           </div>
+          <div
+            className="fixed inset-0 pointer-events-none transition-none"
+            style={{
+              zIndex: 5,
+              background: `radial-gradient(circle 400px at ${mouse.x}% ${mouse.y}%, transparent 0%, rgba(0,0,0,0.35) 100%)`,
+            }}
+          />
           <div className="relative z-10 grid grid-cols-2 sm:grid-cols-6 md:grid-cols-8 md:grid-rows-[repeat(5,1fr)] gap-3 auto-rows-auto md:auto-rows-fr pointer-events-none">
-            <AutoSizeText className="col-span-2 row-start-1 sm:col-span-4 md:col-span-4 md:col-start-1 md:row-start-1 md:row-span-2 bg-white/60 backdrop-blur-xl rounded-lg border border-gray-200 pointer-events-auto">
+            <AutoSizeText className="col-span-2 row-start-1 sm:col-span-4 md:col-span-4 md:col-start-1 md:row-start-1 md:row-span-2 bg-white/70 backdrop-blur-xl rounded-lg border border-gray-200 pointer-events-auto">
               <span className="text-black font-medium">
                 Seatback Safety is <a href="https://www.lassor.com" target="_blank" rel="noopener noreferrer" className="text-red-600 hover:underline">Lassor Feasley's</a>
                 {' '}personal collection of airline seatback safety procedure cards.
                 The artifacts document the intersection of aviation, graphic design, and mass media.
               </span>
             </AutoSizeText>
-            <div className="col-span-2 row-start-4 sm:col-span-3 md:col-start-6 md:row-start-3 md:row-span-1 bg-white/60 backdrop-blur-xl rounded-lg border border-gray-200 relative overflow-hidden h-full flex items-center p-5 pointer-events-auto">
+            <div className="col-span-2 row-start-4 sm:col-span-3 md:col-start-6 md:row-start-3 md:row-span-1 bg-white/70 backdrop-blur-xl rounded-lg border border-gray-200 relative overflow-hidden h-full flex items-center p-5 pointer-events-auto">
               <p className="text-black text-sm leading-relaxed">
                 Lassor designed, developed, and maintains this digital showcase, which features a museum-grade database archive.
                 He also personally acquires, documents, files, and maintains the specimens in his personal archive.
@@ -269,7 +288,7 @@ export const PublicHome: React.FC = () => {
               className="col-start-2 row-start-2 md:col-start-6 md:row-start-1 group relative pointer-events-auto
                          focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
             >
-              <div className="aspect-square w-full bg-white/60 backdrop-blur-xl rounded-lg border border-gray-200 relative overflow-visible transition-all duration-200 group-hover:scale-[1.02] group-hover:bg-white/70">
+              <div className="aspect-square w-full bg-white/70 backdrop-blur-xl rounded-lg border border-gray-200 relative overflow-visible transition-all duration-150 group-hover:scale-[1.02] group-hover:bg-white/80">
                 <div className="absolute inset-0 overflow-hidden">
                   <AirlineLogoTicker airlines={allAirlines} delayMs={0} />
                 </div>
@@ -283,7 +302,7 @@ export const PublicHome: React.FC = () => {
               className="col-start-1 row-start-3 md:col-start-3 md:row-start-4 group relative pointer-events-auto
                          focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
             >
-              <div className="aspect-square w-full bg-white/60 backdrop-blur-xl rounded-lg border border-gray-200 relative overflow-visible transition-all duration-200 group-hover:scale-[1.02] group-hover:bg-white/70">
+              <div className="aspect-square w-full bg-white/70 backdrop-blur-xl rounded-lg border border-gray-200 relative overflow-visible transition-all duration-150 group-hover:scale-[1.02] group-hover:bg-white/80">
                 <div className="absolute inset-0 overflow-hidden">
                   <CardThumbnailTicker cards={cards} delayMs={1200} />
                 </div>
@@ -297,7 +316,7 @@ export const PublicHome: React.FC = () => {
               className="col-start-2 row-start-5 md:col-start-8 md:row-start-2 group relative pointer-events-auto
                          focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
             >
-              <div className="aspect-square w-full bg-white/60 backdrop-blur-xl rounded-lg border border-gray-200 relative overflow-visible transition-all duration-200 group-hover:scale-[1.02] group-hover:bg-white/70">
+              <div className="aspect-square w-full bg-white/70 backdrop-blur-xl rounded-lg border border-gray-200 relative overflow-visible transition-all duration-150 group-hover:scale-[1.02] group-hover:bg-white/80">
                 <div className="absolute inset-0 overflow-hidden">
                   <DecadeTicker years={years} delayMs={600} />
                 </div>
@@ -311,7 +330,7 @@ export const PublicHome: React.FC = () => {
               className="col-start-1 row-start-6 md:col-start-5 md:row-start-4 group relative pointer-events-auto
                          focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
             >
-              <div className="aspect-square w-full bg-white/60 backdrop-blur-xl rounded-lg border border-gray-200 relative overflow-visible transition-all duration-200 group-hover:scale-[1.02] group-hover:bg-white/70">
+              <div className="aspect-square w-full bg-white/70 backdrop-blur-xl rounded-lg border border-gray-200 relative overflow-visible transition-all duration-150 group-hover:scale-[1.02] group-hover:bg-white/80">
                 <div className="absolute inset-0 overflow-hidden">
                   <CountryFlagTicker countries={countries} delayMs={1800} />
                 </div>
@@ -325,7 +344,7 @@ export const PublicHome: React.FC = () => {
               className="col-start-2 row-start-7 md:col-start-6 md:row-start-5 group relative pointer-events-auto
                          focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
             >
-              <div className="aspect-square w-full bg-white/60 backdrop-blur-xl rounded-lg border border-gray-200 relative overflow-visible transition-all duration-200 group-hover:scale-[1.02] group-hover:bg-white/70">
+              <div className="aspect-square w-full bg-white/70 backdrop-blur-xl rounded-lg border border-gray-200 relative overflow-visible transition-all duration-150 group-hover:scale-[1.02] group-hover:bg-white/80">
                 <div className="absolute inset-0 overflow-hidden">
                   <ManufacturerLogoTicker manufacturers={allManufacturers} delayMs={2400} />
                 </div>

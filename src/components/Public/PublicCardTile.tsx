@@ -13,7 +13,7 @@ export const PublicCardTile: React.FC<{ card: CardSummary }> = ({ card }) => {
       className="group flex flex-col overflow-hidden
                  focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
     >
-      <div className="aspect-square bg-[#ebeaef] relative overflow-hidden transition-transform duration-200 group-hover:scale-110">
+      <div className="aspect-square bg-[#ebeaef] relative overflow-hidden transition-transform duration-150 group-hover:scale-110">
         {imgSrc ? (
           <img
             src={imgSrc}
