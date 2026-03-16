@@ -924,6 +924,9 @@ const MetadataEditor: React.FC<MetadataEditorProps> = ({ card, onSave, onCancel,
           variant: a.variant?.replace(/^-+/, '').trim() || null,
         })) ?? [],
       };
+      if (normalized.suggested_title && !normalized.airline && !normalized.aircraft?.some((a) => a.model)) {
+        normalized.suggested_title = null;
+      }
       setSuggestions(normalized);
     } else {
       alert(`AI analysis failed: ${result.error}`);

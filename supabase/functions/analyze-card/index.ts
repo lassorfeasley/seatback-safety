@@ -25,7 +25,7 @@ Guidelines:
 - Languages should be an array of language names found on the card
 - published_year: Look carefully for a 4-digit year anywhere on the card. If no standalone year is visible, try to extract one from the revision string, date codes, or document numbers. Two-digit years are common — interpret them as 19xx for values 50-99 and 20xx for values 00-49. Examples: "I/P 3 FEB 2002" → 2002, "05JAN22" → 2022, "REV 09/2019" → 2019, "10APR.12.092" → 2012, "REV. 6/98" → 1998, "EB-250 REV. 6/98" → 1998, "03/01" → 2001, "Rev A 11/87" → 1987, "7/05" → 2005. Revision codes are often cryptic alphanumeric strings that do NOT contain a date — only extract a year if you are confident one is embedded.
 - revision: Capture the full revision identifier, date code, or document number exactly as printed on the card, including any cryptic alphanumeric strings
-- suggested_title should combine airline + aircraft in a natural way (e.g. "Republic Airways E170/175 Safety Card")
+- suggested_title should combine airline + aircraft in a natural way (e.g. "Republic Airways E170/175 Safety Card"). If you cannot identify BOTH the airline and at least one aircraft model, return null for suggested_title — never return a generic fallback like "Safety Card" or "Aircraft Safety Card"
 - Only include information you can actually see on the card. Do not fabricate details, but DO use standard aviation knowledge to infer the manufacturer from the model designation (e.g. "MD-11" implies McDonnell Douglas, "A320" implies Airbus, "747" implies Boeing).`;
 
 Deno.serve(async (req: Request) => {
