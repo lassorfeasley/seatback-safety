@@ -200,18 +200,6 @@ export const PublicHome: React.FC = () => {
   const [allAirlines, setAllAirlines] = useState<AirlineBrowse[]>([]);
   const [allManufacturers, setAllManufacturers] = useState<ManufacturerBrowse[]>([]);
   const [loading, setLoading] = useState(true);
-  const [mouse, setMouse] = useState({ x: 50, y: 50 });
-
-  useEffect(() => {
-    const onMove = (e: MouseEvent) => {
-      setMouse({
-        x: (e.clientX / window.innerWidth) * 100,
-        y: (e.clientY / window.innerHeight) * 100,
-      });
-    };
-    window.addEventListener('mousemove', onMove);
-    return () => window.removeEventListener('mousemove', onMove);
-  }, []);
 
   useEffect(() => {
     Promise.all([
@@ -262,13 +250,7 @@ export const PublicHome: React.FC = () => {
               ))}
             </div>
           </div>
-          <div
-            className="fixed inset-0 pointer-events-none transition-none"
-            style={{
-              zIndex: 5,
-              background: `radial-gradient(circle 400px at ${mouse.x}% ${mouse.y}%, transparent 0%, rgba(0,0,0,0.35) 100%)`,
-            }}
-          />
+          <div className="fixed inset-0 bg-white/50 backdrop-blur-[2px] pointer-events-none" style={{ zIndex: 5 }} />
           <div className="relative z-10 grid grid-cols-2 sm:grid-cols-6 md:grid-cols-8 md:grid-rows-[repeat(5,1fr)] gap-3 auto-rows-auto md:auto-rows-fr pointer-events-none">
             <AutoSizeText className="col-span-2 row-start-1 sm:col-span-4 md:col-span-4 md:col-start-1 md:row-start-1 md:row-span-2 bg-white/70 backdrop-blur-xl rounded-lg border border-gray-200 pointer-events-auto">
               <span className="text-black font-medium">
