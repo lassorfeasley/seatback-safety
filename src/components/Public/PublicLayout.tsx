@@ -173,7 +173,7 @@ const PublicLayoutInner: React.FC = () => {
 
         {/* Tagline / Breadcrumb / Toolbar bar */}
         <div className="border-t border-white/20">
-          <div className={`max-w-6xl mx-auto h-10 flex items-center gap-3
+          <div className={`max-w-6xl mx-auto min-h-10 py-2 sm:py-0 sm:h-10 flex items-center gap-3
                           text-xs text-white tracking-wide uppercase ${toolbar ? '' : 'px-6'}`}
           >
             {toolbar ? (
@@ -192,7 +192,7 @@ const PublicLayoutInner: React.FC = () => {
                 </span>
               ))
             ) : (
-              <a href="https://www.lassor.com" target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 hover:text-white/80 transition-colors">
+              <a href="https://www.lassor.com" target="_blank" rel="noopener noreferrer" className="flex flex-col sm:flex-row sm:items-center gap-0.5 sm:gap-3 hover:text-white/80 transition-colors">
                 <span>✈️ We collect seatback safety cards.</span>
                 <span>🧳 Created by Lassor Feasley.</span>
               </a>

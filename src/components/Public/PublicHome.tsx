@@ -106,7 +106,7 @@ function CrossfadeShell({ itemKey, children }: { itemKey: string; children: Reac
   }, [itemKey, children, prevKey]);
 
   return (
-    <div className="absolute inset-0 bottom-9 overflow-hidden">
+    <div className="absolute inset-0 overflow-hidden">
       {layers.map((layer) => (
         <div
           key={layer.key}
@@ -190,7 +190,7 @@ function DecadeTicker({ years, delayMs = 0 }: { years: number[]; delayMs?: numbe
   const label = `'${String(decade).slice(-2)}s`;
   return (
     <CrossfadeShell itemKey={String(decade)}>
-      <span className="text-7xl md:text-8xl font-bold tracking-tight text-white/20">{label}</span>
+      <span className="text-7xl md:text-8xl font-bold tracking-tight text-black/20">{label}</span>
     </CrossfadeShell>
   );
 }
@@ -241,7 +241,7 @@ export const PublicHome: React.FC = () => {
       {recentCards.length > 0 && (
         <section className="max-w-6xl mx-auto px-6 pt-12 pb-0 relative min-h-dvh">
           <div
-            className="absolute overflow-hidden"
+            className="fixed overflow-hidden"
             style={{ left: '50%', right: '50%', marginLeft: '-66vw', marginRight: '-66vw', top: '-6rem', bottom: '-6rem' }}
           >
             <div className="marquee-scroll grid grid-cols-6 sm:grid-cols-8 md:grid-cols-12 gap-3">
@@ -250,105 +250,91 @@ export const PublicHome: React.FC = () => {
               ))}
             </div>
           </div>
-          <div className="relative z-10 grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 md:grid-rows-[repeat(5,1fr)] gap-3 auto-rows-fr pointer-events-none">
-            <AutoSizeText className="col-span-4 md:col-start-1 md:row-start-1 md:row-span-2 bg-black/60 backdrop-blur-xl pointer-events-auto">
-              <span className="text-white font-medium">
-                Seatback Safety is <a href="https://www.lassor.com" target="_blank" rel="noopener noreferrer" className="text-red-400 hover:underline">Lassor Feasley's</a>
+          <div className="relative z-10 grid grid-cols-2 sm:grid-cols-6 md:grid-cols-8 md:grid-rows-[repeat(5,1fr)] gap-3 auto-rows-auto md:auto-rows-fr pointer-events-none">
+            <AutoSizeText className="col-span-2 row-start-1 sm:col-span-4 md:col-span-4 md:col-start-1 md:row-start-1 md:row-span-2 bg-white/60 backdrop-blur-xl rounded-lg border border-gray-200 pointer-events-auto">
+              <span className="text-black font-medium">
+                Seatback Safety is <a href="https://www.lassor.com" target="_blank" rel="noopener noreferrer" className="text-red-600 hover:underline">Lassor Feasley's</a>
                 {' '}personal collection of airline seatback safety procedure cards.
                 The artifacts document the intersection of aviation, graphic design, and mass media.
               </span>
             </AutoSizeText>
-            <div className="col-span-3 md:col-start-6 md:row-start-3 md:row-span-1 bg-black/60 backdrop-blur-xl relative overflow-hidden h-full flex items-center p-5 pointer-events-auto">
-              <p className="text-white text-sm leading-relaxed">
+            <div className="col-span-2 row-start-4 sm:col-span-3 md:col-start-6 md:row-start-3 md:row-span-1 bg-white/60 backdrop-blur-xl rounded-lg border border-gray-200 relative overflow-hidden h-full flex items-center p-5 pointer-events-auto">
+              <p className="text-black text-sm leading-relaxed">
                 Lassor designed, developed, and maintains this digital showcase, which features a museum-grade database archive.
                 He also personally acquires, documents, files, and maintains the specimens in his personal archive.
               </p>
             </div>
             <Link
               to="/airlines"
-              className="md:col-start-6 md:row-start-1 group flex flex-col overflow-hidden pointer-events-auto
+              className="col-start-2 row-start-2 md:col-start-6 md:row-start-1 group relative pointer-events-auto
                          focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
             >
-              <div className="aspect-square bg-black/60 backdrop-blur-xl relative overflow-hidden transition-all duration-200 group-hover:scale-[1.02] group-hover:bg-black/70">
-                <AirlineLogoTicker airlines={allAirlines} delayMs={0} />
-                <div className="absolute inset-x-0 bottom-0 bg-black px-3 py-2 flex items-center justify-between">
-                  <span className="text-sm font-medium text-white">
-                    Airlines
-                  </span>
-                  <span className="text-sm font-bold text-white">
-                    {airlineCount}
-                  </span>
+              <div className="aspect-square w-full bg-white/60 backdrop-blur-xl rounded-lg border border-gray-200 relative overflow-visible transition-all duration-200 group-hover:scale-[1.02] group-hover:bg-white/70">
+                <div className="absolute inset-0 overflow-hidden">
+                  <AirlineLogoTicker airlines={allAirlines} delayMs={0} />
                 </div>
-              </div>
-            </Link>
-            <Link
-              to="/decades"
-              className="md:col-start-8 md:row-start-2 group flex flex-col overflow-hidden pointer-events-auto
-                         focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-            >
-              <div className="aspect-square bg-black/60 backdrop-blur-xl relative overflow-hidden transition-all duration-200 group-hover:scale-[1.02] group-hover:bg-black/70">
-                <DecadeTicker years={years} delayMs={600} />
-                <div className="absolute inset-x-0 bottom-0 bg-black px-3 py-2 flex items-center justify-between">
-                  <span className="text-sm font-medium text-white">
-                    Years
-                  </span>
-                  <span className="text-sm font-bold text-white">
-                    {yearSpan ?? 0}
-                  </span>
-                </div>
+                <span className="absolute left-1/2 -translate-x-1/2 -bottom-3 px-4 py-1 rounded-md bg-black/70 backdrop-blur-md border border-white/20 text-[11px] font-semibold text-white tracking-wide whitespace-nowrap z-10">
+                  {airlineCount} Airlines
+                </span>
               </div>
             </Link>
             <Link
               to="/search"
-              className="md:col-start-3 md:row-start-4 group flex flex-col overflow-hidden pointer-events-auto
+              className="col-start-1 row-start-3 md:col-start-3 md:row-start-4 group relative pointer-events-auto
                          focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
             >
-              <div className="aspect-square bg-black/60 backdrop-blur-xl relative overflow-hidden transition-all duration-200 group-hover:scale-[1.02] group-hover:bg-black/70">
-                <CardThumbnailTicker cards={cards} delayMs={1200} />
-                <div className="absolute inset-x-0 bottom-0 bg-black px-3 py-2 flex items-center justify-between">
-                  <span className="text-sm font-medium text-white">
-                    Cards
-                  </span>
-                  <span className="text-sm font-bold text-white">
-                    {cardCount}
-                  </span>
+              <div className="aspect-square w-full bg-white/60 backdrop-blur-xl rounded-lg border border-gray-200 relative overflow-visible transition-all duration-200 group-hover:scale-[1.02] group-hover:bg-white/70">
+                <div className="absolute inset-0 overflow-hidden">
+                  <CardThumbnailTicker cards={cards} delayMs={1200} />
                 </div>
+                <span className="absolute left-1/2 -translate-x-1/2 -bottom-3 px-4 py-1 rounded-md bg-black/70 backdrop-blur-md border border-white/20 text-[11px] font-semibold text-white tracking-wide whitespace-nowrap z-10">
+                  {cardCount} Cards
+                </span>
+              </div>
+            </Link>
+            <Link
+              to="/decades"
+              className="col-start-2 row-start-5 md:col-start-8 md:row-start-2 group relative pointer-events-auto
+                         focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+            >
+              <div className="aspect-square w-full bg-white/60 backdrop-blur-xl rounded-lg border border-gray-200 relative overflow-visible transition-all duration-200 group-hover:scale-[1.02] group-hover:bg-white/70">
+                <div className="absolute inset-0 overflow-hidden">
+                  <DecadeTicker years={years} delayMs={600} />
+                </div>
+                <span className="absolute left-1/2 -translate-x-1/2 -bottom-3 px-4 py-1 rounded-md bg-black/70 backdrop-blur-md border border-white/20 text-[11px] font-semibold text-white tracking-wide whitespace-nowrap z-10">
+                  {yearSpan ?? 0} Years
+                </span>
               </div>
             </Link>
             <Link
               to="/countries"
-              className="md:col-start-5 md:row-start-4 group flex flex-col overflow-hidden pointer-events-auto
+              className="col-start-1 row-start-6 md:col-start-5 md:row-start-4 group relative pointer-events-auto
                          focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
             >
-              <div className="aspect-square bg-black/60 backdrop-blur-xl relative overflow-hidden transition-all duration-200 group-hover:scale-[1.02] group-hover:bg-black/70">
-                <CountryFlagTicker countries={countries} delayMs={1800} />
-                <div className="absolute inset-x-0 bottom-0 bg-black px-3 py-2 flex items-center justify-between">
-                  <span className="text-sm font-medium text-white">
-                    Countries
-                  </span>
-                  <span className="text-sm font-bold text-white">
-                    {countryCount}
-                  </span>
+              <div className="aspect-square w-full bg-white/60 backdrop-blur-xl rounded-lg border border-gray-200 relative overflow-visible transition-all duration-200 group-hover:scale-[1.02] group-hover:bg-white/70">
+                <div className="absolute inset-0 overflow-hidden">
+                  <CountryFlagTicker countries={countries} delayMs={1800} />
                 </div>
+                <span className="absolute left-1/2 -translate-x-1/2 -bottom-3 px-4 py-1 rounded-md bg-black/70 backdrop-blur-md border border-white/20 text-[11px] font-semibold text-white tracking-wide whitespace-nowrap z-10">
+                  {countryCount} Countries
+                </span>
               </div>
             </Link>
             <Link
               to="/manufacturers"
-              className="md:col-start-6 md:row-start-5 group flex flex-col overflow-hidden pointer-events-auto
+              className="col-start-2 row-start-7 md:col-start-6 md:row-start-5 group relative pointer-events-auto
                          focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
             >
-              <div className="aspect-square bg-black/60 backdrop-blur-xl relative overflow-hidden transition-all duration-200 group-hover:scale-[1.02] group-hover:bg-black/70">
-                <ManufacturerLogoTicker manufacturers={allManufacturers} delayMs={2400} />
-                <div className="absolute inset-x-0 bottom-0 bg-black px-3 py-2 flex items-center justify-between">
-                  <span className="text-sm font-medium text-white">
-                    Makes
-                  </span>
-                  <span className="text-sm font-bold text-white">
-                    {allManufacturers.length}
-                  </span>
+              <div className="aspect-square w-full bg-white/60 backdrop-blur-xl rounded-lg border border-gray-200 relative overflow-visible transition-all duration-200 group-hover:scale-[1.02] group-hover:bg-white/70">
+                <div className="absolute inset-0 overflow-hidden">
+                  <ManufacturerLogoTicker manufacturers={allManufacturers} delayMs={2400} />
                 </div>
+                <span className="absolute left-1/2 -translate-x-1/2 -bottom-3 px-4 py-1 rounded-md bg-black/70 backdrop-blur-md border border-white/20 text-[11px] font-semibold text-white tracking-wide whitespace-nowrap z-10">
+                  {allManufacturers.length} Makes
+                </span>
               </div>
             </Link>
+            <div className="col-span-2 md:hidden" aria-hidden="true">&nbsp;</div>
           </div>
         </section>
       )}
