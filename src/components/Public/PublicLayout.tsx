@@ -4,8 +4,6 @@ import { Search, Send, ChevronDown, Cloud, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { BreadcrumbProvider, useBreadcrumbs } from './BreadcrumbContext';
 
-const ACCENT = 'oklch(50% 0.134 242.749)';
-
 const DECADES = [
   { label: "1960's", to: '/decades/1960' },
   { label: "1970's", to: '/decades/1970' },
