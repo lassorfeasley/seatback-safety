@@ -70,9 +70,9 @@ const PublicLayoutInner: React.FC = () => {
   }, [closeSearch]);
 
   return (
-    <div className="min-h-dvh flex flex-col bg-background">
+    <div className="min-h-dvh flex flex-col bg-background overflow-x-clip">
       {/* Nav bar */}
-      <header className="sticky top-0 z-40" style={{ backgroundColor: ACCENT }}>
+      <header className="sticky top-0 z-40 backdrop-blur-xl" style={{ backgroundColor: 'oklch(50% 0.134 242.749 / 0.7)' }}>
         <div className="max-w-6xl mx-auto px-6">
           <div className="h-14 flex items-center justify-between">
             {/* Left nav links */}
@@ -207,7 +207,7 @@ const PublicLayoutInner: React.FC = () => {
         <Outlet />
       </main>
 
-      <footer className="border-t mt-auto">
+      <footer className="relative z-40 border-t backdrop-blur-xl bg-background/70">
         <div className="max-w-6xl mx-auto px-6 py-6 flex items-start justify-between">
           <div className="flex flex-col gap-0.5">
             <p className="text-sm text-muted-foreground">Developed by Lassor</p>

@@ -241,9 +241,10 @@ export const PublicHome: React.FC = () => {
       {recentCards.length > 0 && (
         <section className="max-w-6xl mx-auto px-6 pt-12 pb-0 relative min-h-dvh">
           <div
-            className="absolute inset-0 overflow-hidden"
+            className="absolute overflow-hidden"
+            style={{ left: '50%', right: '50%', marginLeft: '-66vw', marginRight: '-66vw', top: '-6rem', bottom: '-6rem' }}
           >
-            <div className="marquee-scroll grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 gap-3 px-6">
+            <div className="marquee-scroll grid grid-cols-6 sm:grid-cols-8 md:grid-cols-12 gap-3">
               {Array.from({ length: 10 }, () => recentCards).flat().map((card, i) => (
                 <PublicCardTile key={`${card.id}-${i}`} card={card} />
               ))}
@@ -299,7 +300,7 @@ export const PublicHome: React.FC = () => {
             </Link>
             <Link
               to="/search"
-              className="md:col-start-1 md:row-start-4 group flex flex-col overflow-hidden pointer-events-auto
+              className="md:col-start-3 md:row-start-4 group flex flex-col overflow-hidden pointer-events-auto
                          focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
             >
               <div className="aspect-square bg-black/60 backdrop-blur-xl relative overflow-hidden transition-all duration-200 group-hover:scale-[1.02] group-hover:bg-black/70">
@@ -316,7 +317,7 @@ export const PublicHome: React.FC = () => {
             </Link>
             <Link
               to="/countries"
-              className="md:col-start-3 md:row-start-4 group flex flex-col overflow-hidden pointer-events-auto
+              className="md:col-start-5 md:row-start-4 group flex flex-col overflow-hidden pointer-events-auto
                          focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
             >
               <div className="aspect-square bg-black/60 backdrop-blur-xl relative overflow-hidden transition-all duration-200 group-hover:scale-[1.02] group-hover:bg-black/70">
@@ -333,7 +334,7 @@ export const PublicHome: React.FC = () => {
             </Link>
             <Link
               to="/manufacturers"
-              className="md:col-start-4 md:row-start-5 group flex flex-col overflow-hidden pointer-events-auto
+              className="md:col-start-6 md:row-start-5 group flex flex-col overflow-hidden pointer-events-auto
                          focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
             >
               <div className="aspect-square bg-black/60 backdrop-blur-xl relative overflow-hidden transition-all duration-200 group-hover:scale-[1.02] group-hover:bg-black/70">
