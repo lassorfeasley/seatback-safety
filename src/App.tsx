@@ -10,6 +10,7 @@ import { AdminAirlines } from './components/Admin/AdminAirlines';
 import { AdminAirlineDetail } from './components/Admin/AdminAirlineDetail';
 import { AdminManufacturers } from './components/Admin/AdminManufacturers';
 import { AdminManufacturerDetail } from './components/Admin/AdminManufacturerDetail';
+import { AdminSocial } from './components/Admin/AdminSocial';
 import { PrintLabel } from './components/Admin/PrintLabel';
 import { LoginPage } from './components/Auth/LoginPage';
 import { RequireAuth } from './components/Auth/RequireAuth';
@@ -63,6 +64,7 @@ function App() {
           <Route path="airlines/:id" element={<AdminAirlineDetail />} />
           <Route path="manufacturers" element={<AdminManufacturers />} />
           <Route path="manufacturers/:id" element={<AdminManufacturerDetail />} />
+          <Route path="social" element={<AdminSocial />} />
         </Route>
 
         {/* Fallback */}

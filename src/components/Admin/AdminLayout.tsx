@@ -5,6 +5,7 @@ const SECTION_MAP: Record<string, Section> = {
   '/admin': 'cards',
   '/admin/airlines': 'airlines',
   '/admin/manufacturers': 'manufacturers',
+  '/admin/social': 'social',
 };
 
 export const AdminLayout: React.FC = () => {
@@ -24,6 +25,9 @@ export const AdminLayout: React.FC = () => {
         break;
       case 'manufacturers':
         navigate('/admin/manufacturers');
+        break;
+      case 'social':
+        navigate('/admin/social');
         break;
     }
   };

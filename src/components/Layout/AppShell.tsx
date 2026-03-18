@@ -4,11 +4,12 @@ import {
   LayoutGrid,
   Plane,
   Factory,
+  Calendar,
   ChevronLeft,
   ChevronRight,
 } from 'lucide-react';
 
-export type Section = 'cards' | 'airlines' | 'manufacturers';
+export type Section = 'cards' | 'airlines' | 'manufacturers' | 'social';
 
 interface NavItem {
   id: Section;
@@ -20,6 +21,7 @@ const NAV_ITEMS: NavItem[] = [
   { id: 'cards', label: 'Cards', icon: <LayoutGrid className="h-5 w-5" /> },
   { id: 'airlines', label: 'Airlines', icon: <Plane className="h-5 w-5" /> },
   { id: 'manufacturers', label: 'Manufacturers', icon: <Factory className="h-5 w-5" /> },
+  { id: 'social', label: 'Social', icon: <Calendar className="h-5 w-5" /> },
 ];
 
 interface AppShellProps {
