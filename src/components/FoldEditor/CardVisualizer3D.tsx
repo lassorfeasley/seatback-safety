@@ -307,6 +307,21 @@ export const CardVisualizer3D: React.FC<CardVisualizer3DProps> = ({
 
   const endDrag = useCallback(() => setIsDragging(false), []);
 
+  useEffect(() => {
+    const el = canvasRef.current;
+    if (!el) return;
+
+    const handleTouchMove = (e: TouchEvent) => {
+      if (e.touches.length === 1) {
+        e.preventDefault();
+        moveDrag(e.touches[0].clientX, e.touches[0].clientY);
+      }
+    };
+
+    el.addEventListener('touchmove', handleTouchMove, { passive: false });
+    return () => el.removeEventListener('touchmove', handleTouchMove);
+  }, [moveDrag]);
+
   const handleCanvasClick = useCallback(() => {
     if (!minimal || dragDistance.current > 5) return;
     if (targetFoldState === 1) {
@@ -614,7 +629,6 @@ export const CardVisualizer3D: React.FC<CardVisualizer3DProps> = ({
           onMouseUp={() => { handleCanvasClick(); endDrag(); }}
           onMouseLeave={() => { if (isDragging) endDrag(); }}
           onTouchStart={(e) => { if (e.touches.length === 1) startDrag(e.touches[0].clientX, e.touches[0].clientY); }}
-          onTouchMove={(e) => { if (e.touches.length === 1) moveDrag(e.touches[0].clientX, e.touches[0].clientY); }}
           onTouchEnd={() => { handleCanvasClick(); endDrag(); }}
         >
           {/* Outer container: user rotation + staticFlipY */}
