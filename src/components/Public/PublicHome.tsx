@@ -472,62 +472,6 @@ export const PublicHome: React.FC = () => {
 
   const filteredSet = useMemo(() => new Set(filteredCards.map((c) => c.id)), [filteredCards]);
 
-  const dissolveDurationsRef = useRef(new Map<string, number>());
-  const dissolvingRef = useRef(new Set<string>());
-  const enteringRef = useRef(new Set<string>());
-  const prevFilteredRef = useRef<Set<string>>(new Set());
-  const dissolveTimersRef = useRef(new Map<string, ReturnType<typeof setTimeout>>());
-  const [animTick, setAnimTick] = useState(0);
-
-  useEffect(() => {
-    const prev = prevFilteredRef.current;
-    const curr = filteredSet;
-    const changed = prev.size !== curr.size || [...curr].some((id) => !prev.has(id));
-    if (!changed) return;
-
-    const newlyHidden: string[] = [];
-    for (const id of prev) {
-      if (!curr.has(id)) newlyHidden.push(id);
-    }
-    const newlyVisible: string[] = [];
-    for (const id of curr) {
-      if (!prev.has(id)) newlyVisible.push(id);
-      dissolvingRef.current.delete(id);
-      dissolveDurationsRef.current.delete(id);
-      const t = dissolveTimersRef.current.get(id);
-      if (t) { clearTimeout(t); dissolveTimersRef.current.delete(id); }
-    }
-
-    if (newlyHidden.length > 0) {
-      for (const id of newlyHidden) {
-        const dur = 500 + Math.random() * 2500;
-        dissolveDurationsRef.current.set(id, dur);
-        dissolvingRef.current.add(id);
-        const timer = setTimeout(() => {
-          dissolvingRef.current.delete(id);
-          dissolveDurationsRef.current.delete(id);
-          dissolveTimersRef.current.delete(id);
-          setAnimTick((g) => g + 1);
-        }, dur + 50);
-        dissolveTimersRef.current.set(id, timer);
-      }
-    }
-
-    if (newlyVisible.length > 0 && prev.size > 0) {
-      for (const id of newlyVisible) enteringRef.current.add(id);
-      setAnimTick((g) => g + 1);
-
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          enteringRef.current.clear();
-          setAnimTick((g) => g + 1);
-        });
-      });
-    }
-
-    prevFilteredRef.current = new Set(curr);
-  }, [filteredSet]);
-
   const isSearch = mode === 'search';
   const cols = computeSearchCols();
 
@@ -542,24 +486,15 @@ export const PublicHome: React.FC = () => {
   const tilePositions = useMemo(() => {
     const colCounters = new Array(cols).fill(0);
     const positions = new Map<string, { col: number; row: number }>();
-    const visibleOrDissolving = new Set([...filteredSet, ...dissolvingRef.current]);
 
     for (const card of cards) {
-      if (!visibleOrDissolving.has(card.id)) continue;
+      if (!filteredSet.has(card.id)) continue;
       const c = cardColumns.get(card.id)!;
       positions.set(card.id, { col: c, row: colCounters[c] });
       colCounters[c]++;
     }
     return { positions, maxRow: Math.max(...colCounters, 0) };
-  }, [cards, filteredSet, cols, animTick, cardColumns]);
-
-  const lastPositionsRef = useRef(new Map<string, { col: number; row: number }>());
-
-  useEffect(() => {
-    for (const [id, pos] of tilePositions.positions) {
-      lastPositionsRef.current.set(id, pos);
-    }
-  }, [tilePositions]);
+  }, [cards, filteredSet, cols, cardColumns]);
 
   if (loading) {
     return (
@@ -703,41 +638,21 @@ export const PublicHome: React.FC = () => {
                 style={{
                   width: cols * CELL - GAP,
                   height: tilePositions.maxRow * CELL + TILE_SIZE,
-                  transition: 'height 500ms cubic-bezier(0.4,0,0.2,1)',
                 }}
               >
-                {cards.map((card) => {
-                  const match = filteredSet.has(card.id);
-                  const isDissolving = dissolvingRef.current.has(card.id);
-                  const isEntering = enteringRef.current.has(card.id);
-                  const pos = tilePositions.positions.get(card.id)
-                    || (isDissolving ? lastPositionsRef.current.get(card.id) : undefined);
-
+                {filteredCards.map((card) => {
+                  const pos = tilePositions.positions.get(card.id);
                   if (!pos) return null;
-                  if (!match && !isDissolving) return null;
-
-                  const x = pos.col * CELL;
-                  const targetY = pos.row * CELL;
-                  const enterFromY = (tilePositions.maxRow + 2) * CELL;
-                  const y = isEntering ? enterFromY : targetY;
-                  const dissolveDur = dissolveDurationsRef.current.get(card.id) ?? 500;
 
                   return (
                     <div
                       key={card.id}
                       style={{
                         position: 'absolute',
-                        left: x,
+                        left: pos.col * CELL,
+                        top: pos.row * CELL,
                         width: TILE_SIZE,
                         height: TILE_SIZE,
-                        transform: `translateY(${y}px)`,
-                        opacity: (match && !isDissolving && !isEntering) ? 1 : 0,
-                        transition: isDissolving
-                          ? `opacity ${dissolveDur}ms cubic-bezier(0.4,0,0.2,1)`
-                          : isEntering
-                            ? 'none'
-                            : 'transform 600ms cubic-bezier(0.4,0,0.2,1), opacity 400ms cubic-bezier(0.4,0,0.2,1)',
-                        pointerEvents: match ? 'auto' : 'none',
                       }}
                     >
                       <InfiniteCardTile card={card} />
