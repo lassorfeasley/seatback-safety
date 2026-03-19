@@ -249,6 +249,14 @@ export async function fetchManufacturersBrowse(): Promise<ManufacturerBrowse[]> 
   })) as ManufacturerBrowse[];
 }
 
+export async function fetchDistinctLanguageCount(): Promise<number> {
+  const { data } = await supabase
+    .from('card_languages')
+    .select('language');
+  if (!data) return 0;
+  return new Set((data as Array<{ language: string }>).map((r) => r.language)).size;
+}
+
 export async function createManufacturer(name: string): Promise<LookupItem> {
   const { data, error } = await supabase
     .from('aircraft_manufacturers')

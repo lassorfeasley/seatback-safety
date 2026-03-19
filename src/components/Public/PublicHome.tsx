@@ -4,7 +4,9 @@ import { Loader2, X, ChevronDown, Info, Search } from 'lucide-react';
 import { fetchCards, type CardSummary } from '@/lib/safetyCardService';
 import {
   fetchManufacturersBrowse, fetchModelsBrowse, fetchVariantsBrowse,
+  fetchAirlinesBrowse, fetchDistinctLanguageCount,
   type ManufacturerBrowse, type ModelBrowse, type VariantBrowse,
+  type AirlineBrowse,
 } from '@/lib/lookupService';
 
 const TILE_SIZE = 140;
@@ -30,7 +32,7 @@ function InfiniteCardTile({ card }: { card: CardSummary }) {
   return (
     <Link
       to={`/cards/${card.id}`}
-      className="block w-full h-full"
+      className="block w-full h-full cursor-[inherit]"
     >
       <div className="w-full h-full bg-[#ebeaef] relative overflow-hidden">
         {imgSrc ? (
@@ -75,15 +77,31 @@ function FilterDropdown({
   onChange: (v: string | null) => void;
 }) {
   const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
   const ref = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setOpen(false);
+        setQuery('');
+      }
     };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, []);
+
+  useEffect(() => {
+    if (open) {
+      setQuery('');
+      setTimeout(() => inputRef.current?.focus(), 0);
+    }
+  }, [open]);
+
+  const filtered = query
+    ? options.filter((opt) => opt.toLowerCase().includes(query.toLowerCase()))
+    : options;
 
   return (
     <div ref={ref} className="relative flex-1 min-w-0">
@@ -95,30 +113,55 @@ function FilterDropdown({
             : 'text-muted-foreground hover:text-foreground'
         }`}
       >
-        <span>{value ? `${label}: ${value}` : label}</span>
-        <ChevronDown className={`h-3 w-3 transition-transform ${open ? 'rotate-180' : ''}`} />
+        <span className="truncate">{value ? `${label}: ${value}` : label}</span>
+        <ChevronDown className={`h-3 w-3 shrink-0 ml-1 transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
       {open && (
-        <div className="absolute top-full left-0 right-0 z-50 bg-white border border-gray-200 shadow-xl max-h-60 overflow-y-auto min-w-[160px]">
-          {value && (
-            <button
-              onClick={() => { onChange(null); setOpen(false); }}
-              className="block w-full text-left px-4 py-1.5 text-xs text-red-500 hover:bg-gray-50 transition-colors"
-            >
-              Clear
-            </button>
-          )}
-          {options.map((opt) => (
-            <button
-              key={opt}
-              onClick={() => { onChange(opt); setOpen(false); }}
-              className={`block w-full text-left px-4 py-1.5 text-xs hover:bg-gray-50 transition-colors ${
-                value === opt ? 'font-semibold text-foreground' : 'text-muted-foreground'
-              }`}
-            >
-              {opt}
-            </button>
-          ))}
+        <div className="absolute top-full left-0 right-0 z-50 bg-white border border-gray-200 shadow-xl min-w-[160px]">
+          <div className="flex items-center gap-1.5 px-3 py-2 border-b border-gray-100">
+            <Search className="h-3 w-3 text-muted-foreground shrink-0" />
+            <input
+              ref={inputRef}
+              type="text"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Escape') { setOpen(false); setQuery(''); }
+                if (e.key === 'Enter' && filtered.length === 1) {
+                  onChange(filtered[0]);
+                  setOpen(false);
+                  setQuery('');
+                }
+              }}
+              placeholder={`Search ${label.toLowerCase()}...`}
+              className="flex-1 bg-transparent text-xs outline-none placeholder:text-muted-foreground/50 min-w-0"
+            />
+          </div>
+          <div className="max-h-52 overflow-y-auto">
+            {value && (
+              <button
+                onClick={() => { onChange(null); setOpen(false); setQuery(''); }}
+                className="block w-full text-left px-4 py-1.5 text-xs text-red-500 hover:bg-gray-50 transition-colors"
+              >
+                Clear
+              </button>
+            )}
+            {filtered.length === 0 ? (
+              <div className="px-4 py-2 text-xs text-muted-foreground">No matches</div>
+            ) : (
+              filtered.map((opt) => (
+                <button
+                  key={opt}
+                  onClick={() => { onChange(opt); setOpen(false); setQuery(''); }}
+                  className={`block w-full text-left px-4 py-1.5 text-xs hover:bg-gray-50 transition-colors ${
+                    value === opt ? 'font-semibold text-foreground' : 'text-muted-foreground'
+                  }`}
+                >
+                  {opt}
+                </button>
+              ))
+            )}
+          </div>
         </div>
       )}
     </div>
@@ -128,12 +171,15 @@ function FilterDropdown({
 export const PublicHome: React.FC = () => {
   const [cards, setCards] = useState<CardSummary[]>([]);
   const [loading, setLoading] = useState(true);
-  const [mode, setMode] = useState<'explore' | 'search' | 'info'>('explore');
+  const [mode, setMode] = useState<'explore' | 'search'>('explore');
+  const [showInfo, setShowInfo] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterAirline, setFilterAirline] = useState<string | null>(null);
   const [filterDecade, setFilterDecade] = useState<number | null>(null);
 
   const [manufacturers, setManufacturers] = useState<ManufacturerBrowse[]>([]);
+  const [allAirlines, setAllAirlines] = useState<AirlineBrowse[]>([]);
+  const [languageCount, setLanguageCount] = useState(0);
   const [models, setModels] = useState<ModelBrowse[]>([]);
   const [variants, setVariants] = useState<VariantBrowse[]>([]);
   const [filterMfr, setFilterMfr] = useState<string | null>(null);
@@ -149,19 +195,22 @@ export const PublicHome: React.FC = () => {
   const targetVelocityRef = useRef({ x: 0, y: 0 });
   const rafRef = useRef<number>(0);
   const lastTimeRef = useRef<number>(0);
-  const modeRef = useRef<'explore' | 'search' | 'info'>('explore');
+  const modeRef = useRef<'explore' | 'search'>('explore');
   const isTouchDevice = useRef(false);
   const touchDragRef = useRef<{ lastX: number; lastY: number } | null>(null);
   const transitioningRef = useRef(false);
+  const autoPanRef = useRef(true);
 
   const [exploreTiles, setExploreTiles] = useState<{ row: number; col: number; x: number; y: number; cardIdx: number }[]>([]);
 
   useEffect(() => { modeRef.current = mode; }, [mode]);
 
   useEffect(() => {
-    Promise.all([fetchCards(), fetchManufacturersBrowse()]).then(([c, m]) => {
+    Promise.all([fetchCards(), fetchManufacturersBrowse(), fetchAirlinesBrowse(), fetchDistinctLanguageCount()]).then(([c, m, a, lc]) => {
       setCards(c);
       setManufacturers(m.filter((x) => x.card_count > 0));
+      setAllAirlines(a.filter((x) => x.card_count > 0));
+      setLanguageCount(lc);
       setLoading(false);
     });
   }, []);
@@ -178,6 +227,10 @@ export const PublicHome: React.FC = () => {
 
   useEffect(() => {
     isTouchDevice.current = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+  }, []);
+
+  useEffect(() => {
+    targetVelocityRef.current = { x: 40, y: -25 };
   }, []);
 
   const applyFilters = useCallback((excludeFilter?: string) => {
@@ -277,6 +330,7 @@ export const PublicHome: React.FC = () => {
   const handleMouseMove = useCallback((e: MouseEvent) => {
     if (isTouchDevice.current) return;
     if (modeRef.current !== 'explore') return;
+    autoPanRef.current = false;
     const vw = window.innerWidth;
     const vh = window.innerHeight;
 
@@ -305,6 +359,7 @@ export const PublicHome: React.FC = () => {
 
   const handleTouchStart = useCallback((e: TouchEvent) => {
     if (modeRef.current !== 'explore') return;
+    autoPanRef.current = false;
     const t = e.touches[0];
     touchDragRef.current = { lastX: t.clientX, lastY: t.clientY };
     targetVelocityRef.current = { x: 0, y: 0 };
@@ -350,7 +405,7 @@ export const PublicHome: React.FC = () => {
       lastTimeRef.current = time;
 
       if (modeRef.current === 'explore' && !transitioningRef.current) {
-        if (isTouchDevice.current) {
+        if (isTouchDevice.current && !autoPanRef.current) {
           setExploreTiles(computeVisible(cameraRef.current.x, cameraRef.current.y, cardCount));
         } else {
           const vel = velocityRef.current;
@@ -403,27 +458,17 @@ export const PublicHome: React.FC = () => {
     }, 600);
   }, [clearAllFilters]);
 
-  const enterInfoMode = useCallback(() => {
-    setMode('info');
-    targetVelocityRef.current = { x: 0, y: 0 };
-    velocityRef.current = { x: 0, y: 0 };
-  }, []);
-
-  const exitInfoMode = useCallback(() => {
-    setMode('explore');
-  }, []);
-
   const handleSearchKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (e.key === 'Escape') exitSearchMode();
   }, [exitSearchMode]);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && mode === 'info') exitInfoMode();
+      if (e.key === 'Escape' && showInfo) setShowInfo(false);
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [mode, exitInfoMode]);
+  }, [showInfo]);
 
   const filteredSet = useMemo(() => new Set(filteredCards.map((c) => c.id)), [filteredCards]);
 
@@ -530,22 +575,9 @@ export const PublicHome: React.FC = () => {
         <div
           ref={containerRef}
           className="fixed inset-0 overflow-hidden bg-background"
-          style={{ cursor: mode === 'info' ? 'default' : 'crosshair' }}
+          style={{ cursor: 'crosshair' }}
         >
           {exploreTiles.map((tile) => {
-            const infoHidden = mode === 'info' && (() => {
-              const vw = window.innerWidth;
-              const vh = window.innerHeight;
-              const panelW = 3 * CELL - GAP;
-              const panelH = 3 * CELL - GAP;
-              const panelLeft = (vw - panelW) / 2;
-              const panelTop = (vh - panelH) / 2;
-              const tileRight = tile.x + TILE_SIZE;
-              const tileBottom = tile.y + TILE_SIZE;
-              return tile.x < panelLeft + panelW && tileRight > panelLeft &&
-                     tile.y < panelTop + panelH && tileBottom > panelTop;
-            })();
-
             return (
               <div
                 key={`${tile.row},${tile.col}`}
@@ -555,49 +587,12 @@ export const PublicHome: React.FC = () => {
                   width: TILE_SIZE,
                   height: TILE_SIZE,
                   willChange: 'transform',
-                  opacity: infoHidden ? 0 : 1,
-                  transition: 'opacity 600ms cubic-bezier(0.4,0,0.2,1)',
                 }}
               >
                 <InfiniteCardTile card={cards[tile.cardIdx]} />
               </div>
             );
           })}
-
-          {mode === 'info' && (
-            <div
-              className="fixed z-40 flex items-center justify-center pointer-events-none"
-              style={{
-                width: 3 * CELL - GAP,
-                height: 3 * CELL - GAP,
-                left: '50%',
-                top: '50%',
-                transform: 'translate(-50%, -50%)',
-              }}
-            >
-              <div
-                className="w-full h-full p-6 pointer-events-auto"
-                style={{ backgroundColor: '#ebeaef' }}
-              >
-                <div className="flex flex-col justify-center h-full gap-3">
-                  <p className="text-sm font-medium text-foreground/80 leading-relaxed">
-                    <span className="font-semibold text-foreground">Seatback Safety</span> is{' '}
-                    <a href="https://www.lassor.com" target="_blank" rel="noopener noreferrer" className="text-red-600 hover:underline">
-                      Lassor Feasley's
-                    </a>{' '}
-                    personal collection of airline seatback safety procedure cards.
-                  </p>
-                  <p className="text-xs text-muted-foreground leading-relaxed">
-                    The artifacts document the intersection of aviation, graphic design, and mass media.
-                    Lassor designed, developed, and maintains this digital showcase, which features a museum-grade database archive.
-                  </p>
-                  <p className="text-xs text-muted-foreground leading-relaxed">
-                    He also personally acquires, documents, files, and maintains the specimens in his personal archive.
-                  </p>
-                </div>
-              </div>
-            </div>
-          )}
         </div>
       )}
 
@@ -605,10 +600,10 @@ export const PublicHome: React.FC = () => {
         <div className="fixed inset-0 overflow-y-auto bg-background">
           <button
             onClick={exitSearchMode}
-            className="fixed top-0 right-0 z-50 bg-black/70 hover:bg-black/90 text-white px-2.5 py-2 transition-colors backdrop-blur-md border-b border-white/20"
+            className="fixed top-0 right-0 z-50 bg-black/70 hover:bg-black/90 text-white px-3.5 py-3 sm:px-2.5 sm:py-2 transition-colors backdrop-blur-md border-b border-white/20"
             aria-label="Close search"
           >
-            <X className="h-4 w-4" />
+            <X className="h-6 w-6 sm:h-4 sm:w-4" />
           </button>
           <div className="sticky top-0 z-10" style={{ overflow: 'visible' }}>
             <div className="h-[75px]" />
@@ -639,7 +634,7 @@ export const PublicHome: React.FC = () => {
 
               <div className="w-full h-px bg-white/60" />
 
-              <div className="flex items-center">
+              <div className="flex flex-col sm:flex-row sm:items-center">
                 <FilterDropdown
                   label="Airline"
                   options={airlines}
@@ -647,7 +642,7 @@ export const PublicHome: React.FC = () => {
                   onChange={setFilterAirline}
                 />
 
-                <div className="w-px h-full self-stretch bg-white/60" />
+                <div className="h-px w-full sm:h-auto sm:w-px sm:self-stretch bg-white/60" />
 
                 <FilterDropdown
                   label="Manufacturer"
@@ -662,7 +657,7 @@ export const PublicHome: React.FC = () => {
 
                 {filterMfr && modelNames.length > 0 && (
                   <>
-                    <div className="w-px self-stretch bg-white/60" />
+                    <div className="h-px w-full sm:h-auto sm:w-px sm:self-stretch bg-white/60" />
                     <FilterDropdown
                       label="Model"
                       options={modelNames}
@@ -677,7 +672,7 @@ export const PublicHome: React.FC = () => {
 
                 {filterModel && variantNames.length > 0 && (
                   <>
-                    <div className="w-px self-stretch bg-white/60" />
+                    <div className="h-px w-full sm:h-auto sm:w-px sm:self-stretch bg-white/60" />
                     <FilterDropdown
                       label="Variant"
                       options={variantNames}
@@ -687,7 +682,7 @@ export const PublicHome: React.FC = () => {
                   </>
                 )}
 
-                <div className="w-px self-stretch bg-white/60" />
+                <div className="h-px w-full sm:h-auto sm:w-px sm:self-stretch bg-white/60" />
 
                 <FilterDropdown
                   label="Decade"
@@ -772,22 +767,22 @@ export const PublicHome: React.FC = () => {
           className="fixed top-0 right-0 z-50 flex"
         >
           <button
-            onClick={mode === 'info' ? exitInfoMode : enterInfoMode}
-            className={`px-2.5 py-2 transition-colors backdrop-blur-md border-b border-l border-white/20 ${
-              mode === 'info'
-                ? 'bg-white text-black hover:bg-gray-100'
-                : 'bg-black/70 hover:bg-black/90 text-white'
+            onClick={() => setShowInfo((v) => !v)}
+            className={`flex items-center justify-center w-11 h-11 sm:w-8 sm:h-8 transition-colors border border-black/20 ${
+              showInfo
+                ? 'bg-black text-white hover:bg-black/90'
+                : 'bg-white text-black hover:bg-gray-100'
             }`}
             aria-label="About"
           >
-            <Info className="h-4 w-4" />
+            <Info className="h-6 w-6 sm:h-4 sm:w-4" />
           </button>
           <button
             onClick={enterSearchMode}
-            className="bg-black/70 hover:bg-black/90 text-white px-2.5 py-2 transition-colors backdrop-blur-md border-b border-white/20"
+            className="flex items-center justify-center w-11 h-11 sm:w-8 sm:h-8 bg-white text-black hover:bg-gray-100 transition-colors border border-black/20 border-l-0"
             aria-label="Search"
           >
-            <Search className="h-4 w-4" />
+            <Search className="h-6 w-6 sm:h-4 sm:w-4" />
           </button>
         </div>
       )}
@@ -796,14 +791,63 @@ export const PublicHome: React.FC = () => {
         href="https://www.lassor.com"
         target="_blank"
         rel="noopener noreferrer"
-        className="fixed top-1/2 right-0 z-50 bg-red-600 hover:bg-red-700 text-white text-[10px] font-medium tracking-widest px-1.5 py-2 transition-colors"
-        style={{
-          writingMode: 'vertical-rl',
-          transform: 'translateY(-50%)',
-        }}
+        className="fixed bottom-0 right-5 z-50 bg-red-600 hover:bg-red-700 text-white text-[10px] font-medium tracking-widest px-2 py-1.5 transition-colors"
       >
         developed by lassor
       </a>
+
+      {showInfo && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center"
+          onClick={() => setShowInfo(false)}
+        >
+          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
+          <button
+            onClick={() => setShowInfo(false)}
+            className="fixed top-0 right-0 z-[70] bg-black/70 hover:bg-black/90 text-white px-3.5 py-3 sm:px-2.5 sm:py-2 transition-colors backdrop-blur-md border-b border-white/20"
+            aria-label="Close"
+          >
+            <X className="h-6 w-6 sm:h-4 sm:w-4" />
+          </button>
+          <div
+            className="relative max-w-md mx-6 p-5 sm:p-6 shadow-2xl"
+            style={{ backgroundColor: '#ebeaef' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex flex-col gap-4">
+              <p className="text-sm sm:text-base font-medium text-foreground/80 leading-relaxed">
+                <span className="font-semibold text-foreground">Seatback Safety</span> is{' '}
+                <a href="https://www.lassor.com" target="_blank" rel="noopener noreferrer" className="text-red-600 hover:underline">
+                  Lassor Feasley's
+                </a>{' '}
+                personal collection of airline seatback safety procedure cards.
+              </p>
+              <p className="text-xs sm:text-sm text-muted-foreground leading-relaxed">
+                The artifacts document the intersection of aviation, graphic design, and mass media.
+                Lassor designed, developed, and maintains this digital showcase, which features a museum-grade database archive.
+              </p>
+              <p className="text-xs sm:text-sm text-muted-foreground leading-relaxed">
+                He also personally acquires, documents, files, and maintains the specimens in his personal archive.
+              </p>
+              <div className="grid grid-cols-3 gap-x-6 gap-y-2 pt-1">
+                {[
+                  { value: cards.length, label: 'Cards' },
+                  { value: allAirlines.length, label: 'Airlines' },
+                  { value: manufacturers.length, label: 'Manufacturers' },
+                  { value: new Set(allAirlines.map((a) => a.country).filter(Boolean)).size, label: 'Countries' },
+                  { value: languageCount, label: 'Languages' },
+                  { value: (() => { const yrs = cards.map((c) => c.published_year).filter((y): y is number => y != null); return yrs.length > 0 ? Math.max(...yrs) - Math.min(...yrs) : 0; })(), label: 'Years span' },
+                ].map((stat) => (
+                  <div key={stat.label}>
+                    <div className="text-2xl sm:text-3xl font-bold text-foreground leading-tight">{stat.value}</div>
+                    <div className="text-[10px] text-muted-foreground">{stat.label}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 };

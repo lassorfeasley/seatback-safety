@@ -42,6 +42,15 @@ export const PublicCardDetail: React.FC = () => {
       .finally(() => setLoading(false));
   }, [id]);
 
+  useEffect(() => {
+    if (!card) return;
+    const prev = document.title;
+    document.title = card.title
+      ? `${card.title} — Seatback Safety`
+      : 'Seatback Safety Card';
+    return () => { document.title = prev; };
+  }, [card]);
+
   if (loading) {
     return (
       <div className="fixed inset-0 flex items-center justify-center bg-gradient-to-b from-slate-100 to-slate-200 dark:from-slate-800 dark:to-slate-900">

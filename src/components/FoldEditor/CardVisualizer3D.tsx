@@ -318,27 +318,24 @@ export const CardVisualizer3D: React.FC<CardVisualizer3DProps> = ({
 
     const n = creasesByUnfoldOrder.length;
     const unfoldTime = n * (FOLD_DURATION - FOLD_STAGGER);
-    const timeouts: NodeJS.Timeout[] = [];
 
-    // Unfold after initial delay
     creasesByUnfoldOrder.forEach((crease, i) => {
       const delay = 600 + i * (FOLD_DURATION - FOLD_STAGGER);
-      timeouts.push(setTimeout(() => {
+      const t = setTimeout(() => {
         setCreaseFolds((prev) => ({ ...prev, [crease.between_panel]: 0 }));
-      }, delay));
+      }, delay);
+      animationTimeouts.current.push(t);
     });
 
-    // Refold after pause
     const refoldStart = 600 + unfoldTime + 800;
     const foldOrder = [...creasesByUnfoldOrder].reverse();
     foldOrder.forEach((crease, i) => {
       const delay = refoldStart + i * (FOLD_DURATION - FOLD_STAGGER);
-      timeouts.push(setTimeout(() => {
+      const t = setTimeout(() => {
         setCreaseFolds((prev) => ({ ...prev, [crease.between_panel]: 1 }));
-      }, delay));
+      }, delay);
+      animationTimeouts.current.push(t);
     });
-
-    return () => timeouts.forEach(clearTimeout);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
