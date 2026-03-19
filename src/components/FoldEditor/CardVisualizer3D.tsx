@@ -122,8 +122,13 @@ export const CardVisualizer3D: React.FC<CardVisualizer3DProps> = ({
   const rotationStart = useRef({ x: 0, y: 0 });
   const animationTimeouts = useRef<NodeJS.Timeout[]>([]);
   const cardRef = useRef<HTMLDivElement>(null);
+  const canvasRef = useRef<HTMLDivElement>(null);
   const [measuredWidth, setMeasuredWidth] = useState(0);
   const [settled, setSettled] = useState(false);
+  const cursorTilt = useRef({ x: 0, y: 0 });
+  const cursorTiltTarget = useRef({ x: 0, y: 0 });
+  const cursorTiltRaf = useRef(0);
+  const hasDragged = useRef(false);
 
   const coverDesignation: CoverDesignation = cover || { spreadIndex: 0, side: 'front' };
 
@@ -311,6 +316,55 @@ export const CardVisualizer3D: React.FC<CardVisualizer3DProps> = ({
       handleFold();
     }
   }, [minimal, targetFoldState, handleUnfold, handleFold]);
+
+  // Cursor-follow tilt for minimal mode
+  useEffect(() => {
+    if (!minimal) return;
+    const TILT_MAX = 24;
+    const LERP = 0.08;
+
+    const onMove = (e: MouseEvent) => {
+      const el = canvasRef.current;
+      if (!el) return;
+      const rect = el.getBoundingClientRect();
+      const nx = ((e.clientX - rect.left) / rect.width - 0.5) * 2;
+      const ny = ((e.clientY - rect.top) / rect.height - 0.5) * 2;
+      cursorTiltTarget.current = { x: ny * TILT_MAX, y: nx * TILT_MAX };
+    };
+
+    const onLeave = () => {
+      cursorTiltTarget.current = { x: 0, y: 0 };
+    };
+
+    const tick = () => {
+      const c = cursorTilt.current;
+      const t = cursorTiltTarget.current;
+      c.x += (t.x - c.x) * LERP;
+      c.y += (t.y - c.y) * LERP;
+
+      const el = canvasRef.current?.querySelector<HTMLElement>('[data-card-root]');
+      if (el) {
+        const base = el.getAttribute('data-base-transform') || '';
+        el.style.transform = `${base} rotateX(${c.x}deg) rotateY(${c.y}deg)`;
+      }
+      cursorTiltRaf.current = requestAnimationFrame(tick);
+    };
+
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseleave', onLeave);
+    cursorTiltRaf.current = requestAnimationFrame(tick);
+    return () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseleave', onLeave);
+      cancelAnimationFrame(cursorTiltRaf.current);
+    };
+  }, [minimal]);
+
+  useEffect(() => {
+    if (isDragging) {
+      cursorTiltTarget.current = { x: 0, y: 0 };
+    }
+  }, [isDragging]);
 
   // Hint animation: quickly unfold then refold on load
   useEffect(() => {
@@ -555,6 +609,7 @@ export const CardVisualizer3D: React.FC<CardVisualizer3DProps> = ({
             isDragging ? 'cursor-grabbing' : (minimal ? 'cursor-pointer' : 'cursor-grab')
           )}
           style={{ perspective: '1200px', perspectiveOrigin: '50% 50%' }}
+          ref={canvasRef}
           onMouseDown={(e) => { e.preventDefault(); startDrag(e.clientX, e.clientY); }}
           onMouseMove={(e) => moveDrag(e.clientX, e.clientY)}
           onMouseUp={() => { handleCanvasClick(); endDrag(); }}
@@ -565,6 +620,12 @@ export const CardVisualizer3D: React.FC<CardVisualizer3DProps> = ({
         >
           {/* Outer container: user rotation + staticFlipY */}
           <div
+            data-card-root=""
+            data-base-transform={[
+              minimal ? 'scale(1.5)' : '',
+              `rotateX(${rotation.x}deg)`,
+              `rotateY(${rotation.y + staticFlipY}deg)`,
+            ].filter(Boolean).join(' ')}
             style={{
               position: 'absolute',
               left: `calc(50% - ${centerX}px)`,
