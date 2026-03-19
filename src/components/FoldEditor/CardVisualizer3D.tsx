@@ -553,7 +553,7 @@ export const CardVisualizer3D: React.FC<CardVisualizer3DProps> = ({
         <div
           className={cn(
             minimal
-              ? 'relative w-full h-full select-none overflow-hidden'
+              ? 'relative w-full h-full select-none'
               : 'rounded-b-lg bg-gradient-to-b from-slate-100 to-slate-200 dark:from-slate-800 dark:to-slate-900 relative min-h-[350px] h-full select-none overflow-hidden',
             isDragging ? 'cursor-grabbing' : (minimal ? 'cursor-pointer' : 'cursor-grab')
           )}

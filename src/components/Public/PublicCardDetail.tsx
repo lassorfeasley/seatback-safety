@@ -1,8 +1,27 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Loader2, ArrowLeft } from 'lucide-react';
 import { fetchCardDetail, type CardDetailData } from '@/lib/safetyCardService';
 import { CardVisualizer3D } from '@/components/FoldEditor/CardVisualizer3D';
+
+function useViewportScale() {
+  const getScale = useCallback(() => {
+    const w = window.innerWidth;
+    if (w < 480) return 0.6;
+    if (w < 768) return 0.65;
+    return 0.7;
+  }, []);
+
+  const [scale, setScale] = useState(getScale);
+
+  useEffect(() => {
+    const onResize = () => setScale(getScale());
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, [getScale]);
+
+  return scale;
+}
 
 export const PublicCardDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -10,6 +29,7 @@ export const PublicCardDetail: React.FC = () => {
   const [card, setCard] = useState<CardDetailData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
+  const detailScale = useViewportScale();
 
   useEffect(() => {
     if (!id) return;
@@ -44,7 +64,7 @@ export const PublicCardDetail: React.FC = () => {
   const has3D = allCropsComplete && card.creases.length > 0;
 
   return (
-    <div className="fixed inset-0 overflow-hidden bg-gradient-to-b from-slate-100 to-slate-200 dark:from-slate-800 dark:to-slate-900">
+    <div className="fixed inset-0 bg-gradient-to-b from-slate-100 to-slate-200 dark:from-slate-800 dark:to-slate-900">
       <button
         onClick={() => navigate(-1)}
         className="fixed top-0 left-0 z-50 bg-white hover:bg-gray-50 transition-colors p-2 shadow-sm"
@@ -53,7 +73,7 @@ export const PublicCardDetail: React.FC = () => {
         <ArrowLeft className="h-5 w-5 text-foreground" />
       </button>
       {has3D ? (
-        <div className="w-full h-full" style={{ transform: 'scale(0.7)', transformOrigin: 'center center' }}>
+        <div className="w-full h-full" style={{ transform: `scale(${detailScale})`, transformOrigin: 'center center' }}>
           <CardVisualizer3D
             panels={card.panels}
             creases={card.creases}

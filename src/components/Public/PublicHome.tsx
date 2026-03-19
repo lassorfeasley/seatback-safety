@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import { Loader2, X, ChevronDown } from 'lucide-react';
+import { Loader2, X, ChevronDown, Info, Search } from 'lucide-react';
 import { fetchCards, type CardSummary } from '@/lib/safetyCardService';
 import {
   fetchManufacturersBrowse, fetchModelsBrowse, fetchVariantsBrowse,
@@ -128,7 +128,7 @@ function FilterDropdown({
 export const PublicHome: React.FC = () => {
   const [cards, setCards] = useState<CardSummary[]>([]);
   const [loading, setLoading] = useState(true);
-  const [mode, setMode] = useState<'explore' | 'search'>('explore');
+  const [mode, setMode] = useState<'explore' | 'search' | 'info'>('explore');
   const [searchQuery, setSearchQuery] = useState('');
   const [filterAirline, setFilterAirline] = useState<string | null>(null);
   const [filterDecade, setFilterDecade] = useState<number | null>(null);
@@ -149,8 +149,9 @@ export const PublicHome: React.FC = () => {
   const targetVelocityRef = useRef({ x: 0, y: 0 });
   const rafRef = useRef<number>(0);
   const lastTimeRef = useRef<number>(0);
-  const modeRef = useRef<'explore' | 'search'>('explore');
+  const modeRef = useRef<'explore' | 'search' | 'info'>('explore');
   const isTouchDevice = useRef(false);
+  const touchDragRef = useRef<{ lastX: number; lastY: number } | null>(null);
   const transitioningRef = useRef(false);
 
   const [exploreTiles, setExploreTiles] = useState<{ row: number; col: number; x: number; y: number; cardIdx: number }[]>([]);
@@ -177,9 +178,6 @@ export const PublicHome: React.FC = () => {
 
   useEffect(() => {
     isTouchDevice.current = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
-    if (isTouchDevice.current) {
-      targetVelocityRef.current = { x: -30, y: -20 };
-    }
   }, []);
 
   const applyFilters = useCallback((excludeFilter?: string) => {
@@ -278,7 +276,7 @@ export const PublicHome: React.FC = () => {
 
   const handleMouseMove = useCallback((e: MouseEvent) => {
     if (isTouchDevice.current) return;
-    if (modeRef.current === 'search') return;
+    if (modeRef.current !== 'explore') return;
     const vw = window.innerWidth;
     const vh = window.innerHeight;
 
@@ -305,6 +303,43 @@ export const PublicHome: React.FC = () => {
     };
   }, [handleMouseMove, handleMouseLeave]);
 
+  const handleTouchStart = useCallback((e: TouchEvent) => {
+    if (modeRef.current !== 'explore') return;
+    const t = e.touches[0];
+    touchDragRef.current = { lastX: t.clientX, lastY: t.clientY };
+    targetVelocityRef.current = { x: 0, y: 0 };
+    velocityRef.current = { x: 0, y: 0 };
+  }, []);
+
+  const handleTouchMove = useCallback((e: TouchEvent) => {
+    if (!touchDragRef.current || modeRef.current !== 'explore') return;
+    e.preventDefault();
+    const t = e.touches[0];
+    const dx = t.clientX - touchDragRef.current.lastX;
+    const dy = t.clientY - touchDragRef.current.lastY;
+    touchDragRef.current = { lastX: t.clientX, lastY: t.clientY };
+    cameraRef.current.x -= dx;
+    cameraRef.current.y -= dy;
+    setExploreTiles(computeVisible(cameraRef.current.x, cameraRef.current.y, cards.length));
+  }, [cards.length, computeVisible]);
+
+  const handleTouchEnd = useCallback(() => {
+    touchDragRef.current = null;
+  }, []);
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    el.addEventListener('touchstart', handleTouchStart, { passive: true });
+    el.addEventListener('touchmove', handleTouchMove, { passive: false });
+    el.addEventListener('touchend', handleTouchEnd, { passive: true });
+    return () => {
+      el.removeEventListener('touchstart', handleTouchStart);
+      el.removeEventListener('touchmove', handleTouchMove);
+      el.removeEventListener('touchend', handleTouchEnd);
+    };
+  }, [handleTouchStart, handleTouchMove, handleTouchEnd]);
+
   useEffect(() => {
     if (cards.length === 0) return;
     const cardCount = cards.length;
@@ -315,16 +350,20 @@ export const PublicHome: React.FC = () => {
       lastTimeRef.current = time;
 
       if (modeRef.current === 'explore' && !transitioningRef.current) {
-        const vel = velocityRef.current;
-        const target = targetVelocityRef.current;
-        vel.x += (target.x - vel.x) * LERP_FACTOR;
-        vel.y += (target.y - vel.y) * LERP_FACTOR;
+        if (isTouchDevice.current) {
+          setExploreTiles(computeVisible(cameraRef.current.x, cameraRef.current.y, cardCount));
+        } else {
+          const vel = velocityRef.current;
+          const target = targetVelocityRef.current;
+          vel.x += (target.x - vel.x) * LERP_FACTOR;
+          vel.y += (target.y - vel.y) * LERP_FACTOR;
 
-        const cam = cameraRef.current;
-        cam.x += vel.x * dt;
-        cam.y += vel.y * dt;
+          const cam = cameraRef.current;
+          cam.x += vel.x * dt;
+          cam.y += vel.y * dt;
 
-        setExploreTiles(computeVisible(cam.x, cam.y, cardCount));
+          setExploreTiles(computeVisible(cam.x, cam.y, cardCount));
+        }
       }
 
       rafRef.current = requestAnimationFrame(tick);
@@ -364,9 +403,27 @@ export const PublicHome: React.FC = () => {
     }, 600);
   }, [clearAllFilters]);
 
+  const enterInfoMode = useCallback(() => {
+    setMode('info');
+    targetVelocityRef.current = { x: 0, y: 0 };
+    velocityRef.current = { x: 0, y: 0 };
+  }, []);
+
+  const exitInfoMode = useCallback(() => {
+    setMode('explore');
+  }, []);
+
   const handleSearchKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (e.key === 'Escape') exitSearchMode();
   }, [exitSearchMode]);
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && mode === 'info') exitInfoMode();
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [mode, exitInfoMode]);
 
   const filteredSet = useMemo(() => new Set(filteredCards.map((c) => c.id)), [filteredCards]);
 
@@ -473,22 +530,74 @@ export const PublicHome: React.FC = () => {
         <div
           ref={containerRef}
           className="fixed inset-0 overflow-hidden bg-background"
-          style={{ cursor: 'crosshair' }}
+          style={{ cursor: mode === 'info' ? 'default' : 'crosshair' }}
         >
-          {exploreTiles.map((tile) => (
+          {exploreTiles.map((tile) => {
+            const infoHidden = mode === 'info' && (() => {
+              const vw = window.innerWidth;
+              const vh = window.innerHeight;
+              const panelW = 3 * CELL - GAP;
+              const panelH = 3 * CELL - GAP;
+              const panelLeft = (vw - panelW) / 2;
+              const panelTop = (vh - panelH) / 2;
+              const tileRight = tile.x + TILE_SIZE;
+              const tileBottom = tile.y + TILE_SIZE;
+              return tile.x < panelLeft + panelW && tileRight > panelLeft &&
+                     tile.y < panelTop + panelH && tileBottom > panelTop;
+            })();
+
+            return (
+              <div
+                key={`${tile.row},${tile.col}`}
+                className="absolute"
+                style={{
+                  transform: `translate(${tile.x}px, ${tile.y}px)`,
+                  width: TILE_SIZE,
+                  height: TILE_SIZE,
+                  willChange: 'transform',
+                  opacity: infoHidden ? 0 : 1,
+                  transition: 'opacity 600ms cubic-bezier(0.4,0,0.2,1)',
+                }}
+              >
+                <InfiniteCardTile card={cards[tile.cardIdx]} />
+              </div>
+            );
+          })}
+
+          {mode === 'info' && (
             <div
-              key={`${tile.row},${tile.col}`}
-              className="absolute"
+              className="fixed z-40 flex items-center justify-center pointer-events-none"
               style={{
-                transform: `translate(${tile.x}px, ${tile.y}px)`,
-                width: TILE_SIZE,
-                height: TILE_SIZE,
-                willChange: 'transform',
+                width: 3 * CELL - GAP,
+                height: 3 * CELL - GAP,
+                left: '50%',
+                top: '50%',
+                transform: 'translate(-50%, -50%)',
               }}
             >
-              <InfiniteCardTile card={cards[tile.cardIdx]} />
+              <div
+                className="w-full h-full p-6 pointer-events-auto"
+                style={{ backgroundColor: '#ebeaef' }}
+              >
+                <div className="flex flex-col justify-center h-full gap-3">
+                  <p className="text-sm font-medium text-foreground/80 leading-relaxed">
+                    <span className="font-semibold text-foreground">Seatback Safety</span> is{' '}
+                    <a href="https://www.lassor.com" target="_blank" rel="noopener noreferrer" className="text-red-600 hover:underline">
+                      Lassor Feasley's
+                    </a>{' '}
+                    personal collection of airline seatback safety procedure cards.
+                  </p>
+                  <p className="text-xs text-muted-foreground leading-relaxed">
+                    The artifacts document the intersection of aviation, graphic design, and mass media.
+                    Lassor designed, developed, and maintains this digital showcase, which features a museum-grade database archive.
+                  </p>
+                  <p className="text-xs text-muted-foreground leading-relaxed">
+                    He also personally acquires, documents, files, and maintains the specimens in his personal archive.
+                  </p>
+                </div>
+              </div>
             </div>
-          ))}
+          )}
         </div>
       )}
 
@@ -496,10 +605,10 @@ export const PublicHome: React.FC = () => {
         <div className="fixed inset-0 overflow-y-auto bg-background">
           <button
             onClick={exitSearchMode}
-            className="fixed top-4 right-4 z-50 text-muted-foreground hover:text-foreground transition-colors"
+            className="fixed top-0 right-0 z-50 bg-black/70 hover:bg-black/90 text-white px-2.5 py-2 transition-colors backdrop-blur-md border-b border-white/20"
             aria-label="Close search"
           >
-            <X className="h-8 w-8" />
+            <X className="h-4 w-4" />
           </button>
           <div className="sticky top-0 z-10" style={{ overflow: 'visible' }}>
             <div className="h-[75px]" />
@@ -508,7 +617,7 @@ export const PublicHome: React.FC = () => {
               style={{ width: cols * CELL - GAP, backgroundColor: '#ebeaef' }}
             >
               <div className="flex items-center gap-2 pt-4 pb-3 px-5">
-                <span className="text-base opacity-40">🔍</span>
+                <Search className="h-4 w-4 opacity-40 shrink-0" />
                 <input
                   ref={searchInputRef}
                   type="text"
@@ -659,17 +768,28 @@ export const PublicHome: React.FC = () => {
       )}
 
       {!isSearch && (
-        <button
-          onClick={enterSearchMode}
-          className="fixed top-1/2 left-0 z-50 bg-black/70 hover:bg-black/90 text-white text-base px-1.5 py-2 transition-colors backdrop-blur-md border-r border-white/20"
-          style={{
-            writingMode: 'vertical-rl',
-            transform: 'translateY(-50%)',
-          }}
-          aria-label="Search"
+        <div
+          className="fixed top-0 right-0 z-50 flex"
         >
-          🔍
-        </button>
+          <button
+            onClick={mode === 'info' ? exitInfoMode : enterInfoMode}
+            className={`px-2.5 py-2 transition-colors backdrop-blur-md border-b border-l border-white/20 ${
+              mode === 'info'
+                ? 'bg-white text-black hover:bg-gray-100'
+                : 'bg-black/70 hover:bg-black/90 text-white'
+            }`}
+            aria-label="About"
+          >
+            <Info className="h-4 w-4" />
+          </button>
+          <button
+            onClick={enterSearchMode}
+            className="bg-black/70 hover:bg-black/90 text-white px-2.5 py-2 transition-colors backdrop-blur-md border-b border-white/20"
+            aria-label="Search"
+          >
+            <Search className="h-4 w-4" />
+          </button>
+        </div>
       )}
 
       <a
