@@ -18,6 +18,7 @@ import { RequireAuth } from './components/Auth/RequireAuth';
 import { PublicLayout } from './components/Public/PublicLayout';
 import { PublicHome } from './components/Public/PublicHome';
 import { PublicHomeLegacy } from './components/Public/PublicHomeLegacy';
+import { PublicHomeArchive } from './components/Public/PublicHomeArchive';
 import { PublicAirlinesBrowse } from './components/Public/PublicAirlinesBrowse';
 import { PublicCountriesBrowse } from './components/Public/PublicCountriesBrowse';
 import { PublicAirlineDetail } from './components/Public/PublicAirlineDetail';
@@ -32,20 +33,23 @@ function App() {
   return (
     <AuthProvider>
       <Routes>
+        {/* Home – no layout chrome */}
+        <Route index element={<PublicHome />} />
+        <Route path="cards/:id" element={<PublicCardDetail />} />
+
         {/* Public routes */}
         <Route element={<PublicLayout />}>
-          <Route index element={<PublicHome />} />
           <Route path="airlines" element={<PublicAirlinesBrowse />} />
           <Route path="airlines/:id" element={<PublicAirlineDetail />} />
           <Route path="countries" element={<PublicCountriesBrowse />} />
           <Route path="manufacturers" element={<PublicManufacturersBrowse />} />
           <Route path="manufacturers/:id" element={<PublicManufacturerDetail />} />
-          <Route path="cards/:id" element={<PublicCardDetail />} />
           <Route path="decades" element={<PublicDecadesBrowse />} />
           <Route path="decades/:decade" element={<PublicDecadeDetail />} />
           <Route path="search" element={<PublicSearch />} />
           <Route path="about" element={<AboutPage />} />
           <Route path="legacy" element={<PublicHomeLegacy />} />
+          <Route path="archive" element={<PublicHomeArchive />} />
         </Route>
 
         {/* Auth */}

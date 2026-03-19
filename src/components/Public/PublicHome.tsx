@@ -1,344 +1,689 @@
 import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import { Loader2 } from 'lucide-react';
+import { Loader2, X, ChevronDown } from 'lucide-react';
 import { fetchCards, type CardSummary } from '@/lib/safetyCardService';
-import { fetchAirlinesBrowse, fetchManufacturersBrowse, type AirlineBrowse, type ManufacturerBrowse } from '@/lib/lookupService';
-import { PublicCardTile } from './PublicCardTile';
-import { countryToFlag } from '@/lib/countryFlags';
+import {
+  fetchManufacturersBrowse, fetchModelsBrowse, fetchVariantsBrowse,
+  type ManufacturerBrowse, type ModelBrowse, type VariantBrowse,
+} from '@/lib/lookupService';
 
-function AutoSizeText({ className, children }: { className?: string; children: React.ReactNode }) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const textRef = useRef<HTMLParagraphElement>(null);
-  const [fontSize, setFontSize] = useState(16);
+const TILE_SIZE = 140;
+const GAP = 8;
+const CELL = TILE_SIZE + GAP;
+const BUFFER = 3;
+const MAX_SPEED = 350;
+const DEAD_ZONE = 0.08;
+const LERP_FACTOR = 0.04;
+const SEARCH_COLS_MAX = 5;
 
-  const fit = useCallback(() => {
-    const container = containerRef.current;
-    const text = textRef.current;
-    if (!container || !text) return;
+function hashCoord(row: number, col: number): number {
+  let h = ((row * 2654435761) ^ (col * 2246822519)) >>> 0;
+  h = ((h >> 16) ^ h) * 0x45d9f3b >>> 0;
+  return h;
+}
 
-    const pad = 20;
-    const maxH = container.offsetHeight - pad * 2;
-    if (maxH <= 0) return;
+function InfiniteCardTile({ card }: { card: CardSummary }) {
+  const fallbacks = [card.og_url, card.thumbnail_url].filter(Boolean) as string[];
+  const [imgSrc, setImgSrc] = useState<string | null>(fallbacks[0] ?? null);
+  const fallbackIdx = useRef(0);
 
-    let lo = 8;
-    let hi = 80;
-    let best = lo;
+  return (
+    <Link
+      to={`/cards/${card.id}`}
+      className="block w-full h-full"
+    >
+      <div className="w-full h-full bg-[#ebeaef] relative overflow-hidden">
+        {imgSrc ? (
+          <img
+            src={imgSrc}
+            alt={card.title || 'Safety card'}
+            className="absolute inset-0 w-full h-full object-cover"
+            loading="lazy"
+            onError={() => {
+              fallbackIdx.current += 1;
+              if (fallbackIdx.current < fallbacks.length) {
+                setImgSrc(fallbacks[fallbackIdx.current]);
+              } else {
+                setImgSrc(null);
+              }
+            }}
+          />
+        ) : (
+          <div className="absolute inset-0 flex items-center justify-center text-muted-foreground text-xs">
+            No image
+          </div>
+        )}
+      </div>
+    </Link>
+  );
+}
 
-    while (lo <= hi) {
-      const mid = Math.floor((lo + hi) / 2);
-      text.style.fontSize = `${mid}px`;
-      text.style.lineHeight = '1.35';
+function computeSearchCols(): number {
+  const vw = typeof window !== 'undefined' ? window.innerWidth : 1200;
+  return Math.min(SEARCH_COLS_MAX, Math.max(2, Math.floor((vw - 40) / CELL)));
+}
 
-      if (text.scrollHeight <= maxH) {
-        best = mid;
-        lo = mid + 1;
-      } else {
-        hi = mid - 1;
-      }
-    }
+function FilterDropdown({
+  label,
+  options,
+  value,
+  onChange,
+}: {
+  label: string;
+  options: string[];
+  value: string | null;
+  onChange: (v: string | null) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
 
-    setFontSize(best);
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
   }, []);
 
-  useEffect(() => {
-    fit();
-    const ro = new ResizeObserver(fit);
-    if (containerRef.current) ro.observe(containerRef.current);
-    return () => ro.disconnect();
-  }, [fit, children]);
-
   return (
-    <div ref={containerRef} className={`${className ?? ''} relative overflow-hidden h-full`}>
-      <p
-        ref={textRef}
-        style={{ fontSize: `${fontSize}px`, lineHeight: '1.35', padding: 20 }}
+    <div ref={ref} className="relative flex-1 min-w-0">
+      <button
+        onClick={() => setOpen(!open)}
+        className={`flex items-center justify-between w-full px-4 py-2.5 text-xs transition-colors ${
+          value
+            ? 'text-foreground font-medium'
+            : 'text-muted-foreground hover:text-foreground'
+        }`}
       >
-        {children}
-      </p>
-    </div>
-  );
-}
-
-const TICK_MS = 3000;
-const DISSOLVE_MS = 400;
-
-function useTicker(length: number, delayMs = 0) {
-  const [index, setIndex] = useState(0);
-  useEffect(() => {
-    if (length === 0) return;
-    let intervalId: ReturnType<typeof setInterval>;
-    const advance = () => setIndex((i) => (i + 1) % length);
-    const timeoutId = setTimeout(() => {
-      advance();
-      intervalId = setInterval(advance, TICK_MS);
-    }, delayMs);
-    return () => {
-      clearTimeout(timeoutId);
-      clearInterval(intervalId);
-    };
-  }, [length, delayMs]);
-  return index;
-}
-
-function usePrevious<T>(value: T): T | undefined {
-  const ref = useRef<T>();
-  useEffect(() => { ref.current = value; });
-  return ref.current;
-}
-
-function CrossfadeShell({ itemKey, children }: { itemKey: string; children: React.ReactNode }) {
-  const [layers, setLayers] = useState<Array<{ key: string; content: React.ReactNode }>>([]);
-  const prevKey = usePrevious(itemKey);
-
-  useEffect(() => {
-    setLayers((prev) => {
-      const next = prev.filter((l) => l.key !== itemKey);
-      next.push({ key: itemKey, content: children });
-      return next;
-    });
-
-    if (prevKey && prevKey !== itemKey) {
-      const timer = setTimeout(() => {
-        setLayers((prev) => prev.filter((l) => l.key !== prevKey));
-      }, DISSOLVE_MS);
-      return () => clearTimeout(timer);
-    }
-  }, [itemKey, children, prevKey]);
-
-  return (
-    <div className="absolute inset-0 overflow-hidden">
-      {layers.map((layer) => (
-        <div
-          key={layer.key}
-          className="absolute inset-0 flex items-center justify-center"
-          style={{
-            animation: layer.key === itemKey
-              ? `dissolveIn ${DISSOLVE_MS}ms ease-in-out forwards`
-              : `dissolveOut ${DISSOLVE_MS}ms ease-in-out forwards`,
-          }}
-        >
-          <div className="w-2/3 h-2/3 flex items-center justify-center">
-            {layer.content}
-          </div>
+        <span>{value ? `${label}: ${value}` : label}</span>
+        <ChevronDown className={`h-3 w-3 transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+      {open && (
+        <div className="absolute top-full left-0 right-0 z-50 bg-white border border-gray-200 shadow-xl max-h-60 overflow-y-auto min-w-[160px]">
+          {value && (
+            <button
+              onClick={() => { onChange(null); setOpen(false); }}
+              className="block w-full text-left px-4 py-1.5 text-xs text-red-500 hover:bg-gray-50 transition-colors"
+            >
+              Clear
+            </button>
+          )}
+          {options.map((opt) => (
+            <button
+              key={opt}
+              onClick={() => { onChange(opt); setOpen(false); }}
+              className={`block w-full text-left px-4 py-1.5 text-xs hover:bg-gray-50 transition-colors ${
+                value === opt ? 'font-semibold text-foreground' : 'text-muted-foreground'
+              }`}
+            >
+              {opt}
+            </button>
+          ))}
         </div>
-      ))}
+      )}
     </div>
-  );
-}
-
-function AirlineLogoTicker({ airlines, delayMs = 0 }: { airlines: AirlineBrowse[]; delayMs?: number }) {
-  const withLogos = useMemo(() => airlines.filter((a) => a.logo_url), [airlines]);
-  const index = useTicker(withLogos.length, delayMs);
-  if (withLogos.length === 0) return null;
-  const current = withLogos[index];
-  return (
-    <CrossfadeShell itemKey={current.id}>
-      <img src={current.logo_url!} alt={current.name} className="w-full h-full object-contain" />
-    </CrossfadeShell>
-  );
-}
-
-function CardThumbnailTicker({ cards, delayMs = 0 }: { cards: CardSummary[]; delayMs?: number }) {
-  const withThumbs = useMemo(() => cards.filter((c) => c.thumbnail_url), [cards]);
-  const index = useTicker(withThumbs.length, delayMs);
-  if (withThumbs.length === 0) return null;
-  const current = withThumbs[index];
-  return (
-    <CrossfadeShell itemKey={current.id}>
-      <img src={current.thumbnail_url!} alt={current.title ?? 'Card'} className="w-full h-full object-contain" />
-    </CrossfadeShell>
-  );
-}
-
-function CountryFlagTicker({ countries, delayMs = 0 }: { countries: string[]; delayMs?: number }) {
-  const index = useTicker(countries.length, delayMs);
-  if (countries.length === 0) return null;
-  const current = countries[index];
-  return (
-    <CrossfadeShell itemKey={current}>
-      <span className="text-8xl leading-none">{countryToFlag(current)}</span>
-    </CrossfadeShell>
-  );
-}
-
-function ManufacturerLogoTicker({ manufacturers, delayMs = 0 }: { manufacturers: ManufacturerBrowse[]; delayMs?: number }) {
-  const withLogos = useMemo(() => manufacturers.filter((m) => m.logo_url), [manufacturers]);
-  const index = useTicker(withLogos.length, delayMs);
-  if (withLogos.length === 0) return null;
-  const current = withLogos[index];
-  return (
-    <CrossfadeShell itemKey={current.id}>
-      <img src={current.logo_url!} alt={current.name} className="w-full h-full object-contain" />
-    </CrossfadeShell>
-  );
-}
-
-function DecadeTicker({ years, delayMs = 0 }: { years: number[]; delayMs?: number }) {
-  const decades = useMemo(() => {
-    const set = new Set(years.map((y) => Math.floor(y / 10) * 10));
-    return [...set].sort();
-  }, [years]);
-  const [randomOrder, setRandomOrder] = useState<number[]>([]);
-  useEffect(() => {
-    if (decades.length === 0) return;
-    const shuffled = [...decades].sort(() => Math.random() - 0.5);
-    setRandomOrder(shuffled);
-  }, [decades]);
-  const index = useTicker(randomOrder.length, delayMs);
-  if (randomOrder.length === 0) return null;
-  const decade = randomOrder[index];
-  const label = `'${String(decade).slice(-2)}s`;
-  return (
-    <CrossfadeShell itemKey={String(decade)}>
-      <span className="text-7xl md:text-8xl font-bold tracking-tight text-black/20">{label}</span>
-    </CrossfadeShell>
   );
 }
 
 export const PublicHome: React.FC = () => {
   const [cards, setCards] = useState<CardSummary[]>([]);
-  const [allAirlines, setAllAirlines] = useState<AirlineBrowse[]>([]);
-  const [allManufacturers, setAllManufacturers] = useState<ManufacturerBrowse[]>([]);
   const [loading, setLoading] = useState(true);
+  const [mode, setMode] = useState<'explore' | 'search'>('explore');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filterAirline, setFilterAirline] = useState<string | null>(null);
+  const [filterDecade, setFilterDecade] = useState<number | null>(null);
+
+  const [manufacturers, setManufacturers] = useState<ManufacturerBrowse[]>([]);
+  const [models, setModels] = useState<ModelBrowse[]>([]);
+  const [variants, setVariants] = useState<VariantBrowse[]>([]);
+  const [filterMfr, setFilterMfr] = useState<string | null>(null);
+  const [filterModel, setFilterModel] = useState<string | null>(null);
+  const [filterVariant, setFilterVariant] = useState<string | null>(null);
+  const selectedMfr = useMemo(() => manufacturers.find((m) => m.name === filterMfr) ?? null, [manufacturers, filterMfr]);
+  const selectedModel = useMemo(() => models.find((m) => m.name === filterModel) ?? null, [models, filterModel]);
+
+  const containerRef = useRef<HTMLDivElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const cameraRef = useRef({ x: 0, y: 0 });
+  const velocityRef = useRef({ x: 0, y: 0 });
+  const targetVelocityRef = useRef({ x: 0, y: 0 });
+  const rafRef = useRef<number>(0);
+  const lastTimeRef = useRef<number>(0);
+  const modeRef = useRef<'explore' | 'search'>('explore');
+  const isTouchDevice = useRef(false);
+  const transitioningRef = useRef(false);
+
+  const [exploreTiles, setExploreTiles] = useState<{ row: number; col: number; x: number; y: number; cardIdx: number }[]>([]);
+
+  useEffect(() => { modeRef.current = mode; }, [mode]);
 
   useEffect(() => {
-    Promise.all([
-      fetchCards(),
-      fetchAirlinesBrowse(),
-      fetchManufacturersBrowse(),
-    ]).then(([c, a, m]) => {
+    Promise.all([fetchCards(), fetchManufacturersBrowse()]).then(([c, m]) => {
       setCards(c);
-      const airlinesWithCards = a.filter((x) => x.card_count > 0);
-      const manufacturersWithCards = m.filter((x) => x.card_count > 0);
-      setAllAirlines(airlinesWithCards);
-      setAllManufacturers(manufacturersWithCards);
+      setManufacturers(m.filter((x) => x.card_count > 0));
       setLoading(false);
     });
   }, []);
 
+  useEffect(() => {
+    if (!selectedMfr) { setModels([]); return; }
+    fetchModelsBrowse(selectedMfr.id).then((m) => setModels(m.filter((x) => x.card_count > 0)));
+  }, [selectedMfr]);
+
+  useEffect(() => {
+    if (!selectedModel) { setVariants([]); return; }
+    fetchVariantsBrowse(selectedModel.id).then((v) => setVariants(v.filter((x) => x.card_count > 0)));
+  }, [selectedModel]);
+
+  useEffect(() => {
+    isTouchDevice.current = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+    if (isTouchDevice.current) {
+      targetVelocityRef.current = { x: -30, y: -20 };
+    }
+  }, []);
+
+  const applyFilters = useCallback((excludeFilter?: string) => {
+    return cards.filter((c) => {
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase().trim();
+        const haystack = [c.title, c.airline_name, c.aircraft_label, c.published_year != null ? String(c.published_year) : null]
+          .filter(Boolean).join(' ').toLowerCase();
+        if (!haystack.includes(q)) return false;
+      }
+      if (excludeFilter !== 'airline' && filterAirline && c.airline_name !== filterAirline) return false;
+
+      if (excludeFilter !== 'aircraft') {
+        if (filterMfr || filterModel || filterVariant) {
+          const label = (c.aircraft_label ?? '').toLowerCase();
+          if (filterVariant && !label.includes(filterVariant.toLowerCase())) return false;
+          else if (filterModel && !label.includes(filterModel.toLowerCase())) return false;
+          else if (filterMfr && !label.includes(filterMfr.toLowerCase())) return false;
+        }
+      }
+
+      if (excludeFilter !== 'decade' && filterDecade) {
+        if (!c.published_year) return false;
+        if (c.published_year < filterDecade || c.published_year >= filterDecade + 10) return false;
+      }
+      return true;
+    });
+  }, [cards, searchQuery, filterAirline, filterMfr, filterModel, filterVariant, filterDecade]);
+
+  const filteredCards = useMemo(() => applyFilters(), [applyFilters]);
+
+  const airlines = useMemo(() => {
+    const pool = applyFilters('airline');
+    return [...new Set(pool.map((c) => c.airline_name).filter(Boolean) as string[])].sort();
+  }, [applyFilters]);
+
+  const availableMfrNames = useMemo(() => {
+    const pool = applyFilters('aircraft');
+    const names = new Set<string>();
+    for (const c of pool) {
+      if (!c.aircraft_label) continue;
+      for (const m of manufacturers) {
+        if (c.aircraft_label.toLowerCase().includes(m.name.toLowerCase())) names.add(m.name);
+      }
+    }
+    return [...names].sort();
+  }, [applyFilters, manufacturers]);
+
+  const mfrNames = useMemo(() => filterMfr ? manufacturers.map((m) => m.name).sort() : availableMfrNames, [filterMfr, manufacturers, availableMfrNames]);
+  const modelNames = useMemo(() => models.map((m) => m.name).sort(), [models]);
+  const variantNames = useMemo(() => variants.map((v) => v.name).sort(), [variants]);
+
+  const availableDecades = useMemo(() => {
+    const pool = applyFilters('decade');
+    const decades = new Set<number>();
+    for (const c of pool) {
+      if (c.published_year) decades.add(Math.floor(c.published_year / 10) * 10);
+    }
+    return [...decades].sort();
+  }, [applyFilters]);
+
+  const hasActiveFilters = filterAirline || filterMfr || filterModel || filterVariant || filterDecade;
+
+  const computeVisible = useCallback((cx: number, cy: number, cardCount: number) => {
+    if (cardCount === 0) return [];
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+
+    const startCol = Math.floor(cx / CELL) - BUFFER;
+    const endCol = Math.ceil((cx + vw) / CELL) + BUFFER;
+    const startRow = Math.floor(cy / CELL) - BUFFER;
+    const endRow = Math.ceil((cy + vh) / CELL) + BUFFER;
+
+    const tiles: { row: number; col: number; x: number; y: number; cardIdx: number }[] = [];
+    for (let r = startRow; r <= endRow; r++) {
+      for (let c = startCol; c <= endCol; c++) {
+        tiles.push({
+          row: r,
+          col: c,
+          x: c * CELL - cx,
+          y: r * CELL - cy,
+          cardIdx: hashCoord(r, c) % cardCount,
+        });
+      }
+    }
+    return tiles;
+  }, []);
+
+  useEffect(() => {
+    if (cards.length === 0) return;
+    const cam = cameraRef.current;
+    cam.x = -(window.innerWidth / 2) / CELL * CELL;
+    cam.y = -(window.innerHeight / 2) / CELL * CELL;
+    setExploreTiles(computeVisible(cam.x, cam.y, cards.length));
+  }, [cards, computeVisible]);
+
+  const handleMouseMove = useCallback((e: MouseEvent) => {
+    if (isTouchDevice.current) return;
+    if (modeRef.current === 'search') return;
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+
+    let dx = (e.clientX - vw / 2) / (vw / 2);
+    let dy = (e.clientY - vh / 2) / (vh / 2);
+
+    dx = Math.abs(dx) < DEAD_ZONE ? 0 : dx;
+    dy = Math.abs(dy) < DEAD_ZONE ? 0 : dy;
+
+    targetVelocityRef.current = { x: dx * MAX_SPEED, y: dy * MAX_SPEED };
+  }, []);
+
+  const handleMouseLeave = useCallback(() => {
+    if (isTouchDevice.current) return;
+    targetVelocityRef.current = { x: 0, y: 0 };
+  }, []);
+
+  useEffect(() => {
+    window.addEventListener('mousemove', handleMouseMove);
+    document.documentElement.addEventListener('mouseleave', handleMouseLeave);
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      document.documentElement.removeEventListener('mouseleave', handleMouseLeave);
+    };
+  }, [handleMouseMove, handleMouseLeave]);
+
+  useEffect(() => {
+    if (cards.length === 0) return;
+    const cardCount = cards.length;
+
+    const tick = (time: number) => {
+      if (lastTimeRef.current === 0) lastTimeRef.current = time;
+      const dt = Math.min((time - lastTimeRef.current) / 1000, 0.05);
+      lastTimeRef.current = time;
+
+      if (modeRef.current === 'explore' && !transitioningRef.current) {
+        const vel = velocityRef.current;
+        const target = targetVelocityRef.current;
+        vel.x += (target.x - vel.x) * LERP_FACTOR;
+        vel.y += (target.y - vel.y) * LERP_FACTOR;
+
+        const cam = cameraRef.current;
+        cam.x += vel.x * dt;
+        cam.y += vel.y * dt;
+
+        setExploreTiles(computeVisible(cam.x, cam.y, cardCount));
+      }
+
+      rafRef.current = requestAnimationFrame(tick);
+    };
+
+    rafRef.current = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(rafRef.current);
+  }, [cards, computeVisible]);
+
+  const clearAllFilters = useCallback(() => {
+    setSearchQuery('');
+    setFilterAirline(null);
+    setFilterMfr(null);
+    setFilterModel(null);
+    setFilterVariant(null);
+    setFilterDecade(null);
+  }, []);
+
+  const enterSearchMode = useCallback(() => {
+    setMode('search');
+    clearAllFilters();
+    targetVelocityRef.current = { x: 0, y: 0 };
+    velocityRef.current = { x: 0, y: 0 };
+    transitioningRef.current = true;
+    setTimeout(() => {
+      transitioningRef.current = false;
+      searchInputRef.current?.focus();
+    }, 600);
+  }, [clearAllFilters]);
+
+  const exitSearchMode = useCallback(() => {
+    setMode('explore');
+    clearAllFilters();
+    transitioningRef.current = true;
+    setTimeout(() => {
+      transitioningRef.current = false;
+    }, 600);
+  }, [clearAllFilters]);
+
+  const handleSearchKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (e.key === 'Escape') exitSearchMode();
+  }, [exitSearchMode]);
+
+  const filteredSet = useMemo(() => new Set(filteredCards.map((c) => c.id)), [filteredCards]);
+
+  const dissolveDurationsRef = useRef(new Map<string, number>());
+  const dissolvingRef = useRef(new Set<string>());
+  const enteringRef = useRef(new Set<string>());
+  const prevFilteredRef = useRef<Set<string>>(new Set());
+  const dissolveTimersRef = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+  const [animTick, setAnimTick] = useState(0);
+
+  useEffect(() => {
+    const prev = prevFilteredRef.current;
+    const curr = filteredSet;
+    const changed = prev.size !== curr.size || [...curr].some((id) => !prev.has(id));
+    if (!changed) return;
+
+    const newlyHidden: string[] = [];
+    for (const id of prev) {
+      if (!curr.has(id)) newlyHidden.push(id);
+    }
+    const newlyVisible: string[] = [];
+    for (const id of curr) {
+      if (!prev.has(id)) newlyVisible.push(id);
+      dissolvingRef.current.delete(id);
+      dissolveDurationsRef.current.delete(id);
+      const t = dissolveTimersRef.current.get(id);
+      if (t) { clearTimeout(t); dissolveTimersRef.current.delete(id); }
+    }
+
+    if (newlyHidden.length > 0) {
+      for (const id of newlyHidden) {
+        const dur = 500 + Math.random() * 2500;
+        dissolveDurationsRef.current.set(id, dur);
+        dissolvingRef.current.add(id);
+        const timer = setTimeout(() => {
+          dissolvingRef.current.delete(id);
+          dissolveDurationsRef.current.delete(id);
+          dissolveTimersRef.current.delete(id);
+          setAnimTick((g) => g + 1);
+        }, dur + 50);
+        dissolveTimersRef.current.set(id, timer);
+      }
+    }
+
+    if (newlyVisible.length > 0 && prev.size > 0) {
+      for (const id of newlyVisible) enteringRef.current.add(id);
+      setAnimTick((g) => g + 1);
+
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          enteringRef.current.clear();
+          setAnimTick((g) => g + 1);
+        });
+      });
+    }
+
+    prevFilteredRef.current = new Set(curr);
+  }, [filteredSet]);
+
+  const isSearch = mode === 'search';
+  const cols = computeSearchCols();
+
+  const cardColumns = useMemo(() => {
+    const colMap = new Map<string, number>();
+    for (let i = 0; i < cards.length; i++) {
+      colMap.set(cards[i].id, i % cols);
+    }
+    return colMap;
+  }, [cards, cols]);
+
+  const tilePositions = useMemo(() => {
+    const colCounters = new Array(cols).fill(0);
+    const positions = new Map<string, { col: number; row: number }>();
+    const visibleOrDissolving = new Set([...filteredSet, ...dissolvingRef.current]);
+
+    for (const card of cards) {
+      if (!visibleOrDissolving.has(card.id)) continue;
+      const c = cardColumns.get(card.id)!;
+      positions.set(card.id, { col: c, row: colCounters[c] });
+      colCounters[c]++;
+    }
+    return { positions, maxRow: Math.max(...colCounters, 0) };
+  }, [cards, filteredSet, cols, animTick, cardColumns]);
+
+  const lastPositionsRef = useRef(new Map<string, { col: number; row: number }>());
+
+  useEffect(() => {
+    for (const [id, pos] of tilePositions.positions) {
+      lastPositionsRef.current.set(id, pos);
+    }
+  }, [tilePositions]);
+
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-32">
+      <div className="flex items-center justify-center h-dvh">
         <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
       </div>
     );
   }
 
-  const recentCards = cards.slice(0, 30);
-
-  const cardCount = cards.length;
-  const years = cards.map((c) => c.published_year).filter((y): y is number => y != null);
-  const minYear = years.length > 0 ? Math.min(...years) : null;
-  const maxYear = years.length > 0 ? Math.max(...years) : null;
-  const yearSpan = minYear && maxYear ? maxYear - minYear : null;
-  const airlineCount = allAirlines.length;
-  const countries = [...new Set(allAirlines.map((a) => a.country).filter((c): c is string => !!c))];
-  const countryCount = countries.length;
-
   return (
-    <div className="min-h-[calc(100dvh-4rem)] bg-background">
-      {/* Recent Additions */}
-      {recentCards.length > 0 && (
-        <section className="max-w-6xl mx-auto px-6 pt-12 pb-0 relative min-h-dvh">
-          <div
-            className="fixed overflow-hidden"
-            style={{ left: '50%', right: '50%', marginLeft: '-66vw', marginRight: '-66vw', top: '-6rem', bottom: '-6rem' }}
-          >
-            <div className="marquee-scroll grid grid-cols-6 sm:grid-cols-8 md:grid-cols-12 gap-3">
-              {Array.from({ length: 10 }, () => recentCards).flat().map((card, i) => (
-                <PublicCardTile key={`${card.id}-${i}`} card={card} />
-              ))}
+    <>
+      {!isSearch && (
+        <div
+          ref={containerRef}
+          className="fixed inset-0 overflow-hidden bg-background"
+          style={{ cursor: 'crosshair' }}
+        >
+          {exploreTiles.map((tile) => (
+            <div
+              key={`${tile.row},${tile.col}`}
+              className="absolute"
+              style={{
+                transform: `translate(${tile.x}px, ${tile.y}px)`,
+                width: TILE_SIZE,
+                height: TILE_SIZE,
+                willChange: 'transform',
+              }}
+            >
+              <InfiniteCardTile card={cards[tile.cardIdx]} />
             </div>
-          </div>
-          <div className="fixed inset-0 bg-white/50 backdrop-blur-[2px] pointer-events-none" style={{ zIndex: 5 }} />
-          <div className="relative z-10 grid grid-cols-2 sm:grid-cols-6 md:grid-cols-8 md:grid-rows-[repeat(5,1fr)] gap-3 auto-rows-auto md:auto-rows-fr pointer-events-none">
-            <AutoSizeText className="col-span-2 row-start-1 sm:col-span-4 md:col-span-4 md:col-start-1 md:row-start-1 md:row-span-2 bg-white/70 backdrop-blur-xl rounded-lg border border-gray-200 pointer-events-auto">
-              <span className="text-black font-medium">
-                Seatback Safety is <a href="https://www.lassor.com" target="_blank" rel="noopener noreferrer" className="text-red-600 hover:underline">Lassor Feasley's</a>
-                {' '}personal collection of airline seatback safety procedure cards.
-                The artifacts document the intersection of aviation, graphic design, and mass media.
-              </span>
-            </AutoSizeText>
-            <div className="col-span-2 row-start-4 sm:col-span-3 md:col-start-6 md:row-start-3 md:row-span-1 bg-white/70 backdrop-blur-xl rounded-lg border border-gray-200 relative overflow-hidden h-full flex items-center p-5 pointer-events-auto">
-              <p className="text-black text-sm leading-relaxed">
-                Lassor designed, developed, and maintains this digital showcase, which features a museum-grade database archive.
-                He also personally acquires, documents, files, and maintains the specimens in his personal archive.
-              </p>
-            </div>
-            <Link
-              to="/airlines"
-              className="col-start-2 row-start-2 md:col-start-6 md:row-start-1 group relative pointer-events-auto
-                         focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-            >
-              <div className="aspect-square w-full bg-white/70 backdrop-blur-xl rounded-lg border border-gray-200 relative overflow-visible transition-all duration-150 group-hover:scale-[1.02] group-hover:bg-white/80">
-                <div className="absolute inset-0 overflow-hidden">
-                  <AirlineLogoTicker airlines={allAirlines} delayMs={0} />
-                </div>
-                <span className="absolute left-1/2 -translate-x-1/2 -bottom-3 px-4 py-1 rounded-md bg-black/70 backdrop-blur-md border border-white/20 text-[11px] font-semibold text-white tracking-wide whitespace-nowrap z-10">
-                  {airlineCount} Airlines
-                </span>
-              </div>
-            </Link>
-            <Link
-              to="/search"
-              className="col-start-1 row-start-3 md:col-start-3 md:row-start-4 group relative pointer-events-auto
-                         focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-            >
-              <div className="aspect-square w-full bg-white/70 backdrop-blur-xl rounded-lg border border-gray-200 relative overflow-visible transition-all duration-150 group-hover:scale-[1.02] group-hover:bg-white/80">
-                <div className="absolute inset-0 overflow-hidden">
-                  <CardThumbnailTicker cards={cards} delayMs={1200} />
-                </div>
-                <span className="absolute left-1/2 -translate-x-1/2 -bottom-3 px-4 py-1 rounded-md bg-black/70 backdrop-blur-md border border-white/20 text-[11px] font-semibold text-white tracking-wide whitespace-nowrap z-10">
-                  {cardCount} Cards
-                </span>
-              </div>
-            </Link>
-            <Link
-              to="/decades"
-              className="col-start-2 row-start-5 md:col-start-8 md:row-start-2 group relative pointer-events-auto
-                         focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-            >
-              <div className="aspect-square w-full bg-white/70 backdrop-blur-xl rounded-lg border border-gray-200 relative overflow-visible transition-all duration-150 group-hover:scale-[1.02] group-hover:bg-white/80">
-                <div className="absolute inset-0 overflow-hidden">
-                  <DecadeTicker years={years} delayMs={600} />
-                </div>
-                <span className="absolute left-1/2 -translate-x-1/2 -bottom-3 px-4 py-1 rounded-md bg-black/70 backdrop-blur-md border border-white/20 text-[11px] font-semibold text-white tracking-wide whitespace-nowrap z-10">
-                  {yearSpan ?? 0} Years
-                </span>
-              </div>
-            </Link>
-            <Link
-              to="/countries"
-              className="col-start-1 row-start-6 md:col-start-5 md:row-start-4 group relative pointer-events-auto
-                         focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-            >
-              <div className="aspect-square w-full bg-white/70 backdrop-blur-xl rounded-lg border border-gray-200 relative overflow-visible transition-all duration-150 group-hover:scale-[1.02] group-hover:bg-white/80">
-                <div className="absolute inset-0 overflow-hidden">
-                  <CountryFlagTicker countries={countries} delayMs={1800} />
-                </div>
-                <span className="absolute left-1/2 -translate-x-1/2 -bottom-3 px-4 py-1 rounded-md bg-black/70 backdrop-blur-md border border-white/20 text-[11px] font-semibold text-white tracking-wide whitespace-nowrap z-10">
-                  {countryCount} Countries
-                </span>
-              </div>
-            </Link>
-            <Link
-              to="/manufacturers"
-              className="col-start-2 row-start-7 md:col-start-6 md:row-start-5 group relative pointer-events-auto
-                         focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-            >
-              <div className="aspect-square w-full bg-white/70 backdrop-blur-xl rounded-lg border border-gray-200 relative overflow-visible transition-all duration-150 group-hover:scale-[1.02] group-hover:bg-white/80">
-                <div className="absolute inset-0 overflow-hidden">
-                  <ManufacturerLogoTicker manufacturers={allManufacturers} delayMs={2400} />
-                </div>
-                <span className="absolute left-1/2 -translate-x-1/2 -bottom-3 px-4 py-1 rounded-md bg-black/70 backdrop-blur-md border border-white/20 text-[11px] font-semibold text-white tracking-wide whitespace-nowrap z-10">
-                  {allManufacturers.length} Makes
-                </span>
-              </div>
-            </Link>
-            <div className="col-span-2 md:hidden" aria-hidden="true">&nbsp;</div>
-          </div>
-        </section>
+          ))}
+        </div>
       )}
-    </div>
+
+      {isSearch && (
+        <div className="fixed inset-0 overflow-y-auto bg-background">
+          <button
+            onClick={exitSearchMode}
+            className="fixed top-4 right-4 z-50 text-muted-foreground hover:text-foreground transition-colors"
+            aria-label="Close search"
+          >
+            <X className="h-8 w-8" />
+          </button>
+          <div className="sticky top-0 z-10" style={{ overflow: 'visible' }}>
+            <div className="h-[75px]" />
+            <div
+              className="mx-auto backdrop-blur-xl relative outline outline-2 outline-white"
+              style={{ width: cols * CELL - GAP, backgroundColor: '#ebeaef' }}
+            >
+              <div className="flex items-center gap-2 pt-4 pb-3 px-5">
+                <span className="text-base opacity-40">🔍</span>
+                <input
+                  ref={searchInputRef}
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onKeyDown={handleSearchKeyDown}
+                  placeholder="Search by title, airline, aircraft..."
+                  className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground/50"
+                />
+                {(searchQuery || hasActiveFilters) && (
+                  <button
+                    onClick={clearAllFilters}
+                    className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    Clear all
+                  </button>
+                )}
+              </div>
+
+              <div className="w-full h-px bg-white/60" />
+
+              <div className="flex items-center">
+                <FilterDropdown
+                  label="Airline"
+                  options={airlines}
+                  value={filterAirline}
+                  onChange={setFilterAirline}
+                />
+
+                <div className="w-px h-full self-stretch bg-white/60" />
+
+                <FilterDropdown
+                  label="Manufacturer"
+                  options={mfrNames}
+                  value={filterMfr}
+                  onChange={(v) => {
+                    setFilterMfr(v);
+                    setFilterModel(null);
+                    setFilterVariant(null);
+                  }}
+                />
+
+                {filterMfr && modelNames.length > 0 && (
+                  <>
+                    <div className="w-px self-stretch bg-white/60" />
+                    <FilterDropdown
+                      label="Model"
+                      options={modelNames}
+                      value={filterModel}
+                      onChange={(v) => {
+                        setFilterModel(v);
+                        setFilterVariant(null);
+                      }}
+                    />
+                  </>
+                )}
+
+                {filterModel && variantNames.length > 0 && (
+                  <>
+                    <div className="w-px self-stretch bg-white/60" />
+                    <FilterDropdown
+                      label="Variant"
+                      options={variantNames}
+                      value={filterVariant}
+                      onChange={setFilterVariant}
+                    />
+                  </>
+                )}
+
+                <div className="w-px self-stretch bg-white/60" />
+
+                <FilterDropdown
+                  label="Decade"
+                  options={availableDecades.map((d) => `${d}s`)}
+                  value={filterDecade ? `${filterDecade}s` : null}
+                  onChange={(v) => {
+                    setFilterDecade(v ? parseInt(v) : null);
+                  }}
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className="py-6">
+            {filteredCards.length > 0 || (searchQuery.trim() === '' && !hasActiveFilters) ? (
+              <div
+                className="mx-auto relative"
+                style={{
+                  width: cols * CELL - GAP,
+                  height: tilePositions.maxRow * CELL + TILE_SIZE,
+                  transition: 'height 500ms cubic-bezier(0.4,0,0.2,1)',
+                }}
+              >
+                {cards.map((card) => {
+                  const match = filteredSet.has(card.id);
+                  const isDissolving = dissolvingRef.current.has(card.id);
+                  const isEntering = enteringRef.current.has(card.id);
+                  const pos = tilePositions.positions.get(card.id)
+                    || (isDissolving ? lastPositionsRef.current.get(card.id) : undefined);
+
+                  if (!pos) return null;
+                  if (!match && !isDissolving) return null;
+
+                  const x = pos.col * CELL;
+                  const targetY = pos.row * CELL;
+                  const enterFromY = (tilePositions.maxRow + 2) * CELL;
+                  const y = isEntering ? enterFromY : targetY;
+                  const dissolveDur = dissolveDurationsRef.current.get(card.id) ?? 500;
+
+                  return (
+                    <div
+                      key={card.id}
+                      style={{
+                        position: 'absolute',
+                        left: x,
+                        width: TILE_SIZE,
+                        height: TILE_SIZE,
+                        transform: `translateY(${y}px)`,
+                        opacity: (match && !isDissolving && !isEntering) ? 1 : 0,
+                        transition: isDissolving
+                          ? `opacity ${dissolveDur}ms cubic-bezier(0.4,0,0.2,1)`
+                          : isEntering
+                            ? 'none'
+                            : 'transform 600ms cubic-bezier(0.4,0,0.2,1), opacity 400ms cubic-bezier(0.4,0,0.2,1)',
+                        pointerEvents: match ? 'auto' : 'none',
+                      }}
+                    >
+                      <InfiniteCardTile card={card} />
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="flex flex-col items-center justify-center py-24 text-center">
+                <p className="text-muted-foreground text-sm">No cards match your filters.</p>
+                <button
+                  onClick={clearAllFilters}
+                  className="mt-3 text-xs text-foreground underline underline-offset-2 hover:no-underline"
+                >
+                  Clear all filters
+                </button>
+              </div>
+            )}
+          </div>
+
+          <div className="h-12" />
+        </div>
+      )}
+
+      {!isSearch && (
+        <button
+          onClick={enterSearchMode}
+          className="fixed top-1/2 left-0 z-50 bg-black/70 hover:bg-black/90 text-white text-base px-1.5 py-2 transition-colors backdrop-blur-md border-r border-white/20"
+          style={{
+            writingMode: 'vertical-rl',
+            transform: 'translateY(-50%)',
+          }}
+          aria-label="Search"
+        >
+          🔍
+        </button>
+      )}
+
+      <a
+        href="https://www.lassor.com"
+        target="_blank"
+        rel="noopener noreferrer"
+        className="fixed top-1/2 right-0 z-50 bg-red-600 hover:bg-red-700 text-white text-[10px] font-medium tracking-widest px-1.5 py-2 transition-colors"
+        style={{
+          writingMode: 'vertical-rl',
+          transform: 'translateY(-50%)',
+        }}
+      >
+        developed by lassor
+      </a>
+    </>
   );
 };
