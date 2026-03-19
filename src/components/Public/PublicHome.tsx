@@ -600,7 +600,7 @@ export const PublicHome: React.FC = () => {
         <div className="fixed inset-0 overflow-y-auto bg-background">
           <button
             onClick={exitSearchMode}
-            className="fixed top-3 right-3 z-50 bg-black/70 hover:bg-black/90 text-white px-3.5 py-3 sm:px-2.5 sm:py-2 transition-colors backdrop-blur-md border-b border-white/20"
+            className="fixed top-0 right-0 z-50 bg-black/70 hover:bg-black/90 text-white px-3.5 py-3 sm:px-2.5 sm:py-2 transition-colors backdrop-blur-md border-b border-white/20"
             aria-label="Close search"
           >
             <X className="h-6 w-6 sm:h-4 sm:w-4" />
@@ -764,7 +764,7 @@ export const PublicHome: React.FC = () => {
 
       {!isSearch && (
         <div
-          className="fixed top-3 right-3 z-50 flex flex-col gap-1"
+          className="fixed top-0 right-0 z-50 flex"
         >
           <button
             onClick={() => setShowInfo((v) => !v)}
@@ -779,7 +779,7 @@ export const PublicHome: React.FC = () => {
           </button>
           <button
             onClick={enterSearchMode}
-            className="flex items-center justify-center w-11 h-11 sm:w-8 sm:h-8 bg-white text-black hover:bg-gray-100 transition-colors border border-black/20"
+            className="flex items-center justify-center w-11 h-11 sm:w-8 sm:h-8 bg-white text-black hover:bg-gray-100 transition-colors border border-black/20 border-l-0"
             aria-label="Search"
           >
             <Search className="h-6 w-6 sm:h-4 sm:w-4" />
@@ -791,7 +791,7 @@ export const PublicHome: React.FC = () => {
         href="https://www.lassor.com"
         target="_blank"
         rel="noopener noreferrer"
-        className="fixed bottom-3 right-3 z-50 bg-red-600 hover:bg-red-700 text-white text-[10px] font-medium tracking-widest px-2 py-1.5 transition-colors"
+        className="fixed bottom-0 right-5 z-50 bg-red-600 hover:bg-red-700 text-white text-[10px] font-medium tracking-widest px-2 py-1.5 transition-colors"
       >
         developed by lassor
       </a>
@@ -804,7 +804,7 @@ export const PublicHome: React.FC = () => {
           <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
           <button
             onClick={() => setShowInfo(false)}
-            className="fixed top-3 right-3 z-[70] bg-black/70 hover:bg-black/90 text-white px-3.5 py-3 sm:px-2.5 sm:py-2 transition-colors backdrop-blur-md border-b border-white/20"
+            className="fixed top-0 right-0 z-[70] bg-black/70 hover:bg-black/90 text-white px-3.5 py-3 sm:px-2.5 sm:py-2 transition-colors backdrop-blur-md border-b border-white/20"
             aria-label="Close"
           >
             <X className="h-6 w-6 sm:h-4 sm:w-4" />
