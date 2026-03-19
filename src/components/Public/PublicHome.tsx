@@ -601,7 +601,7 @@ export const PublicHome: React.FC = () => {
           <button
             onClick={exitSearchMode}
             className="fixed z-50 bg-black/70 hover:bg-black/90 text-white px-3.5 py-3 sm:px-2.5 sm:py-2 transition-colors backdrop-blur-md border-b border-white/20"
-            style={{ top: 'env(safe-area-inset-top, 0px)', right: 'env(safe-area-inset-right, 0px)' }}
+            style={{ top: 'calc(0.5rem + env(safe-area-inset-top, 0px))', right: 'calc(0.5rem + env(safe-area-inset-right, 0px))' }}
             aria-label="Close search"
           >
             <X className="h-6 w-6 sm:h-4 sm:w-4" />
@@ -765,8 +765,8 @@ export const PublicHome: React.FC = () => {
 
       {!isSearch && (
         <div
-          className="fixed z-50 flex"
-          style={{ top: 'env(safe-area-inset-top, 0px)', right: 'env(safe-area-inset-right, 0px)' }}
+          className="fixed top-2 right-2 z-50 flex"
+          style={{ top: 'calc(0.5rem + env(safe-area-inset-top, 0px))', right: 'calc(0.5rem + env(safe-area-inset-right, 0px))' }}
         >
           <button
             onClick={() => setShowInfo((v) => !v)}
@@ -794,7 +794,7 @@ export const PublicHome: React.FC = () => {
         target="_blank"
         rel="noopener noreferrer"
         className="fixed z-50 bg-red-600 hover:bg-red-700 text-white text-[10px] font-medium tracking-widest px-2 py-1.5 transition-colors"
-        style={{ bottom: 'env(safe-area-inset-bottom, 0px)', right: 'max(1.25rem, env(safe-area-inset-right, 0px))' }}
+        style={{ bottom: 'calc(0.5rem + env(safe-area-inset-bottom, 0px))', right: 'calc(1.25rem + env(safe-area-inset-right, 0px))' }}
       >
         developed by lassor
       </a>
@@ -808,7 +808,7 @@ export const PublicHome: React.FC = () => {
           <button
             onClick={() => setShowInfo(false)}
             className="fixed z-[70] bg-black/70 hover:bg-black/90 text-white px-3.5 py-3 sm:px-2.5 sm:py-2 transition-colors backdrop-blur-md border-b border-white/20"
-            style={{ top: 'env(safe-area-inset-top, 0px)', right: 'env(safe-area-inset-right, 0px)' }}
+            style={{ top: 'calc(0.5rem + env(safe-area-inset-top, 0px))', right: 'calc(0.5rem + env(safe-area-inset-right, 0px))' }}
             aria-label="Close"
           >
             <X className="h-6 w-6 sm:h-4 sm:w-4" />

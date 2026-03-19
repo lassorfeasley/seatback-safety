@@ -112,7 +112,7 @@ export const PublicCardDetail: React.FC = () => {
       <button
         onClick={() => navigate(-1)}
         className="fixed z-50 flex items-center justify-center w-11 h-11 sm:w-8 sm:h-8 bg-white hover:bg-gray-50 transition-colors border border-black/20"
-        style={{ top: 'env(safe-area-inset-top, 0px)', left: 'env(safe-area-inset-left, 0px)' }}
+        style={{ top: 'calc(0.5rem + env(safe-area-inset-top, 0px))', left: 'calc(0.5rem + env(safe-area-inset-left, 0px))' }}
         aria-label="Go back"
       >
         <ArrowLeft className="h-6 w-6 sm:h-4 sm:w-4 text-foreground" />
@@ -125,7 +125,7 @@ export const PublicCardDetail: React.FC = () => {
             ? 'bg-black text-white hover:bg-black/90'
             : 'bg-white text-black hover:bg-gray-50'
         }`}
-        style={{ bottom: 'env(safe-area-inset-bottom, 0px)', right: 'env(safe-area-inset-right, 0px)' }}
+        style={{ bottom: 'calc(0.5rem + env(safe-area-inset-bottom, 0px))', right: 'calc(0.5rem + env(safe-area-inset-right, 0px))' }}
         aria-label="Card info"
       >
         {showInfo
