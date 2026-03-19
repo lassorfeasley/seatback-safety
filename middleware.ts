@@ -1,5 +1,3 @@
-import { NextRequest, NextResponse } from 'next/server';
-
 const BOT_PATTERN =
   /facebookexternalhit|Facebot|Twitterbot|LinkedInBot|WhatsApp|Slackbot|TelegramBot|Discordbot|Googlebot|bingbot|Baiduspider|iMessageBot|Applebot/i;
 
@@ -10,16 +8,14 @@ export const config = {
   matcher: '/cards/:id*',
 };
 
-export default async function middleware(req: NextRequest) {
-  const ua = req.headers.get('user-agent') || '';
-  if (!BOT_PATTERN.test(ua)) {
-    return NextResponse.next();
-  }
+export default async function middleware(request: Request) {
+  const ua = request.headers.get('user-agent') || '';
+  if (!BOT_PATTERN.test(ua)) return;
 
-  const url = new URL(req.url);
+  const url = new URL(request.url);
   const segments = url.pathname.split('/').filter(Boolean);
   const cardId = segments[1];
-  if (!cardId) return NextResponse.next();
+  if (!cardId) return;
 
   let title = 'Seatback Safety Card';
   let description = 'A seatback safety card from the Seatback Safety collection.';
@@ -79,7 +75,7 @@ export default async function middleware(req: NextRequest) {
 <body></body>
 </html>`;
 
-  return new NextResponse(html, {
+  return new Response(html, {
     status: 200,
     headers: { 'Content-Type': 'text/html; charset=utf-8' },
   });
