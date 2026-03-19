@@ -68,7 +68,7 @@ const PublicLayoutInner: React.FC = () => {
   }, [closeSearch]);
 
   return (
-    <div className="h-dvh flex flex-col bg-background overflow-x-clip overflow-y-auto">
+    <div className="min-h-dvh flex flex-col bg-background overflow-x-clip">
       {/* Nav bar */}
       <header className="sticky top-0 z-40 backdrop-blur-xl" style={{ backgroundColor: 'oklch(50% 0.134 242.749 / 0.7)' }}>
         <div className="max-w-6xl mx-auto px-6">

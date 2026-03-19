@@ -570,7 +570,7 @@ export const PublicHome: React.FC = () => {
   }
 
   return (
-    <>
+    <div className="fixed inset-0 touch-none">
       {!isSearch && (
         <div
           ref={containerRef}
@@ -597,7 +597,7 @@ export const PublicHome: React.FC = () => {
       )}
 
       {isSearch && (
-        <div className="fixed inset-0 overflow-y-auto bg-background">
+        <div className="fixed inset-0 overflow-y-auto bg-background touch-auto">
           <button
             onClick={exitSearchMode}
             className="fixed top-0 right-0 z-50 bg-black/70 hover:bg-black/90 text-white px-3.5 py-3 sm:px-2.5 sm:py-2 transition-colors backdrop-blur-md border-b border-white/20"
@@ -848,6 +848,6 @@ export const PublicHome: React.FC = () => {
           </div>
         </div>
       )}
-    </>
+    </div>
   );
 };
