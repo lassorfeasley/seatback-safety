@@ -128,7 +128,6 @@ export const CardVisualizer3D: React.FC<CardVisualizer3DProps> = ({
   const cursorTilt = useRef({ x: 0, y: 0 });
   const cursorTiltTarget = useRef({ x: 0, y: 0 });
   const cursorTiltRaf = useRef(0);
-  const hasDragged = useRef(false);
 
   const coverDesignation: CoverDesignation = cover || { spreadIndex: 0, side: 'front' };
 
