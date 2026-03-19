@@ -53,8 +53,15 @@
   * {
     @apply border-border;
   }
+  html {
+    overflow: hidden;
+    height: 100%;
+  }
   body {
     @apply bg-background text-foreground font-sans;
+    overflow: hidden;
+    height: 100%;
+    width: 100%;
   }
 }
 

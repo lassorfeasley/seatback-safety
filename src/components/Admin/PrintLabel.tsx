@@ -88,7 +88,7 @@ export const PrintLabel: React.FC = () => {
   const ogUrl = card.preview_url?.replace(/preview\.jpg$/, 'og.jpg') || '';
 
   return (
-    <>
+    <div className="h-dvh overflow-y-auto">
       <style>{PRINT_STYLES}</style>
 
       <div className="label-toolbar sticky top-0 z-10 bg-card border-b px-6 py-3 flex items-center gap-3">
@@ -213,6 +213,6 @@ export const PrintLabel: React.FC = () => {
           )}
         </div>
       </div>
-    </>
+    </div>
   );
 };
