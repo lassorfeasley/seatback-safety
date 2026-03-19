@@ -764,7 +764,7 @@ export const PublicHome: React.FC = () => {
 
       {!isSearch && (
         <div
-          className="fixed top-0 right-0 z-50 flex"
+          className="fixed top-0 right-0 z-[70] flex"
         >
           <button
             onClick={() => setShowInfo((v) => !v)}
@@ -775,7 +775,9 @@ export const PublicHome: React.FC = () => {
             }`}
             aria-label="About"
           >
-            <Info className="h-6 w-6 sm:h-4 sm:w-4" />
+            {showInfo
+              ? <X className="h-6 w-6 sm:h-4 sm:w-4" />
+              : <Info className="h-6 w-6 sm:h-4 sm:w-4" />}
           </button>
           <button
             onClick={enterSearchMode}
@@ -791,29 +793,19 @@ export const PublicHome: React.FC = () => {
         href="https://www.lassor.com"
         target="_blank"
         rel="noopener noreferrer"
-        className="fixed bottom-0 right-5 z-50 bg-red-600 hover:bg-red-700 text-white text-[10px] font-medium tracking-widest px-2 py-1.5 transition-colors"
+        className="fixed top-0 left-5 z-50 bg-red-600 hover:bg-red-700 text-white text-[10px] font-medium tracking-widest px-2 py-1.5 transition-colors"
       >
         developed by lassor
       </a>
 
-      {showInfo && (
-        <div
-          className="fixed inset-0 z-[60] flex items-center justify-center"
-          onClick={() => setShowInfo(false)}
-        >
-          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
-          <button
-            onClick={() => setShowInfo(false)}
-            className="fixed top-0 right-0 z-[70] bg-black/70 hover:bg-black/90 text-white px-3.5 py-3 sm:px-2.5 sm:py-2 transition-colors backdrop-blur-md border-b border-white/20"
-            aria-label="Close"
-          >
-            <X className="h-6 w-6 sm:h-4 sm:w-4" />
-          </button>
-          <div
-            className="relative max-w-md mx-6 p-5 sm:p-6 shadow-2xl"
-            style={{ backgroundColor: '#ebeaef' }}
-            onClick={(e) => e.stopPropagation()}
-          >
+      <div
+        className={`fixed top-0 right-0 h-full z-[60] transition-transform duration-300 ease-out ${
+          showInfo ? 'translate-x-0' : 'translate-x-full'
+        }`}
+        style={{ width: 'min(320px, 85vw)' }}
+      >
+        <div className="h-full bg-white/95 backdrop-blur-xl border-l border-black/20 overflow-y-auto">
+          <div className="p-5 pt-6">
             <div className="flex flex-col gap-4">
               <p className="text-sm sm:text-base font-medium text-foreground/80 leading-relaxed">
                 <span className="font-semibold text-foreground">Seatback Safety</span> is{' '}
@@ -847,7 +839,7 @@ export const PublicHome: React.FC = () => {
             </div>
           </div>
         </div>
-      )}
+      </div>
     </div>
   );
 };

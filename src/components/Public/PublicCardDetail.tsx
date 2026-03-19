@@ -119,7 +119,7 @@ export const PublicCardDetail: React.FC = () => {
 
       <button
         onClick={() => setShowInfo((v) => !v)}
-        className={`fixed bottom-0 right-0 z-50 flex items-center justify-center w-11 h-11 sm:w-8 sm:h-8 transition-colors border border-black/20 ${
+        className={`fixed top-0 right-0 z-50 flex items-center justify-center w-11 h-11 sm:w-8 sm:h-8 transition-colors border border-black/20 ${
           showInfo
             ? 'bg-black text-white hover:bg-black/90'
             : 'bg-white text-black hover:bg-gray-50'
