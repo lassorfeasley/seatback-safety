@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import { Loader2, X, ChevronDown, Info, Search } from 'lucide-react';
+import { Loader2, X, ChevronDown, Info, Search, Send } from 'lucide-react';
 import { fetchCards, type CardSummary } from '@/lib/safetyCardService';
 import {
   fetchManufacturersBrowse, fetchModelsBrowse, fetchVariantsBrowse,
@@ -697,8 +697,11 @@ export const PublicHome: React.FC = () => {
         href="https://www.lassor.com"
         target="_blank"
         rel="noopener noreferrer"
-        className="fixed top-0 left-5 z-50 bg-red-600 hover:bg-red-700 text-white text-[10px] font-medium tracking-widest px-2 py-1.5 transition-colors"
+        className="fixed top-0 left-0 z-50 flex h-11 items-center justify-start bg-red-600 hover:bg-red-700 pr-3 text-white text-[10px] font-medium tracking-widest transition-colors sm:h-8 sm:pr-2"
       >
+        <span className="flex h-11 w-11 shrink-0 items-center justify-center sm:h-8 sm:w-8">
+          <Send className="h-5 w-5 sm:h-4 sm:w-4" />
+        </span>
         developed by lassor
       </a>
 

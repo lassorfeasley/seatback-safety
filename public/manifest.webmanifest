@@ -1,0 +1,23 @@
+{
+  "name": "Seatback Safety",
+  "short_name": "Seatback Safety",
+  "description": "Explore Lassor's airline safety card collection archive",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#dc2626",
+  "theme_color": "#dc2626",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/og-home.svg",
+      "sizes": "1200x1200",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
