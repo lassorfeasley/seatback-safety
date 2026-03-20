@@ -282,6 +282,7 @@ export const CardVisualizer3D: React.FC<CardVisualizer3DProps> = ({
   // ─── Drag-to-rotate ───────────────────────────────────────────
 
   const dragDistance = useRef(0);
+  const lastTouchEnd = useRef(0);
 
   const startDrag = useCallback(
     (x: number, y: number) => {
@@ -624,12 +625,12 @@ export const CardVisualizer3D: React.FC<CardVisualizer3DProps> = ({
           )}
           style={{ perspective: '1200px', perspectiveOrigin: '50% 50%' }}
           ref={canvasRef}
-          onMouseDown={(e) => { e.preventDefault(); startDrag(e.clientX, e.clientY); }}
-          onMouseMove={(e) => moveDrag(e.clientX, e.clientY)}
-          onMouseUp={() => { handleCanvasClick(); endDrag(); }}
+          onMouseDown={(e) => { if (Date.now() - lastTouchEnd.current < 500) return; e.preventDefault(); startDrag(e.clientX, e.clientY); }}
+          onMouseMove={(e) => { if (Date.now() - lastTouchEnd.current < 500) return; moveDrag(e.clientX, e.clientY); }}
+          onMouseUp={() => { if (Date.now() - lastTouchEnd.current < 500) return; handleCanvasClick(); endDrag(); }}
           onMouseLeave={() => { if (isDragging) endDrag(); }}
           onTouchStart={(e) => { if (e.touches.length === 1) startDrag(e.touches[0].clientX, e.touches[0].clientY); }}
-          onTouchEnd={() => { handleCanvasClick(); endDrag(); }}
+          onTouchEnd={() => { lastTouchEnd.current = Date.now(); handleCanvasClick(); endDrag(); }}
         >
           {/* Outer container: user rotation + staticFlipY */}
           <div
