@@ -24,7 +24,6 @@ import {
   Check,
   Upload,
   Hash,
-  RefreshCw,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { CardVisualizer3D } from '@/components/FoldEditor/CardVisualizer3D';
