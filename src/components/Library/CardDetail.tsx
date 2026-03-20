@@ -28,7 +28,8 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { CardVisualizer3D } from '@/components/FoldEditor/CardVisualizer3D';
-import { generateAndUploadOgImage } from '@/lib/ogImageGenerator';
+import { generateAndUploadOgImage, type OgImageInput } from '@/lib/ogImageGenerator';
+import { OgBuilder } from '@/components/Library/OgBuilder';
 import { analyzeCardScans, type CardSuggestions } from '@/lib/aiService';
 import { supabase } from '@/lib/supabase';
 import {
@@ -275,41 +276,24 @@ export const CardDetail: React.FC<CardDetailProps> = ({ cardId, onBack, onEditCr
     img.src = ogImageUrl;
   }, [ogImageUrl]);
 
-  const handleGenerateOg = useCallback(async () => {
+  const handleGenerateOg = useCallback(async (secondPanel?: { panelId: string; offsetX: number }) => {
     if (!card) return;
     setGeneratingOg(true);
-    const result = await generateAndUploadOgImage(cardId, {
+    const input: OgImageInput = {
       panels: card.panels,
       creases: card.creases,
       cover: card.cover,
       pivotIndex: card.pivotIndex ?? undefined,
       displayUrls: card.displayUrls,
-    });
+      secondPanel,
+    };
+    const result = await generateAndUploadOgImage(cardId, input);
     setGeneratingOg(false);
     if (result.success && result.url) {
       setOgImageUrl(result.url + '?t=' + Date.now());
       setOgExists(true);
     }
   }, [card, cardId]);
-
-  // Auto-generate OG image when card has complete crops + folds
-  const ogFingerprintRef = useRef<string>('');
-  useEffect(() => {
-    if (!card || generatingOg) return;
-    const hasCrops = card.panels.length >= (card.panel_count ?? 0) * 2;
-    const hasFolds = card.creases.length > 0;
-    if (!hasCrops || !hasFolds) return;
-
-    const fingerprint = [
-      card.panels.map(p => p.id).join(','),
-      card.creases.map(c => `${c.side}:${c.between_panel}:${c.fold_direction}:${c.unfold_sequence}`).join(','),
-      `${card.cover.side}:${card.cover.spreadIndex}`,
-    ].join('|');
-
-    if (fingerprint === ogFingerprintRef.current) return;
-    ogFingerprintRef.current = fingerprint;
-    handleGenerateOg();
-  }, [card, generatingOg, handleGenerateOg]);
 
   const handleBack = useCallback(async () => {
     if (isNew && card && card.panels.length === 0 && card.scans.length === 0 && !card.title) {
@@ -633,40 +617,26 @@ export const CardDetail: React.FC<CardDetailProps> = ({ cardId, onBack, onEditCr
                 )}
               </SetupStep>
 
-              {(ogExists && ogImageUrl || generatingOg || isEditing) && (
+              {isEditing && card.panels.length > 0 && (
+                <OgBuilder
+                  panels={card.panels}
+                  cover={card.cover}
+                  displayUrls={card.displayUrls}
+                  ogImageUrl={ogImageUrl}
+                  ogExists={ogExists}
+                  generatingOg={generatingOg}
+                  onGenerate={handleGenerateOg}
+                />
+              )}
+              {!isEditing && ogExists && ogImageUrl && (
                 <section>
-                  <div className="flex items-center justify-between mb-2">
-                    <h2 className="text-sm font-medium text-muted-foreground">OG Image</h2>
-                    {isEditing && (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={handleGenerateOg}
-                        disabled={generatingOg}
-                        className="h-7 px-2 text-xs gap-1.5"
-                      >
-                        <RefreshCw className={cn("h-3 w-3", generatingOg && "animate-spin")} />
-                        Regenerate
-                      </Button>
-                    )}
-                  </div>
+                  <h2 className="text-sm font-medium text-muted-foreground mb-2">OG Image</h2>
                   <div className="rounded-xl border bg-card overflow-hidden">
-                    {generatingOg ? (
-                      <div className="flex items-center justify-center gap-2 py-8 text-sm text-muted-foreground">
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                        Generating OG image…
-                      </div>
-                    ) : ogExists && ogImageUrl ? (
-                      <img
-                        src={ogImageUrl}
-                        alt="Generated Open Graph image"
-                        className="w-full h-auto"
-                      />
-                    ) : (
-                      <div className="flex items-center justify-center py-8 text-sm text-muted-foreground">
-                        No OG image yet
-                      </div>
-                    )}
+                    <img
+                      src={ogImageUrl}
+                      alt="Generated Open Graph image"
+                      className="w-full h-auto"
+                    />
                   </div>
                 </section>
               )}
