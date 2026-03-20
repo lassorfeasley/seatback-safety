@@ -149,7 +149,7 @@ export const PublicCardDetail: React.FC = () => {
     <div className="fixed inset-0 bg-gradient-to-b from-slate-100 to-slate-200 dark:from-slate-800 dark:to-slate-900 touch-none cursor-crosshair">
       <button
         onClick={() => navigate(-1)}
-        className="fixed top-0 left-0 z-50 flex items-center justify-center w-11 h-11 sm:w-8 sm:h-8 bg-white hover:bg-gray-50 transition-colors border border-black/20 border-l-0"
+        className="fixed top-0 left-0 z-50 flex items-center justify-center w-11 h-11 sm:w-8 sm:h-8 bg-white hover:bg-gray-50 transition-colors border border-black/20 border-t-0 border-l-0"
         aria-label="Go back"
       >
         <ArrowLeft className="h-6 w-6 sm:h-4 sm:w-4 text-foreground" />
@@ -169,7 +169,7 @@ export const PublicCardDetail: React.FC = () => {
         {!showInfo && (
           <button
             onClick={() => setShowLightbox((v) => !v)}
-            className={`flex items-center justify-center w-11 h-11 sm:w-8 sm:h-8 transition-colors border border-black/20 border-r-0 ${
+            className={`flex items-center justify-center w-11 h-11 sm:w-8 sm:h-8 transition-colors border border-black/20 border-t-0 border-r-0 ${
               showLightbox
                 ? 'bg-black text-white hover:bg-black/90'
                 : 'bg-white text-black hover:bg-gray-50'
@@ -183,7 +183,7 @@ export const PublicCardDetail: React.FC = () => {
         )}
         <button
           onClick={() => setShowInfo((v) => !v)}
-          className="flex items-center justify-center w-11 h-11 sm:w-8 sm:h-8 transition-colors border border-black/20 border-r-0 bg-white text-black hover:bg-gray-50"
+          className="flex items-center justify-center w-11 h-11 sm:w-8 sm:h-8 transition-colors border border-black/20 border-t-0 border-r-0 bg-white text-black hover:bg-gray-50"
           aria-label="Card info"
         >
           {showInfo
