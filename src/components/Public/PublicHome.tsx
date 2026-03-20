@@ -536,7 +536,7 @@ export const PublicHome: React.FC = () => {
         <div className="fixed inset-0 overflow-y-auto bg-background touch-auto">
           <button
             onClick={exitSearchMode}
-            className="fixed top-0 right-0 z-50 bg-black/70 hover:bg-black/90 text-white px-3.5 py-3 sm:px-2.5 sm:py-2 transition-colors backdrop-blur-md border-b border-white/20"
+            className="fixed top-0 right-0 z-50 flex items-center justify-center w-11 h-11 sm:w-8 sm:h-8 bg-white text-black hover:bg-gray-50 transition-colors border border-black/20 border-r-0"
             aria-label="Close search"
           >
             <X className="h-6 w-6 sm:h-4 sm:w-4" />
@@ -683,7 +683,7 @@ export const PublicHome: React.FC = () => {
           )}
           <button
             onClick={() => setShowInfo((v) => !v)}
-            className="flex items-center justify-center w-11 h-11 sm:w-8 sm:h-8 transition-colors border border-black/20 bg-white text-black hover:bg-gray-50"
+            className="flex items-center justify-center w-11 h-11 sm:w-8 sm:h-8 transition-colors border border-black/20 border-r-0 bg-white text-black hover:bg-gray-50"
             aria-label="About"
           >
             {showInfo
