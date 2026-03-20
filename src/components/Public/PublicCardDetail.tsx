@@ -149,18 +149,20 @@ export const PublicCardDetail: React.FC = () => {
     <div className="fixed inset-0 bg-gradient-to-b from-slate-100 to-slate-200 dark:from-slate-800 dark:to-slate-900 touch-none cursor-crosshair">
       <button
         onClick={() => navigate(-1)}
-        className="fixed top-0 left-0 z-50 flex items-center justify-center w-11 h-11 sm:w-8 sm:h-8 bg-white hover:bg-gray-50 transition-colors border border-black/20"
+        className="fixed top-0 left-0 z-50 flex items-center justify-center w-11 h-11 sm:w-8 sm:h-8 bg-white hover:bg-gray-50 transition-colors border border-black/20 border-l-0"
         aria-label="Go back"
       >
         <ArrowLeft className="h-6 w-6 sm:h-4 sm:w-4 text-foreground" />
       </button>
 
       <div
-        className="fixed top-0 left-1/2 -translate-x-1/2 z-50 flex items-center justify-center h-11 sm:h-8 bg-white text-foreground text-[10px] font-medium tracking-widest px-3 border border-black/20 pointer-events-none"
+        className="fixed left-0 top-1/2 -translate-y-1/2 z-50 flex items-center justify-center py-3 pl-1 pr-2 bg-white text-foreground text-[10px] font-medium tracking-widest border border-black/20 border-l-0 pointer-events-none overflow-visible [writing-mode:vertical-lr]"
         aria-hidden
       >
-        <span className="hidden sm:inline">Click to open, drag to rotate</span>
-        <span className="sm:hidden">Tap to open, drag to rotate</span>
+        <span className="inline-block [transform:rotate(180deg)]">
+          <span className="hidden sm:inline">Click to open, drag to rotate</span>
+          <span className="sm:hidden">Tap to open, drag to rotate</span>
+        </span>
       </div>
 
       <div className="fixed top-0 right-0 z-50 flex">
@@ -181,7 +183,7 @@ export const PublicCardDetail: React.FC = () => {
         )}
         <button
           onClick={() => setShowInfo((v) => !v)}
-          className="flex items-center justify-center w-11 h-11 sm:w-8 sm:h-8 transition-colors border border-black/20 bg-white text-black hover:bg-gray-50"
+          className="flex items-center justify-center w-11 h-11 sm:w-8 sm:h-8 transition-colors border border-black/20 border-r-0 bg-white text-black hover:bg-gray-50"
           aria-label="Card info"
         >
           {showInfo
