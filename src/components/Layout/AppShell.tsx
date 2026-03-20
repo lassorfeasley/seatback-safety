@@ -51,8 +51,8 @@ export const AppShell: React.FC<AppShellProps> = ({
           'flex items-center border-b h-[61px] px-3',
           collapsed ? 'justify-center' : 'gap-2.5'
         )}>
-          <div className="flex-shrink-0 h-8 w-8 rounded-md bg-primary/10 flex items-center justify-center">
-            <Plane className="h-4 w-4 text-primary" />
+          <div className="flex-shrink-0 h-8 w-8 rounded-md bg-primary flex items-center justify-center">
+            <img src="/logo.png" alt="Seatback Safety" className="h-5 w-5" />
           </div>
           {!collapsed && (
             <span className="font-semibold text-sm tracking-tight truncate">Seatback</span>
