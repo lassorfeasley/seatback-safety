@@ -544,7 +544,7 @@ export const PublicHome: React.FC = () => {
           <div className="pt-[60px] px-10 sm:pt-6 sm:px-0 pb-6">
             <div className="mx-auto flex w-full max-w-[min(732px,calc(100vw-40px))] flex-col gap-4">
               <div
-                className="w-full backdrop-blur-xl outline outline-2 outline-white"
+                className="relative z-10 w-full backdrop-blur-xl outline outline-2 outline-white"
                 style={{ backgroundColor: '#ebeaef' }}
               >
               <div className="flex items-center gap-2 pt-4 pb-3 px-5">
