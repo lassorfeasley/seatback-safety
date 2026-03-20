@@ -8,6 +8,7 @@ import {
   type ManufacturerBrowse, type ModelBrowse, type VariantBrowse,
   type AirlineBrowse,
 } from '@/lib/lookupService';
+import { InfoSheet, InfoRow } from '@/components/Public/InfoSheet';
 
 const TILE_SIZE = 140;
 const GAP = 8;
@@ -540,12 +541,12 @@ export const PublicHome: React.FC = () => {
           >
             <X className="h-6 w-6 sm:h-4 sm:w-4" />
           </button>
-          <div className="sticky top-0 z-10" style={{ overflow: 'visible' }}>
-            <div className="h-[75px]" />
-            <div
-              className="mx-auto backdrop-blur-xl relative outline outline-2 outline-white"
-              style={{ width: cols * CELL - GAP, backgroundColor: '#ebeaef' }}
-            >
+          <div className="pt-[60px] px-10 sm:pt-6 sm:px-0 pb-6">
+            <div className="mx-auto flex w-full max-w-[min(732px,calc(100vw-40px))] flex-col gap-4">
+              <div
+                className="w-full backdrop-blur-xl outline outline-2 outline-white"
+                style={{ backgroundColor: '#ebeaef' }}
+              >
               <div className="flex items-center gap-2 pt-4 pb-3 px-5">
                 <Search className="h-4 w-4 opacity-40 shrink-0" />
                 <input
@@ -629,36 +630,27 @@ export const PublicHome: React.FC = () => {
                 />
               </div>
             </div>
-          </div>
 
-          <div className="py-6">
             {filteredCards.length > 0 || (searchQuery.trim() === '' && !hasActiveFilters) ? (
               <div
-                className="mx-auto relative"
+                className="grid w-full"
                 style={{
-                  width: cols * CELL - GAP,
-                  height: tilePositions.maxRow * CELL + TILE_SIZE,
+                  gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`,
+                  gap: GAP,
                 }}
               >
-                {filteredCards.map((card) => {
-                  const pos = tilePositions.positions.get(card.id);
-                  if (!pos) return null;
-
-                  return (
-                    <div
-                      key={card.id}
-                      style={{
-                        position: 'absolute',
-                        left: pos.col * CELL,
-                        top: pos.row * CELL,
-                        width: TILE_SIZE,
-                        height: TILE_SIZE,
-                      }}
-                    >
+                {[...filteredCards]
+                  .sort((a, b) => {
+                    const posA = tilePositions.positions.get(a.id);
+                    const posB = tilePositions.positions.get(b.id);
+                    if (!posA || !posB) return 0;
+                    return posA.row !== posB.row ? posA.row - posB.row : posA.col - posB.col;
+                  })
+                  .map((card) => (
+                    <div key={card.id} className="aspect-square min-w-0">
                       <InfiniteCardTile card={card} />
                     </div>
-                  );
-                })}
+                  ))}
               </div>
             ) : (
               <div className="flex flex-col items-center justify-center py-24 text-center">
@@ -671,6 +663,7 @@ export const PublicHome: React.FC = () => {
                 </button>
               </div>
             )}
+            </div>
           </div>
 
           <div className="h-12" />
@@ -678,28 +671,24 @@ export const PublicHome: React.FC = () => {
       )}
 
       {!isSearch && (
-        <div
-          className="fixed top-0 right-0 z-[70] flex"
-        >
+        <div className="fixed top-0 right-0 z-[70] flex">
+          {!showInfo && (
+            <button
+              onClick={enterSearchMode}
+              className="flex items-center justify-center w-11 h-11 sm:w-8 sm:h-8 bg-white text-black hover:bg-gray-100 transition-colors border border-black/20 border-r-0"
+              aria-label="Search"
+            >
+              <Search className="h-6 w-6 sm:h-4 sm:w-4" />
+            </button>
+          )}
           <button
             onClick={() => setShowInfo((v) => !v)}
-            className={`flex items-center justify-center w-11 h-11 sm:w-8 sm:h-8 transition-colors border border-black/20 ${
-              showInfo
-                ? 'bg-black text-white hover:bg-black/90'
-                : 'bg-white text-black hover:bg-gray-100'
-            }`}
+            className="flex items-center justify-center w-11 h-11 sm:w-8 sm:h-8 transition-colors border border-black/20 bg-white text-black hover:bg-gray-50"
             aria-label="About"
           >
             {showInfo
               ? <X className="h-6 w-6 sm:h-4 sm:w-4" />
               : <Info className="h-6 w-6 sm:h-4 sm:w-4" />}
-          </button>
-          <button
-            onClick={enterSearchMode}
-            className="flex items-center justify-center w-11 h-11 sm:w-8 sm:h-8 bg-white text-black hover:bg-gray-100 transition-colors border border-black/20 border-l-0"
-            aria-label="Search"
-          >
-            <Search className="h-6 w-6 sm:h-4 sm:w-4" />
           </button>
         </div>
       )}
@@ -713,15 +702,8 @@ export const PublicHome: React.FC = () => {
         developed by lassor
       </a>
 
-      <div
-        className={`fixed top-0 right-0 h-full z-[60] transition-transform duration-300 ease-out ${
-          showInfo ? 'translate-x-0' : 'translate-x-full'
-        }`}
-        style={{ width: 'min(320px, 85vw)' }}
-      >
-        <div className="h-full bg-white/95 backdrop-blur-xl border-l border-black/20 overflow-y-auto">
-          <div className="p-5 pt-6">
-            <div className="flex flex-col gap-4">
+      <InfoSheet open={showInfo} title="About" className="z-[60]">
+        <div className="flex flex-col gap-4">
               <p className="text-sm sm:text-base font-medium text-foreground/80 leading-relaxed">
                 <span className="font-semibold text-foreground">Seatback Safety</span> is{' '}
                 <a href="https://www.lassor.com" target="_blank" rel="noopener noreferrer" className="text-red-600 hover:underline">
@@ -736,25 +718,22 @@ export const PublicHome: React.FC = () => {
               <p className="text-xs sm:text-sm text-muted-foreground leading-relaxed">
                 He also personally acquires, documents, files, and maintains the specimens in his personal archive.
               </p>
-              <div className="grid grid-cols-3 gap-x-6 gap-y-2 pt-1">
-                {[
-                  { value: cards.length, label: 'Cards' },
-                  { value: allAirlines.length, label: 'Airlines' },
-                  { value: manufacturers.length, label: 'Manufacturers' },
-                  { value: new Set(allAirlines.map((a) => a.country).filter(Boolean)).size, label: 'Countries' },
-                  { value: languageCount, label: 'Languages' },
-                  { value: (() => { const yrs = cards.map((c) => c.published_year).filter((y): y is number => y != null); return yrs.length > 0 ? Math.max(...yrs) - Math.min(...yrs) : 0; })(), label: 'Years span' },
-                ].map((stat) => (
-                  <div key={stat.label}>
-                    <div className="text-2xl sm:text-3xl font-bold text-foreground leading-tight">{stat.value}</div>
-                    <div className="text-[10px] text-muted-foreground">{stat.label}</div>
-                  </div>
-                ))}
-              </div>
-            </div>
+          <div className="grid grid-cols-3 gap-x-6 gap-y-4 pt-1">
+            {[
+              { value: cards.length, label: 'Cards' },
+              { value: allAirlines.length, label: 'Airlines' },
+              { value: manufacturers.length, label: 'Manufacturers' },
+              { value: new Set(allAirlines.map((a) => a.country).filter(Boolean)).size, label: 'Countries' },
+              { value: languageCount, label: 'Languages' },
+              { value: (() => { const yrs = cards.map((c) => c.published_year).filter((y): y is number => y != null); return yrs.length > 0 ? Math.max(...yrs) - Math.min(...yrs) : 0; })(), label: 'Years span' },
+            ].map((stat) => (
+              <InfoRow key={stat.label} label={stat.label}>
+                {stat.value}
+              </InfoRow>
+            ))}
           </div>
         </div>
-      </div>
+      </InfoSheet>
     </div>
   );
 };

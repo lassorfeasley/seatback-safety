@@ -96,6 +96,8 @@ export interface CardDetailData {
   provenance: DetailProvenanceEntry[];
   priceObservations: DetailPriceObservation[];
   preview_url: string | null;
+  thumbnail_url: string | null;
+  og_url: string | null;
   airline_id: string | null;
   airline_country: string | null;
   airline_logo_url: string | null;
@@ -988,6 +990,15 @@ export async function fetchCardDetail(cardId: string): Promise<CardDetailData | 
     provenance,
     priceObservations,
     preview_url: derivativePublicUrl(`${cardId}/preview.jpg`),
+    thumbnail_url: (() => {
+      const coverPanel = panels.find(
+        (p) => p.side === (card.cover_side as string) && p.panel_index === (card.cover_spread_index as number)
+      );
+      const panel = coverPanel ?? panels[0];
+      if (!panel) return null;
+      return displayUrls[panel.id] || fullUrls[panel.id] || panel.thumbnail_url || null;
+    })(),
+    og_url: derivativePublicUrl(`${cardId}/og.jpg`),
     airline_id: (card.airline_id as string) ?? null,
     airline_country: (airline?.country as string) ?? null,
     airline_logo_url: airlineLogoUrl,

@@ -620,7 +620,7 @@ export const CardVisualizer3D: React.FC<CardVisualizer3DProps> = ({
             minimal
               ? 'relative w-full h-full select-none'
               : 'rounded-b-lg bg-gradient-to-b from-slate-100 to-slate-200 dark:from-slate-800 dark:to-slate-900 relative min-h-[350px] h-full select-none overflow-hidden',
-            isDragging ? 'cursor-grabbing' : (minimal ? 'cursor-pointer' : 'cursor-grab')
+            isDragging ? 'cursor-grabbing' : (minimal ? 'cursor-crosshair' : 'cursor-grab')
           )}
           style={{ perspective: '1200px', perspectiveOrigin: '50% 50%' }}
           ref={canvasRef}
