@@ -4,21 +4,12 @@ const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY");
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 
-const SYSTEM_PROMPT = `You are the creative director for a niche Instagram account dedicated to airline safety cards — the beautifully illustrated emergency instruction cards found in aircraft seatback pockets.
+const FALLBACK_SYSTEM_PROMPT = `You are the creative director for a niche Instagram account dedicated to airline safety cards — the beautifully illustrated emergency instruction cards found in aircraft seatback pockets.
 
 You will be shown one or more panel images from an airline safety card. Your job is to:
 1. Pick the single most visually compelling panel
 2. Select a square crop region within that panel that would make a striking Instagram post
 3. Write an engaging Instagram caption
-
-When choosing a crop, prioritize:
-- Dramatic emergency scenarios (fire, evacuation slides, water ditching, brace positions)
-- Expressive illustrated figures with distinctive body language or facial expressions
-- Detailed equipment close-ups (oxygen masks, life vests, exit mechanisms)
-- Unusual, retro, or distinctive illustration styles
-- Bold typography or graphic design elements
-- Cross-section diagrams showing aircraft internals
-- Anything visually surprising, beautiful, or culturally interesting
 
 The crop MUST be square. Return percentage-based coordinates relative to the chosen panel image:
 - x_pct: left edge of the crop as a fraction (0.0 = left edge, 1.0 = right edge)
@@ -26,8 +17,6 @@ The crop MUST be square. Return percentage-based coordinates relative to the cho
 - size_pct: size of the square as a fraction of the image's smaller dimension
 
 Make sure the crop region stays within bounds: x_pct + size_pct <= 1.0 and y_pct + size_pct <= 1.0.
-
-For the caption, write in the voice of a knowledgeable collector who appreciates both aviation history and graphic design. Mix aviation trivia with design commentary. Be conversational and engaging. Include 3-5 relevant hashtags at the end.
 
 Return ONLY valid JSON:
 {
@@ -41,8 +30,227 @@ Return ONLY valid JSON:
   "caption": "The full Instagram caption with hashtags"
 }`;
 
+interface StyleDirective {
+  label: string;
+  directive: string;
+  category: string;
+  enforcement: string;
+  sort_order: number;
+}
+
+function buildSystemPrompt(directives: StyleDirective[]): string {
+  const sections: string[] = [
+    `You are the creative director for a niche Instagram account dedicated to airline safety cards — the beautifully illustrated emergency instruction cards found in aircraft seatback pockets.
+
+You will be shown one or more panel images from an airline safety card. Your job is to:
+1. Pick the single most visually compelling panel
+2. Select a square crop region within that panel that would make a striking Instagram post
+3. Write a caption following the directives below`,
+  ];
+
+  const byCategory = new Map<string, StyleDirective[]>();
+  for (const d of directives) {
+    const list = byCategory.get(d.category) ?? [];
+    list.push(d);
+    byCategory.set(d.category, list);
+  }
+
+  const categoryHeadings: Record<string, string> = {
+    format: 'CAPTION FORMAT',
+    voice: 'VOICE & VOCABULARY',
+    theme: 'THEMATIC SUBTEXT',
+    crop: 'CROP SELECTION',
+    hashtag: 'HASHTAGS',
+    constraint: 'CONSTRAINTS',
+    example: 'EXAMPLE CAPTIONS (tone references — do not copy verbatim)',
+    general: 'GENERAL',
+  };
+
+  const categoryOrder = ['crop', 'format', 'voice', 'theme', 'hashtag', 'constraint', 'example', 'general'];
+
+  const enforcementPrefix: Record<string, string> = {
+    must: 'MUST:',
+    should: 'SHOULD:',
+    may: 'MAY (optional):',
+  };
+
+  for (const cat of categoryOrder) {
+    const items = byCategory.get(cat);
+    if (!items || items.length === 0) continue;
+    const heading = categoryHeadings[cat] ?? cat.toUpperCase();
+    const body = items.map((d) => {
+      const prefix = enforcementPrefix[d.enforcement] ?? '';
+      return `• ${prefix ? prefix + ' ' : ''}${d.directive}`;
+    }).join('\n\n');
+    sections.push(`## ${heading}\n${body}`);
+  }
+
+  sections.push(`## RESPONSE FORMAT
+The crop MUST be square. Return percentage-based coordinates relative to the chosen panel image:
+- x_pct: left edge of the crop as a fraction (0.0 = left edge, 1.0 = right edge)
+- y_pct: top edge of the crop as a fraction (0.0 = top, 1.0 = bottom)
+- size_pct: size of the square as a fraction of the image's smaller dimension
+
+Make sure the crop region stays within bounds: x_pct + size_pct <= 1.0 and y_pct + size_pct <= 1.0.
+
+Return ONLY valid JSON:
+{
+  "chosen_panel_index": 0,
+  "crop": {
+    "x_pct": 0.15,
+    "y_pct": 0.20,
+    "size_pct": 0.45
+  },
+  "crop_description": "Brief description of what's in the crop",
+  "caption": "The full caption with hashtags"
+}`);
+
+  return sections.join('\n\n');
+}
+
+const FALLBACK_CAPTION_ONLY_PROMPT = `You are the creative director for a niche Instagram account dedicated to airline safety cards.
+
+The user has ALREADY chosen a square crop on a single panel image. Your ONLY job is to write an Instagram caption (and a short crop_description) for what appears in that crop.
+
+Do NOT choose a different crop or panel.
+
+Return ONLY valid JSON:
+{
+  "crop_description": "Brief description of what appears in the user's selected crop",
+  "caption": "The full Instagram caption with hashtags"
+}`;
+
+function buildCaptionOnlySystemPrompt(directives: StyleDirective[]): string {
+  const sections: string[] = [
+    `You are the creative director for a niche Instagram account dedicated to airline safety cards — the beautifully illustrated emergency instruction cards found in aircraft seatback pockets.
+
+The user has ALREADY selected a square crop on the panel image. You must NOT choose a crop or a different panel.
+Your ONLY task is to write a caption (and a brief crop_description) following the directives below. Focus on what appears inside the described crop region.`,
+  ];
+
+  const byCategory = new Map<string, StyleDirective[]>();
+  for (const d of directives) {
+    if (d.category === "crop") continue;
+    const list = byCategory.get(d.category) ?? [];
+    list.push(d);
+    byCategory.set(d.category, list);
+  }
+
+  const categoryHeadings: Record<string, string> = {
+    format: "CAPTION FORMAT",
+    voice: "VOICE & VOCABULARY",
+    theme: "THEMATIC SUBTEXT",
+    hashtag: "HASHTAGS",
+    constraint: "CONSTRAINTS",
+    example: "EXAMPLE CAPTIONS (tone references — do not copy verbatim)",
+    general: "GENERAL",
+  };
+
+  const categoryOrder = ["format", "voice", "theme", "hashtag", "constraint", "example", "general"];
+
+  const enforcementPrefix: Record<string, string> = {
+    must: "MUST:",
+    should: "SHOULD:",
+    may: "MAY (optional):",
+  };
+
+  for (const cat of categoryOrder) {
+    const items = byCategory.get(cat);
+    if (!items || items.length === 0) continue;
+    const heading = categoryHeadings[cat] ?? cat.toUpperCase();
+    const body = items.map((d) => {
+      const prefix = enforcementPrefix[d.enforcement] ?? "";
+      return `• ${prefix ? prefix + " " : ""}${d.directive}`;
+    }).join("\n\n");
+    sections.push(`## ${heading}\n${body}`);
+  }
+
+  sections.push(`## RESPONSE FORMAT
+Return ONLY valid JSON (no markdown fences):
+{
+  "crop_description": "Brief description of what appears in the user's selected crop",
+  "caption": "The full caption with hashtags"
+}`);
+
+  return sections.join("\n\n");
+}
+
+function isValidManualCrop(c: { x_pct: number; y_pct: number; size_pct: number }): boolean {
+  const { x_pct, y_pct, size_pct } = c;
+  if (![x_pct, y_pct, size_pct].every((n) => typeof n === "number" && Number.isFinite(n))) return false;
+  if (size_pct <= 0 || size_pct > 1) return false;
+  if (x_pct < 0 || y_pct < 0 || x_pct > 1 || y_pct > 1) return false;
+  return true;
+}
+
+interface PanelInfo {
+  id: string;
+  side: string;
+  panel_index: number;
+  image_url: string;
+  file_path: string;
+  width_px: number | null;
+  height_px: number | null;
+}
+
+function collectPanelInfos(card: Record<string, unknown>): PanelInfo[] {
+  const panelInfos: PanelInfo[] = [];
+  for (const side of (card.card_sides as Array<Record<string, unknown>>) ?? []) {
+    for (const panel of (side.card_panels as Array<Record<string, unknown>>) ?? []) {
+      const images = (panel.panel_images as Array<Record<string, unknown>>) ?? [];
+      const display = images.find((i) => i.variant === "display")
+        ?? images.find((i) => i.variant === "full");
+      if (display) {
+        panelInfos.push({
+          id: panel.id as string,
+          side: side.side as string,
+          panel_index: panel.panel_index as number,
+          image_url: derivativePublicUrl(display.file_path as string),
+          file_path: display.file_path as string,
+          width_px: (display.width_px as number) ?? null,
+          height_px: (display.height_px as number) ?? null,
+        });
+      }
+    }
+  }
+  return panelInfos;
+}
+
 function derivativePublicUrl(filePath: string): string {
   return `${SUPABASE_URL}/storage/v1/object/public/derivatives/${filePath}`;
+}
+
+async function callClaude(systemPrompt: string, userContent: unknown[]): Promise<Record<string, unknown>> {
+  const anthropicResponse = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": ANTHROPIC_API_KEY!,
+      "anthropic-version": "2023-06-01",
+    },
+    body: JSON.stringify({
+      model: "claude-sonnet-4-20250514",
+      max_tokens: 2048,
+      system: systemPrompt,
+      messages: [{ role: "user", content: userContent }],
+    }),
+  });
+
+  if (!anthropicResponse.ok) {
+    const errText = await anthropicResponse.text();
+    throw new Error(`Anthropic API error: ${anthropicResponse.status} ${errText}`);
+  }
+
+  const result = await anthropicResponse.json();
+  const textBlock = result.content?.find((b: Record<string, unknown>) => b.type === "text");
+  const raw = textBlock?.text ?? "";
+
+  const jsonMatch = raw.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) {
+    throw new Error(`Could not parse AI response: ${raw}`);
+  }
+
+  return JSON.parse(jsonMatch[0]) as Record<string, unknown>;
 }
 
 Deno.serve(async (req: Request) => {
@@ -67,6 +275,224 @@ Deno.serve(async (req: Request) => {
   try {
     const { createClient } = await import("https://esm.sh/@supabase/supabase-js@2");
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+
+    const { data: directiveRows } = await supabase
+      .from("social_style_directives")
+      .select("label, directive, category, enforcement, sort_order")
+      .eq("is_active", true)
+      .order("sort_order", { ascending: true });
+
+    let requestBody: Record<string, unknown> = {};
+    if (req.method === "POST") {
+      try {
+        requestBody = await req.json() as Record<string, unknown>;
+      } catch {
+        /* empty body */
+      }
+    }
+
+    if (requestBody.mode === "manual_crop") {
+      const cardId = requestBody.card_id as string | undefined;
+      const panelId = requestBody.panel_id as string | undefined;
+      const croppedImagePath = requestBody.cropped_image_path as string | undefined;
+      const cropRaw = requestBody.crop as Record<string, unknown> | undefined;
+      const crop = {
+        x_pct: Number(cropRaw?.x_pct),
+        y_pct: Number(cropRaw?.y_pct),
+        size_pct: Number(cropRaw?.size_pct),
+      };
+
+      if (!cardId || !panelId) {
+        return new Response(
+          JSON.stringify({ error: "manual_crop requires card_id and panel_id" }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
+      }
+
+      const useUploadedSquare = typeof croppedImagePath === "string" &&
+        croppedImagePath.length > 0 &&
+        croppedImagePath.startsWith(`${cardId}/`);
+
+      if (!useUploadedSquare) {
+        if (!cropRaw) {
+          return new Response(
+            JSON.stringify({ error: "manual_crop requires crop or cropped_image_path" }),
+            { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+          );
+        }
+        if (!isValidManualCrop(crop)) {
+          return new Response(
+            JSON.stringify({ error: "Invalid crop values", crop }),
+            { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+          );
+        }
+      }
+
+      const captionSystem = directiveRows && directiveRows.length > 0
+        ? buildCaptionOnlySystemPrompt(directiveRows as StyleDirective[])
+        : FALLBACK_CAPTION_ONLY_PROMPT;
+
+      const { data: oneCard, error: oneErr } = await supabase
+        .from("safety_cards")
+        .select(`
+          id,
+          title,
+          published_year,
+          airline:airlines(name),
+          card_aircraft(
+            aircraft_variant:aircraft_variants(
+              name,
+              aircraft_model:aircraft_models(
+                name,
+                manufacturer:aircraft_manufacturers(name)
+              )
+            )
+          ),
+          card_sides(
+            side,
+            card_panels(
+              id,
+              panel_index,
+              panel_images(variant, file_path, width_px, height_px)
+            )
+          )
+        `)
+        .eq("id", cardId)
+        .single();
+
+      if (oneErr || !oneCard) {
+        return new Response(
+          JSON.stringify({ error: "Card not found", detail: oneErr?.message }),
+          { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
+      }
+
+      const cardRecord = oneCard as Record<string, unknown>;
+      const panelInfosManual = collectPanelInfos(cardRecord);
+      const chosenPanel = panelInfosManual.find((p) => p.id === panelId);
+      if (!chosenPanel) {
+        return new Response(
+          JSON.stringify({ error: "Panel not found on this card" }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
+      }
+
+      const airline = (cardRecord.airline as Record<string, unknown>)?.name as string ?? "Unknown airline";
+      const aircraftEntries = (cardRecord.card_aircraft as Array<Record<string, unknown>>) ?? [];
+      const aircraftLabels = aircraftEntries.map((entry) => {
+        const variant = entry.aircraft_variant as Record<string, unknown>;
+        const model = variant?.aircraft_model as Record<string, unknown>;
+        const mfr = model?.manufacturer as Record<string, unknown>;
+        const parts = [
+          mfr?.name as string,
+          model?.name as string,
+          variant?.name as string,
+        ].filter(Boolean);
+        return parts.join(" ");
+      });
+      const aircraftStr = aircraftLabels.length > 0 ? aircraftLabels.join(", ") : "Unknown aircraft";
+      const year = cardRecord.published_year as number | null;
+
+      const metaLine =
+        `Card metadata (for context only; follow directives about whether to mention it): Airline: ${airline} | Aircraft: ${aircraftStr} | Year: ${year ?? "Unknown"} | Title: ${(cardRecord.title as string) ?? "Untitled"}`;
+
+      const userContentManual = useUploadedSquare
+        ? [
+          {
+            type: "image" as const,
+            source: { type: "url" as const, url: derivativePublicUrl(croppedImagePath!) },
+          },
+          {
+            type: "text" as const,
+            text: `This image is the user's exact square crop from the full safety-card side (panels laid flush; the crop may span two adjacent panels). Write the caption for what appears in this image only.
+
+${metaLine}`,
+          },
+        ]
+        : [
+          {
+            type: "image" as const,
+            source: { type: "url" as const, url: chosenPanel.image_url },
+          },
+          {
+            type: "text" as const,
+            text: `This is the full panel image. The user selected a square crop for the Instagram post using these normalized values (same convention as your training):
+- x_pct: left edge of the square at ${crop.x_pct} × image width from the left
+- y_pct: top edge of the square at ${crop.y_pct} × image height from the top
+- size_pct: square side length = ${crop.size_pct} × min(image width, image height)
+
+Write the caption to match what appears in that square region.
+
+${metaLine}`,
+          },
+        ];
+
+      let parsedManual: Record<string, unknown>;
+      try {
+        parsedManual = await callClaude(captionSystem, userContentManual);
+      } catch (e) {
+        return new Response(
+          JSON.stringify({
+            error: e instanceof Error ? e.message : String(e),
+          }),
+          { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
+      }
+
+      const insertPayload = useUploadedSquare
+        ? {
+          card_id: cardId,
+          panel_id: chosenPanel.id,
+          crop_x_pct: 0,
+          crop_y_pct: 0,
+          crop_size_pct: 1,
+          crop_image_path: croppedImagePath!,
+          caption: (parsedManual.caption as string) ?? "",
+          status: "draft" as const,
+        }
+        : {
+          card_id: cardId,
+          panel_id: chosenPanel.id,
+          crop_x_pct: crop.x_pct,
+          crop_y_pct: crop.y_pct,
+          crop_size_pct: crop.size_pct,
+          caption: (parsedManual.caption as string) ?? "",
+          status: "draft" as const,
+        };
+
+      const { data: postManual, error: insertManualErr } = await supabase
+        .from("social_posts")
+        .insert(insertPayload)
+        .select()
+        .single();
+
+      if (insertManualErr) {
+        return new Response(
+          JSON.stringify({ error: "Failed to insert social post", detail: insertManualErr.message }),
+          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
+      }
+
+      const panelImageUrlOut = useUploadedSquare
+        ? derivativePublicUrl(croppedImagePath!)
+        : chosenPanel.image_url;
+
+      return new Response(
+        JSON.stringify({
+          post: postManual,
+          card_title: cardRecord.title,
+          airline_name: airline,
+          aircraft: aircraftStr,
+          panel_image_url: panelImageUrlOut,
+          crop_description: parsedManual.crop_description ?? null,
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+
+    const systemPrompt = directiveRows && directiveRows.length > 0
+      ? buildSystemPrompt(directiveRows as StyleDirective[])
+      : FALLBACK_SYSTEM_PROMPT;
 
     // Step 1: Pick a random card that has panel images, avoiding recently posted cards
     const { data: cards, error: cardError } = await supabase
@@ -138,36 +564,7 @@ Deno.serve(async (req: Request) => {
     // Pick one at random
     const card = pool[Math.floor(Math.random() * pool.length)] as Record<string, unknown>;
 
-    // Step 2: Build panel image URLs and metadata
-    interface PanelInfo {
-      id: string;
-      side: string;
-      panel_index: number;
-      image_url: string;
-      file_path: string;
-      width_px: number | null;
-      height_px: number | null;
-    }
-    const panelInfos: PanelInfo[] = [];
-
-    for (const side of (card.card_sides as Array<Record<string, unknown>>) ?? []) {
-      for (const panel of (side.card_panels as Array<Record<string, unknown>>) ?? []) {
-        const images = (panel.panel_images as Array<Record<string, unknown>>) ?? [];
-        const display = images.find((i) => i.variant === "display")
-          ?? images.find((i) => i.variant === "full");
-        if (display) {
-          panelInfos.push({
-            id: panel.id as string,
-            side: side.side as string,
-            panel_index: panel.panel_index as number,
-            image_url: derivativePublicUrl(display.file_path as string),
-            file_path: display.file_path as string,
-            width_px: (display.width_px as number) ?? null,
-            height_px: (display.height_px as number) ?? null,
-          });
-        }
-      }
-    }
+    const panelInfos = collectPanelInfos(card as Record<string, unknown>);
 
     if (panelInfos.length === 0) {
       return new Response(
@@ -215,42 +612,15 @@ Analyze all ${panelInfos.length} panels above. Pick the one with the most visual
       },
     ];
 
-    const anthropicResponse = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": ANTHROPIC_API_KEY,
-        "anthropic-version": "2023-06-01",
-      },
-      body: JSON.stringify({
-        model: "claude-sonnet-4-20250514",
-        max_tokens: 2048,
-        system: SYSTEM_PROMPT,
-        messages: [{ role: "user", content: userContent }],
-      }),
-    });
-
-    if (!anthropicResponse.ok) {
-      const errText = await anthropicResponse.text();
+    let parsed: Record<string, unknown>;
+    try {
+      parsed = await callClaude(systemPrompt, userContent);
+    } catch (e) {
       return new Response(
-        JSON.stringify({ error: `Anthropic API error: ${anthropicResponse.status}`, detail: errText }),
-        { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        JSON.stringify({ error: e instanceof Error ? e.message : String(e) }),
+        { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } },
       );
     }
-
-    const result = await anthropicResponse.json();
-    const textBlock = result.content?.find((b: Record<string, unknown>) => b.type === "text");
-    const raw = textBlock?.text ?? "";
-
-    const jsonMatch = raw.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
-      return new Response(
-        JSON.stringify({ error: "Could not parse AI response", raw }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    const parsed = JSON.parse(jsonMatch[0]);
     const chosenIdx = parsed.chosen_panel_index ?? 0;
     const chosenPanel = panelInfos[chosenIdx] ?? panelInfos[0];
     const crop = parsed.crop ?? { x_pct: 0.1, y_pct: 0.1, size_pct: 0.5 };

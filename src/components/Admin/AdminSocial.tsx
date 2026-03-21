@@ -11,17 +11,25 @@ import {
   ExternalLink,
   Clock,
   Save,
+  Palette,
+  Calendar,
+  ImagePlus,
 } from 'lucide-react';
 import {
   fetchSocialPosts,
   generateSocialPost,
   updateSocialPost,
   deleteSocialPost,
-  renderCropPreview,
+  renderSocialPostPreview,
   type SocialPostWithCard,
   type SocialPost,
 } from '@/lib/socialService';
 import { useNavigate } from 'react-router-dom';
+import { AdminStyleGuide } from './AdminStyleGuide';
+import { SocialNewPost } from './SocialNewPost';
+import { cn } from '@/lib/utils';
+
+type SocialTab = 'calendar' | 'style-guide' | 'create';
 
 // ─── Calendar Helpers ───────────────────────────────────────────
 
@@ -77,15 +85,9 @@ function CropPreview({
 
   useEffect(() => {
     setLoaded(false);
-    if (!post.panel_image_url) return;
+    if (!post.crop_image_path && !post.panel_image_url) return;
 
-    renderCropPreview(
-      post.panel_image_url,
-      post.crop_x_pct,
-      post.crop_y_pct,
-      post.crop_size_pct,
-      size * 2
-    )
+    renderSocialPostPreview(post, post.panel_image_url, size * 2)
       .then((dataUrl) => {
         const canvas = canvasRef.current;
         if (!canvas) return;
@@ -100,7 +102,14 @@ function CropPreview({
         img.src = dataUrl;
       })
       .catch(() => setLoaded(false));
-  }, [post.panel_image_url, post.crop_x_pct, post.crop_y_pct, post.crop_size_pct, size]);
+  }, [
+    post.panel_image_url,
+    post.crop_image_path,
+    post.crop_x_pct,
+    post.crop_y_pct,
+    post.crop_size_pct,
+    size,
+  ]);
 
   return (
     <canvas
@@ -251,6 +260,7 @@ function PostEditor({
 // ─── Main Component ─────────────────────────────────────────────
 
 export const AdminSocial: React.FC = () => {
+  const [tab, setTab] = useState<SocialTab>('calendar');
   const [posts, setPosts] = useState<SocialPostWithCard[]>([]);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
@@ -348,26 +358,76 @@ export const AdminSocial: React.FC = () => {
   return (
     <>
       <header className="flex-shrink-0 bg-card border-b">
-        <div className="max-w-7xl mx-auto flex items-center justify-between px-6 py-5">
-          <h1 className="text-2xl font-semibold tracking-tight">Social Calendar</h1>
-          <Button
-            onClick={handleGenerate}
-            size="sm"
-            className="gap-1.5"
-            disabled={generating}
-          >
-            {generating ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Sparkles className="h-4 w-4" />
+        <div className="max-w-7xl mx-auto px-6 py-5 space-y-4">
+          <div className="flex items-center justify-between">
+            <h1 className="text-2xl font-semibold tracking-tight">Social</h1>
+            {tab === 'calendar' && (
+              <Button
+                onClick={handleGenerate}
+                size="sm"
+                variant="outline"
+                className="gap-1.5"
+                disabled={generating}
+                title="AI picks a random card, crop, and caption"
+              >
+                {generating ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Sparkles className="h-4 w-4" />
+                )}
+                {generating ? 'Generating...' : 'Random (AI)'}
+              </Button>
             )}
-            {generating ? 'Generating...' : 'Generate Post'}
-          </Button>
+          </div>
+          <div className="flex gap-1 border-b -mb-5 pb-0">
+            <button
+              onClick={() => setTab('calendar')}
+              className={cn(
+                'flex items-center gap-1.5 px-3 py-2 text-sm font-medium border-b-2 -mb-px transition-colors',
+                tab === 'calendar'
+                  ? 'border-primary text-foreground'
+                  : 'border-transparent text-muted-foreground hover:text-foreground'
+              )}
+            >
+              <Calendar className="h-4 w-4" />
+              Calendar
+            </button>
+            <button
+              onClick={() => setTab('create')}
+              className={cn(
+                'flex items-center gap-1.5 px-3 py-2 text-sm font-medium border-b-2 -mb-px transition-colors',
+                tab === 'create'
+                  ? 'border-primary text-foreground'
+                  : 'border-transparent text-muted-foreground hover:text-foreground'
+              )}
+            >
+              <ImagePlus className="h-4 w-4" />
+              New post
+            </button>
+            <button
+              onClick={() => setTab('style-guide')}
+              className={cn(
+                'flex items-center gap-1.5 px-3 py-2 text-sm font-medium border-b-2 -mb-px transition-colors',
+                tab === 'style-guide'
+                  ? 'border-primary text-foreground'
+                  : 'border-transparent text-muted-foreground hover:text-foreground'
+              )}
+            >
+              <Palette className="h-4 w-4" />
+              Style Guide
+            </button>
+          </div>
         </div>
       </header>
 
       <main className="flex-1 min-h-0 overflow-auto">
         <div className="max-w-7xl mx-auto px-6 py-8 space-y-8">
+          {tab === 'style-guide' ? (
+            <AdminStyleGuide />
+          ) : tab === 'create' ? (
+            <SocialNewPost onPostCreated={loadPosts} />
+          ) : (
+            <>
           {error && (
             <div className="bg-destructive/10 text-destructive border border-destructive/20 rounded-md px-4 py-3 text-sm">
               {error}
@@ -537,6 +597,8 @@ export const AdminSocial: React.FC = () => {
               </div>
             )}
           </div>
+            </>
+          )}
         </div>
       </main>
 

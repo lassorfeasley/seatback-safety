@@ -41,10 +41,49 @@ function derivativePublicUrl(filePath: string): string {
 }
 
 /**
- * Render a square crop preview on a canvas and return it as a data URL.
- * Loads the panel's display image, then extracts the crop region
- * defined by percentage-based coordinates.
+ * Preview thumbnail for a social post. Uses stored square JPEG when present;
+ * otherwise crops from the panel display image using percentage coordinates.
  */
+export async function renderSocialPostPreview(
+  post: Pick<SocialPost, 'crop_image_path' | 'crop_x_pct' | 'crop_y_pct' | 'crop_size_pct'>,
+  panelImageUrl: string | null,
+  outputSize = 400
+): Promise<string> {
+  if (post.crop_image_path) {
+    const url = derivativePublicUrl(post.crop_image_path);
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = outputSize;
+        canvas.height = outputSize;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          reject(new Error('Could not get canvas context'));
+          return;
+        }
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
+        ctx.drawImage(img, 0, 0, outputSize, outputSize);
+        resolve(canvas.toDataURL('image/jpeg', 0.9));
+      };
+      img.onerror = () => reject(new Error(`Failed to load image: ${url}`));
+      img.src = url;
+    });
+  }
+  if (!panelImageUrl) {
+    return Promise.reject(new Error('No image for preview'));
+  }
+  return renderCropPreview(
+    panelImageUrl,
+    post.crop_x_pct,
+    post.crop_y_pct,
+    post.crop_size_pct,
+    outputSize
+  );
+}
+
 export async function renderCropPreview(
   imageUrl: string,
   cropXPct: number,
@@ -80,6 +119,65 @@ export async function renderCropPreview(
 }
 
 // ─── Service Functions ──────────────────────────────────────────
+
+export interface ManualCropPayload {
+  card_id: string;
+  panel_id: string;
+  /** Set when crop is a square extracted from the full-side composite (may span seams). */
+  cropped_image_path?: string;
+  /** Legacy: crop within a single panel image (ignored if cropped_image_path is set). */
+  crop?: {
+    x_pct: number;
+    y_pct: number;
+    size_pct: number;
+  };
+}
+
+/**
+ * Create a social post from a user-selected square crop; AI writes caption only.
+ */
+export async function createSocialPostFromManualCrop(
+  payload: ManualCropPayload
+): Promise<{
+  result?: GenerateResult;
+  error?: string;
+}> {
+  try {
+    const { data, error } = await supabase.functions.invoke('suggest-social-post', {
+      body: {
+        mode: 'manual_crop',
+        card_id: payload.card_id,
+        panel_id: payload.panel_id,
+        ...(payload.cropped_image_path
+          ? { cropped_image_path: payload.cropped_image_path }
+          : { crop: payload.crop }),
+      },
+    });
+
+    if (error) {
+      let detail = error.message;
+      try {
+        const ctx = (error as unknown as { context?: Response }).context;
+        if (ctx) {
+          const body = await ctx.json();
+          detail = body?.error ?? detail;
+          if (body?.detail) detail += ': ' + body.detail;
+        }
+      } catch {
+        /* ignore */
+      }
+      return { error: detail };
+    }
+
+    if (data?.error) {
+      return { error: `${data.error}${data.detail ? ': ' + data.detail : ''}` };
+    }
+
+    return { result: data as GenerateResult };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : String(err) };
+  }
+}
 
 export async function generateSocialPost(): Promise<{
   result?: GenerateResult;
@@ -142,22 +240,28 @@ export async function fetchSocialPosts(): Promise<{
         const card = row.safety_cards as Record<string, unknown> | null;
         const airline = card?.airline as Record<string, unknown> | null;
 
+        const cropPath = row.crop_image_path as string | null;
+
         let panelImageUrl: string | null = null;
-        const sides = (card?.card_sides as Array<Record<string, unknown>>) ?? [];
-        for (const side of sides) {
-          const panels = (side.card_panels as Array<Record<string, unknown>>) ?? [];
-          const panel = panels.find(
-            (p: Record<string, unknown>) => p.id === row.panel_id
-          );
-          if (panel) {
-            const images = (panel.panel_images as Array<Record<string, unknown>>) ?? [];
-            const display =
-              images.find((i) => i.variant === 'display') ??
-              images.find((i) => i.variant === 'full');
-            if (display) {
-              panelImageUrl = derivativePublicUrl(display.file_path as string);
+        if (cropPath) {
+          panelImageUrl = derivativePublicUrl(cropPath);
+        } else {
+          const sides = (card?.card_sides as Array<Record<string, unknown>>) ?? [];
+          for (const side of sides) {
+            const panels = (side.card_panels as Array<Record<string, unknown>>) ?? [];
+            const panel = panels.find(
+              (p: Record<string, unknown>) => p.id === row.panel_id
+            );
+            if (panel) {
+              const images = (panel.panel_images as Array<Record<string, unknown>>) ?? [];
+              const display =
+                images.find((i) => i.variant === 'display') ??
+                images.find((i) => i.variant === 'full');
+              if (display) {
+                panelImageUrl = derivativePublicUrl(display.file_path as string);
+              }
+              break;
             }
-            break;
           }
         }
 
