@@ -76,6 +76,7 @@ export const PublicCardDetail: React.FC = () => {
   lbViewRef.current = lbView;
   const lbContentRef = useRef<HTMLDivElement>(null);
   const lbDrag = useRef({ active: false, startX: 0, startY: 0, panX0: 0, panY0: 0, moved: false });
+  const lbTouch = useRef({ active: false, startDist: 0, startZoom: 1, startPanX: 0, startPanY: 0, startMidX: 0, startMidY: 0, lastMidX: 0, lastMidY: 0 });
   const detailScale = useCardDetailScale(card);
 
   useEffect(() => {
@@ -174,6 +175,92 @@ export const PublicCardDetail: React.FC = () => {
     return () => {
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onUp);
+    };
+  }, [showLightbox]);
+
+  useEffect(() => {
+    const el = lbContentRef.current;
+    if (!el || !showLightbox) return;
+
+    const dist = (a: Touch, b: Touch) =>
+      Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+
+    const mid = (a: Touch, b: Touch) => ({
+      x: (a.clientX + b.clientX) / 2,
+      y: (a.clientY + b.clientY) / 2,
+    });
+
+    const onTouchStart = (e: TouchEvent) => {
+      if (e.touches.length === 2) {
+        e.preventDefault();
+        const t = lbTouch.current;
+        const d = dist(e.touches[0], e.touches[1]);
+        const m = mid(e.touches[0], e.touches[1]);
+        const rect = el.getBoundingClientRect();
+        t.active = true;
+        t.startDist = d;
+        t.startZoom = lbViewRef.current.zoom;
+        t.startPanX = lbViewRef.current.panX;
+        t.startPanY = lbViewRef.current.panY;
+        t.startMidX = m.x - rect.left - rect.width / 2;
+        t.startMidY = m.y - rect.top - rect.height / 2;
+        t.lastMidX = t.startMidX;
+        t.lastMidY = t.startMidY;
+      }
+    };
+
+    const onTouchMove = (e: TouchEvent) => {
+      if (e.touches.length === 2 && lbTouch.current.active) {
+        e.preventDefault();
+        const t = lbTouch.current;
+        const d = dist(e.touches[0], e.touches[1]);
+        const m = mid(e.touches[0], e.touches[1]);
+        const rect = el.getBoundingClientRect();
+        const mx = m.x - rect.left - rect.width / 2;
+        const my = m.y - rect.top - rect.height / 2;
+        const rawZoom = t.startZoom * (d / t.startDist);
+        const z = Math.max(1, Math.min(LB_MAX_ZOOM, rawZoom));
+
+        if (z <= 1) {
+          setLbView({ zoom: 1, panX: 0, panY: 0 });
+        } else {
+          const r = z / t.startZoom;
+          const panX = t.startMidX - r * (t.startMidX - t.startPanX) + (mx - t.startMidX);
+          const panY = t.startMidY - r * (t.startMidY - t.startPanY) + (my - t.startMidY);
+          setLbView({ zoom: z, panX, panY });
+        }
+        t.lastMidX = mx;
+        t.lastMidY = my;
+      } else if (e.touches.length === 1 && !lbTouch.current.active && lbViewRef.current.zoom > 1) {
+        e.preventDefault();
+        const touch = e.touches[0];
+        const d = lbDrag.current;
+        if (!d.active) return;
+        const dx = touch.clientX - d.startX;
+        const dy = touch.clientY - d.startY;
+        if (Math.abs(dx) > 3 || Math.abs(dy) > 3) d.moved = true;
+        setLbView(prev => ({ zoom: prev.zoom, panX: d.panX0 + dx, panY: d.panY0 + dy }));
+      }
+    };
+
+    const onTouchEnd = (e: TouchEvent) => {
+      if (e.touches.length < 2) {
+        lbTouch.current.active = false;
+      }
+      if (e.touches.length === 0) {
+        lbDrag.current.active = false;
+      }
+    };
+
+    el.addEventListener('touchstart', onTouchStart, { passive: false });
+    el.addEventListener('touchmove', onTouchMove, { passive: false });
+    el.addEventListener('touchend', onTouchEnd);
+    el.addEventListener('touchcancel', onTouchEnd);
+    return () => {
+      el.removeEventListener('touchstart', onTouchStart);
+      el.removeEventListener('touchmove', onTouchMove);
+      el.removeEventListener('touchend', onTouchEnd);
+      el.removeEventListener('touchcancel', onTouchEnd);
     };
   }, [showLightbox]);
 
@@ -362,7 +449,7 @@ export const PublicCardDetail: React.FC = () => {
             </div>
             <div
               ref={lbContentRef}
-              className="flex items-center justify-center w-full h-full overflow-hidden px-10"
+              className="flex items-center justify-center w-full h-full overflow-hidden px-10 touch-none"
               style={{ cursor: lbView.zoom >= LB_MAX_ZOOM ? 'grab' : 'zoom-in', userSelect: 'none' }}
               onMouseDown={(e) => {
                 if (e.button !== 0) return;
@@ -374,6 +461,18 @@ export const PublicCardDetail: React.FC = () => {
                 d.startY = e.clientY;
                 d.panX0 = lbViewRef.current.panX;
                 d.panY0 = lbViewRef.current.panY;
+              }}
+              onTouchStart={(e) => {
+                if (e.touches.length === 1) {
+                  const touch = e.touches[0];
+                  const d = lbDrag.current;
+                  d.active = true;
+                  d.moved = false;
+                  d.startX = touch.clientX;
+                  d.startY = touch.clientY;
+                  d.panX0 = lbViewRef.current.panX;
+                  d.panY0 = lbViewRef.current.panY;
+                }
               }}
               onClick={(e) => {
                 e.stopPropagation();
