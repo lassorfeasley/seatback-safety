@@ -1,6 +1,6 @@
-import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Loader2, ArrowLeft, Info, X, Maximize2, RotateCw } from 'lucide-react';
+import { Loader2, ArrowLeft, Info, X, ZoomIn, RotateCw } from 'lucide-react';
 import { fetchCardDetail, type CardDetailData } from '@/lib/safetyCardService';
 import { CardVisualizer3D } from '@/components/FoldEditor/CardVisualizer3D';
 import { InfoSheet, InfoRow } from '@/components/Public/InfoSheet';
@@ -60,6 +60,8 @@ function useCardDetailScale(card: CardDetailData | null) {
   return scale;
 }
 
+const LB_MAX_ZOOM = 100;
+
 export const PublicCardDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -69,6 +71,11 @@ export const PublicCardDetail: React.FC = () => {
   const [showInfo, setShowInfo] = useState(false);
   const [showLightbox, setShowLightbox] = useState(false);
   const [lightboxSide, setLightboxSide] = useState<'front' | 'back'>('front');
+  const [lbView, setLbView] = useState({ zoom: 1, panX: 0, panY: 0 });
+  const lbViewRef = useRef(lbView);
+  lbViewRef.current = lbView;
+  const lbContentRef = useRef<HTMLDivElement>(null);
+  const lbDrag = useRef({ active: false, startX: 0, startY: 0, panX0: 0, panY0: 0, moved: false });
   const detailScale = useCardDetailScale(card);
 
   useEffect(() => {
@@ -112,13 +119,63 @@ export const PublicCardDetail: React.FC = () => {
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        if (showLightbox) setShowLightbox(false);
-        else if (showInfo) setShowInfo(false);
+        if (showLightbox) {
+          if (lbViewRef.current.zoom > 1) {
+            setLbView({ zoom: 1, panX: 0, panY: 0 });
+          } else {
+            setShowLightbox(false);
+          }
+        } else if (showInfo) setShowInfo(false);
       }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
   }, [showInfo, showLightbox]);
+
+  useEffect(() => {
+    setLbView({ zoom: 1, panX: 0, panY: 0 });
+  }, [lightboxSide, showLightbox]);
+
+  useEffect(() => {
+    const el = lbContentRef.current;
+    if (!el || !showLightbox) return;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const factor = e.deltaY < 0 ? 1.15 : 1 / 1.15;
+      const rect = el.getBoundingClientRect();
+      const mx = e.clientX - rect.left - rect.width / 2;
+      const my = e.clientY - rect.top - rect.height / 2;
+      setLbView(prev => {
+        const z = Math.max(1, Math.min(LB_MAX_ZOOM, prev.zoom * factor));
+        if (z <= 1) return { zoom: 1, panX: 0, panY: 0 };
+        const r = z / prev.zoom;
+        return { zoom: z, panX: mx - r * (mx - prev.panX), panY: my - r * (my - prev.panY) };
+      });
+    };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  }, [showLightbox]);
+
+  useEffect(() => {
+    if (!showLightbox) return;
+    const onMove = (e: MouseEvent) => {
+      const d = lbDrag.current;
+      if (!d.active) return;
+      const dx = e.clientX - d.startX;
+      const dy = e.clientY - d.startY;
+      if (Math.abs(dx) > 3 || Math.abs(dy) > 3) d.moved = true;
+      if (lbViewRef.current.zoom > 1) {
+        setLbView(prev => ({ zoom: prev.zoom, panX: d.panX0 + dx, panY: d.panY0 + dy }));
+      }
+    };
+    const onUp = () => { lbDrag.current.active = false; };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    return () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+  }, [showLightbox]);
 
   if (loading) {
     return (
@@ -178,7 +235,7 @@ export const PublicCardDetail: React.FC = () => {
           >
             {showLightbox
               ? <X className="h-6 w-6 sm:h-4 sm:w-4" />
-              : <Maximize2 className="h-6 w-6 sm:h-4 sm:w-4" />}
+              : <ZoomIn className="h-6 w-6 sm:h-4 sm:w-4" />}
           </button>
         )}
         <button
@@ -304,14 +361,39 @@ export const PublicCardDetail: React.FC = () => {
               </button>
             </div>
             <div
+              ref={lbContentRef}
               className="flex items-center justify-center w-full h-full overflow-hidden px-10"
-              onClick={(e) => e.stopPropagation()}
+              style={{ cursor: lbView.zoom >= LB_MAX_ZOOM ? 'grab' : 'zoom-in', userSelect: 'none' }}
+              onMouseDown={(e) => {
+                if (e.button !== 0) return;
+                e.preventDefault();
+                const d = lbDrag.current;
+                d.active = true;
+                d.moved = false;
+                d.startX = e.clientX;
+                d.startY = e.clientY;
+                d.panX0 = lbViewRef.current.panX;
+                d.panY0 = lbViewRef.current.panY;
+              }}
+              onClick={(e) => {
+                e.stopPropagation();
+                if (lbDrag.current.moved) return;
+                const rect = e.currentTarget.getBoundingClientRect();
+                const mx = e.clientX - rect.left - rect.width / 2;
+                const my = e.clientY - rect.top - rect.height / 2;
+                setLbView(prev => {
+                  const z = Math.min(LB_MAX_ZOOM, prev.zoom * 2);
+                  if (z === prev.zoom) return prev;
+                  const r = z / prev.zoom;
+                  return { zoom: z, panX: mx - r * (mx - prev.panX), panY: my - r * (my - prev.panY) };
+                });
+              }}
             >
               <div
-                className="flex items-stretch gap-0 shrink-0 min-h-0 overflow-hidden"
+                className="flex items-stretch gap-0 shrink-0 min-h-0"
                 style={{
                   height: `${uniformHeight}px`,
-                  transform: `scale(${scale})`,
+                  transform: `translate(${lbView.panX}px, ${lbView.panY}px) scale(${scale * lbView.zoom})`,
                   transformOrigin: 'center center',
                 }}
               >
@@ -326,6 +408,7 @@ export const PublicCardDetail: React.FC = () => {
                       alt={`${panel.side} panel ${panel.panel_index + 1}`}
                       className="min-h-0 shrink-0 w-auto object-contain object-left-top"
                       style={{ height: `${uniformHeight}px`, maxHeight: `${uniformHeight}px` }}
+                      draggable={false}
                     />
                   );
                 })}

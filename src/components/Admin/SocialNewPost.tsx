@@ -29,7 +29,7 @@ import { supabase } from '@/lib/supabase';
 import { cn } from '@/lib/utils';
 
 /** Instagram feed square: ~1080px edge is the usual “sharp post” target. */
-const INSTAGRAM_SQUARE_MIN_PX = 1080;
+const INSTAGRAM_SQUARE_MIN_PX = 400;
 const CROPPER_MIN_ZOOM = 0.5;
 /** High ceiling so you can zoom in until the crop hits the minimum export size (see onCropComplete clamp). */
 const CROPPER_MAX_ZOOM = 50;
