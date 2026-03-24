@@ -237,10 +237,10 @@ export const PublicHome: React.FC = () => {
   const applyFilters = useCallback((excludeFilter?: string) => {
     return cards.filter((c) => {
       if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase().trim();
+        const terms = searchQuery.toLowerCase().trim().split(/\s+/).filter(Boolean);
         const haystack = [c.title, c.airline_name, c.aircraft_label, c.published_year != null ? String(c.published_year) : null]
           .filter(Boolean).join(' ').toLowerCase();
-        if (!haystack.includes(q)) return false;
+        if (!terms.every((term) => haystack.includes(term))) return false;
       }
       if (excludeFilter !== 'airline' && filterAirline && c.airline_name !== filterAirline) return false;
 

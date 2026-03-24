@@ -25,6 +25,8 @@ export const PublicSearch: React.FC = () => {
   const results = useMemo(() => {
     const q = query.toLowerCase().trim();
     if (!q) return [];
+    const terms = q.split(/\s+/).filter(Boolean);
+    if (terms.length === 0) return [];
     return cards.filter((c) => {
       const haystack = [
         c.title,
@@ -35,7 +37,7 @@ export const PublicSearch: React.FC = () => {
         .filter(Boolean)
         .join(' ')
         .toLowerCase();
-      return haystack.includes(q);
+      return terms.every((term) => haystack.includes(term));
     });
   }, [query, cards]);
 
