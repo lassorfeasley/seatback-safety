@@ -80,6 +80,7 @@ export const SafetyCardWizard: React.FC<SafetyCardWizardProps> = ({
     creases: [],
     cover: { spreadIndex: 0, side: 'front' },
     pivotIndex: null,
+    isBooklet: false,
     activeSlot: null,
     selectedImageId: null,
   });
@@ -117,6 +118,7 @@ export const SafetyCardWizard: React.FC<SafetyCardWizardProps> = ({
           creases: card.creases.length > 0 ? card.creases : generateDefaultCreases(panelCount),
           cover: card.cover,
           pivotIndex: card.pivotIndex,
+          isBooklet: card.is_booklet === true,
         }));
       } else if (initialStep === 3) {
         const editData = await fetchCardForCropEditing(editCardId);
@@ -505,6 +507,10 @@ export const SafetyCardWizard: React.FC<SafetyCardWizardProps> = ({
     setState((prev) => ({ ...prev, pivotIndex: spreadIndex }));
   }, []);
 
+  const handleBookletChange = useCallback((isBooklet: boolean) => {
+    setState((prev) => ({ ...prev, isBooklet }));
+  }, []);
+
   // ─── Export ────────────────────────────────────────────────────
 
   const handleExport = useCallback(async () => {
@@ -561,7 +567,7 @@ export const SafetyCardWizard: React.FC<SafetyCardWizardProps> = ({
     setSaveProgress('Starting...');
 
     if (editCardId && initialStep === 4) {
-      const result = await updateCardFolds(editCardId, state.creases, state.cover, state.pivotIndex);
+      const result = await updateCardFolds(editCardId, state.creases, state.cover, state.pivotIndex, state.isBooklet);
       setIsSaving(false);
       setSaveProgress('');
       if (result.success) {
@@ -678,8 +684,10 @@ export const SafetyCardWizard: React.FC<SafetyCardWizardProps> = ({
             metadata={state.metadata}
             panelCount={state.panelCount}
             images={state.images}
+            isBooklet={state.isBooklet}
             onMetadataChange={handleMetadataChange}
             onPanelCountChange={handlePanelCountChange}
+            onBookletChange={handleBookletChange}
             onBack={() => goToStep(1)}
             onContinue={() => goToStep(3)}
           />
@@ -715,6 +723,8 @@ export const SafetyCardWizard: React.FC<SafetyCardWizardProps> = ({
             creases={state.creases}
             cover={state.cover}
             pivotIndex={state.pivotIndex}
+            isBooklet={state.isBooklet}
+            onBookletChange={handleBookletChange}
             onCreaseChange={handleCreaseChange}
             onSequenceChange={handleSequenceChange}
             onCoverChange={handleCoverChange}

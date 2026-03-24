@@ -61,6 +61,9 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
   const magnifierCanvasRef = useRef<HTMLCanvasElement>(null);
   const magnifierWrapRef = useRef<HTMLDivElement>(null);
 
+  // Full-canvas crosshair tracking
+  const [crosshairPos, setCrosshairPos] = useState<{ x: number; y: number } | null>(null);
+
   // Clear straighten points when mode is deactivated; clear click-crop when entering straighten
   useEffect(() => {
     if (!straightenMode) {
@@ -516,6 +519,16 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
 
   const handleMouseMove = useCallback(
     (_e: Konva.KonvaEventObject<MouseEvent>) => {
+      // Full-canvas crosshair tracking
+      {
+        const pos = pointerToCanvas();
+        if (pos && rotatedBounds && pos.x >= 0 && pos.y >= 0 && pos.x <= rotatedBounds.width && pos.y <= rotatedBounds.height) {
+          setCrosshairPos(pos);
+        } else {
+          setCrosshairPos(null);
+        }
+      }
+
       // Magnifier tracking
       if (showMagnifier && image && imageDimensions) {
         const magnifierCanvas = magnifierCanvasRef.current;
@@ -640,6 +653,7 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
   const handleMouseLeave = useCallback(() => {
     const magnifierWrap = magnifierWrapRef.current;
     if (magnifierWrap) magnifierWrap.style.display = 'none';
+    setCrosshairPos(null);
     handleMouseUp();
   }, [handleMouseUp]);
 
@@ -713,13 +727,6 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
 
   // ─── Cursor — set on Konva stage container for precise alignment ─
 
-  const cursorSvg = useCallback((lines: string) => {
-    const encoded = encodeURIComponent(
-      `<svg xmlns='http://www.w3.org/2000/svg' width='32' height='32'>${lines}</svg>`
-    );
-    return `url("data:image/svg+xml,${encoded}") 16 16, crosshair`;
-  }, []);
-
   useEffect(() => {
     const stage = stageRef.current;
     if (!stage) return;
@@ -727,28 +734,15 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
     if (!container) return;
 
     let cursor: string;
-    if (straightenMode) {
-      cursor = cursorSvg(
-        `<line x1='16' y1='0' x2='16' y2='32' stroke='#22d3ee' stroke-width='1'/><line x1='0' y1='16' x2='32' y2='16' stroke='#22d3ee' stroke-width='1'/>`
-      );
-    } else if (hasLockedDimensions && regions.length === 0) {
-      cursor = cursorSvg(`<line x1='16' y1='16' x2='16' y2='32' stroke='red' stroke-width='1'/><line x1='16' y1='16' x2='32' y2='16' stroke='red' stroke-width='1'/>`);
-    } else if (regions.length > 0) {
-      cursor = 'default';
-    } else if (hasConstrainedHeight && !hasLockedDimensions && !clickCropPoint) {
-      cursor = isBackFace
-        ? cursorSvg(`<line x1='16' y1='16' x2='16' y2='32' stroke='red' stroke-width='1'/><line x1='0' y1='16' x2='16' y2='16' stroke='red' stroke-width='1'/>`)
-        : cursorSvg(`<line x1='16' y1='16' x2='16' y2='32' stroke='red' stroke-width='1'/><line x1='16' y1='16' x2='32' y2='16' stroke='red' stroke-width='1'/>`);
-    } else if (hasConstrainedHeight && !hasLockedDimensions && clickCropPoint) {
-      cursor = cursorSvg(`<line x1='16' y1='0' x2='16' y2='32' stroke='red' stroke-width='1'/>`);
+    const showCanvasCrosshair = straightenMode || regions.length === 0;
+    if (showCanvasCrosshair) {
+      cursor = 'none';
     } else {
-      cursor = cursorSvg(
-        `<line x1='16' y1='0' x2='16' y2='32' stroke='red' stroke-width='1'/><line x1='0' y1='16' x2='32' y2='16' stroke='red' stroke-width='1'/>`
-      );
+      cursor = 'default';
     }
 
     container.style.cursor = cursor;
-  }, [regions.length, straightenMode, hasConstrainedHeight, hasLockedDimensions, clickCropPoint, isBackFace, cursorSvg]);
+  }, [regions.length, straightenMode]);
 
   // ─── Render ────────────────────────────────────────────────────
 
@@ -849,6 +843,20 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
             );
 
             return guideLines;
+          })()}
+
+          {/* Full-canvas crosshair lines */}
+          {crosshairPos && rotatedBounds && (straightenMode || regions.length === 0) && (() => {
+            const sw = 1 / stageScale;
+            const color = straightenMode ? 'rgba(34,211,238,0.7)' : 'rgba(255,0,0,0.6)';
+            const w = rotatedBounds.width;
+            const h = rotatedBounds.height;
+            return (
+              <>
+                <Line points={[crosshairPos.x, 0, crosshairPos.x, h]} stroke={color} strokeWidth={sw} listening={false} />
+                <Line points={[0, crosshairPos.y, w, crosshairPos.y]} stroke={color} strokeWidth={sw} listening={false} />
+              </>
+            );
           })()}
 
           {/* Drawing preview rectangle */}

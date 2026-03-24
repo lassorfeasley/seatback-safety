@@ -1,8 +1,10 @@
 import React, { useMemo, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
-import { ArrowLeft, Download, Save, Loader2, Star, Anchor } from 'lucide-react';
+import { ArrowLeft, Download, Save, Loader2, Star, Anchor, BookOpen } from 'lucide-react';
+import { cn } from '@/lib/utils';
 import { CreaseToggle } from '@/components/FoldEditor/CreaseToggle';
 import { CardVisualizer3D } from '@/components/FoldEditor/CardVisualizer3D';
+import { BookletVisualizer } from '@/components/FoldEditor/BookletVisualizer';
 import type { FoldStepProps } from './types';
 import type { Panel, Side } from '@/components/FoldEditor/types';
 
@@ -12,6 +14,8 @@ export const FoldStep: React.FC<FoldStepProps> = ({
   creases,
   cover,
   pivotIndex,
+  isBooklet,
+  onBookletChange,
   onCreaseChange,
   onSequenceChange,
   onCoverChange,
@@ -98,15 +102,33 @@ export const FoldStep: React.FC<FoldStepProps> = ({
   return (
     <div className="flex flex-col h-full p-6 gap-4">
       <div className="flex items-center gap-3 flex-shrink-0">
-        <div>
-          <h3 className="text-2xl font-semibold tracking-tight">Fold Structure</h3>
+        <div className="flex-1">
+          <h3 className="text-2xl font-semibold tracking-tight">
+            {isBooklet ? 'Booklet Structure' : 'Fold Structure'}
+          </h3>
           <p className="text-sm text-muted-foreground mt-1">
-            Click a panel to set it as the cover or spine.
+            {isBooklet
+              ? 'This card is a booklet — pages flip at the spine.'
+              : 'Click a panel to set it as the cover or spine.'}
           </p>
         </div>
+        <button
+          type="button"
+          onClick={() => onBookletChange(!isBooklet)}
+          className={cn(
+            'flex items-center gap-2 rounded-lg border-2 px-3 py-2 text-sm font-medium transition-all',
+            isBooklet
+              ? 'border-primary bg-primary/10 text-primary'
+              : 'border-muted text-muted-foreground hover:border-primary/40'
+          )}
+        >
+          <BookOpen className="h-4 w-4" />
+          Booklet
+        </button>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_1fr] gap-6 items-start flex-1 min-h-0 overflow-auto">
+        {!isBooklet ? (
         <div className="flex flex-col gap-6">
           <div className="rounded-lg bg-muted/40 p-5">
             <h4 className="text-sm font-medium text-muted-foreground mb-3 flex items-center gap-2">
@@ -210,10 +232,66 @@ export const FoldStep: React.FC<FoldStepProps> = ({
               </div>
           </div>
         </div>
+        ) : (
+        <div className="flex flex-col gap-3">
+          <div className="rounded-lg bg-muted/40 p-5">
+            <h4 className="text-sm font-medium text-muted-foreground mb-3 flex items-center gap-2">
+              <BookOpen className="h-4 w-4" />
+              Pages
+            </h4>
+            <div className="flex flex-col gap-3">
+              {/* Cover */}
+              <div>
+                <div className="text-xs font-medium text-muted-foreground/60 mb-1">Cover</div>
+                <div className="flex gap-1.5">
+                  <BookletPageCell
+                    slot={slots.find((s) => s.panelIndex === 0 && s.side === 'front')}
+                    label="Page 1 front"
+                  />
+                </div>
+              </div>
 
-        {/* Right column: 3D preview */}
+              {/* Interior spreads */}
+              {Array.from({ length: panelCount - 1 }, (_, i) => (
+                <div key={`spread-${i}`}>
+                  <div className="text-xs font-medium text-muted-foreground/60 mb-1">
+                    Spread {i + 1}
+                  </div>
+                  <div className="flex gap-1.5">
+                    <BookletPageCell
+                      slot={slots.find((s) => s.panelIndex === i && s.side === 'back')}
+                      label={`Page ${i + 1} back`}
+                    />
+                    <BookletPageCell
+                      slot={slots.find((s) => s.panelIndex === i + 1 && s.side === 'front')}
+                      label={`Page ${i + 2} front`}
+                    />
+                  </div>
+                </div>
+              ))}
+
+              {/* Back Cover */}
+              <div>
+                <div className="text-xs font-medium text-muted-foreground/60 mb-1">Back Cover</div>
+                <div className="flex gap-1.5">
+                  <BookletPageCell
+                    slot={slots.find((s) => s.panelIndex === panelCount - 1 && s.side === 'back')}
+                    label={`Page ${panelCount} back`}
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        )}
+
+        {/* Right column: preview */}
         <div className="lg:sticky lg:top-4 lg:self-start">
-          <CardVisualizer3D panels={panels} creases={creases} cover={cover} pivotIndex={effectivePivot} />
+          {isBooklet ? (
+            <BookletVisualizer panels={panels} cover={cover} />
+          ) : (
+            <CardVisualizer3D panels={panels} creases={creases} cover={cover} pivotIndex={effectivePivot} />
+          )}
         </div>
       </div>
 
@@ -254,6 +332,32 @@ function derivePivot(coverIdx: number, panelCount: number): number {
   if (coverIdx >= panelCount - 1) return panelCount - 2;
   return coverIdx - 1;
 }
+
+// ─── BookletPageCell ─────────────────────────────────────────────
+
+import type { PanelSlot } from './types';
+
+const BookletPageCell: React.FC<{
+  slot: PanelSlot | undefined;
+  label: string;
+}> = ({ slot, label }) => (
+  <div
+    className="rounded-md border overflow-hidden bg-muted/30"
+    style={{ width: 74, height: 120 }}
+  >
+    {slot?.thumbnailUrl ? (
+      <img
+        src={slot.thumbnailUrl}
+        alt={label}
+        className="w-full h-full object-contain"
+      />
+    ) : (
+      <div className="w-full h-full flex items-center justify-center text-[10px] text-muted-foreground/60">
+        {label}
+      </div>
+    )}
+  </div>
+);
 
 // ─── FoldPanel ─────────────────────────────────────────────────────
 

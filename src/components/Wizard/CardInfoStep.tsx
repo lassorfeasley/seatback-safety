@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
-import { Plus, Minus, Check, ChevronDown, ChevronUp, Trash2, Paperclip, X } from 'lucide-react';
+import { Plus, Minus, Check, ChevronDown, ChevronUp, Trash2, Paperclip, X, BookOpen } from 'lucide-react';
 import {
   fetchAirlines,
   createAirline,
@@ -12,6 +12,7 @@ import {
   fetchVariants,
   createVariant,
 } from '@/lib/lookupService';
+import { cn } from '@/lib/utils';
 import type {
   CardInfoStepProps,
   CardMetadata,
@@ -25,8 +26,10 @@ export const CardInfoStep: React.FC<CardInfoStepProps> = ({
   metadata,
   panelCount,
   images: _images,
+  isBooklet,
   onMetadataChange,
   onPanelCountChange,
+  onBookletChange,
   onBack,
   onContinue,
 }) => {
@@ -186,33 +189,56 @@ export const CardInfoStep: React.FC<CardInfoStepProps> = ({
             </div>
           )}
 
-          {/* Panel Count */}
-          <div className="flex flex-col gap-1.5">
-            <label className="text-sm text-muted-foreground">Panel Count</label>
+          {/* Card Format + Panel/Page Count */}
+          <div className="flex flex-col gap-3">
             <div className="flex items-center gap-3">
-              <Button
-                variant="outline"
-                size="icon"
-                className="h-8 w-8 rounded-full"
-                onClick={() => setCount(Math.max(1, count - 1))}
-                disabled={count <= 1}
+              <label className="text-sm text-muted-foreground">Format</label>
+              <button
+                type="button"
+                onClick={() => onBookletChange(!isBooklet)}
+                className={cn(
+                  'flex items-center gap-2 rounded-lg border-2 px-3 py-1.5 text-sm font-medium transition-all',
+                  isBooklet
+                    ? 'border-primary bg-primary/10 text-primary'
+                    : 'border-muted text-muted-foreground hover:border-primary/40'
+                )}
               >
-                <Minus className="h-3.5 w-3.5" />
-              </Button>
-              <div className="flex items-baseline gap-1.5">
-                <span className="text-2xl font-bold tabular-nums w-8 text-center">{count}</span>
-                <span className="text-xs text-muted-foreground">
-                  panel{count !== 1 ? 's' : ''} ({count * 2} sides)
-                </span>
+                <BookOpen className="h-4 w-4" />
+                Booklet
+              </button>
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <label className="text-sm text-muted-foreground">
+                {isBooklet ? 'Page Count' : 'Panel Count'}
+              </label>
+              <div className="flex items-center gap-3">
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="h-8 w-8 rounded-full"
+                  onClick={() => setCount(Math.max(1, count - 1))}
+                  disabled={count <= 1}
+                >
+                  <Minus className="h-3.5 w-3.5" />
+                </Button>
+                <div className="flex items-baseline gap-1.5">
+                  <span className="text-2xl font-bold tabular-nums w-8 text-center">{count}</span>
+                  <span className="text-xs text-muted-foreground">
+                    {isBooklet
+                      ? `page${count !== 1 ? 's' : ''} (${count * 2} faces)`
+                      : `panel${count !== 1 ? 's' : ''} (${count * 2} sides)`}
+                  </span>
+                </div>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="h-8 w-8 rounded-full"
+                  onClick={() => setCount(count + 1)}
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                </Button>
               </div>
-              <Button
-                variant="outline"
-                size="icon"
-                className="h-8 w-8 rounded-full"
-                onClick={() => setCount(count + 1)}
-              >
-                <Plus className="h-3.5 w-3.5" />
-              </Button>
             </div>
           </div>
 

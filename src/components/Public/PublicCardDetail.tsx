@@ -1,8 +1,9 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Loader2, ArrowLeft, Info, X, ZoomIn, RotateCw } from 'lucide-react';
+import { Loader2, ArrowLeft, Info, X, ZoomIn, RotateCw, ChevronLeft, ChevronRight } from 'lucide-react';
 import { fetchCardDetail, type CardDetailData } from '@/lib/safetyCardService';
 import { CardVisualizer3D } from '@/components/FoldEditor/CardVisualizer3D';
+import { BookletVisualizer } from '@/components/FoldEditor/BookletVisualizer';
 import { InfoSheet, InfoRow } from '@/components/Public/InfoSheet';
 import type { Panel } from '@/components/FoldEditor/types';
 
@@ -12,7 +13,7 @@ const MINIMAL_INTERNAL_SCALE = 1.5;
 const HORIZONTAL_MARGIN = 120;
 const VERTICAL_MARGIN = 120;
 
-function computeUnfoldedCardWidth(panels: Panel[]): number {
+function computeUnfoldedCardWidth(panels: Panel[], isBooklet?: boolean): number {
   const frontPanels = panels.filter((p) => p.side === 'front').sort((a, b) => a.panel_index - b.panel_index);
   const backPanels = panels.filter((p) => p.side === 'back').sort((a, b) => a.panel_index - b.panel_index);
   const maxIndex = Math.max(
@@ -20,6 +21,21 @@ function computeUnfoldedCardWidth(panels: Panel[]): number {
     ...backPanels.map((p) => p.panel_index),
     -1
   );
+
+  if (isBooklet) {
+    // Widest state is a two-page spread
+    let maxPageWidth = PANEL_WIDTH_FALLBACK;
+    for (let i = 0; i <= maxIndex; i++) {
+      const front = frontPanels.find((p) => p.panel_index === i);
+      const back = backPanels.find((p) => p.panel_index === i);
+      const w = front?.width_px ?? back?.width_px;
+      const h = front?.height_px ?? back?.height_px;
+      const pw = w && h ? PANEL_HEIGHT * (w / h) : PANEL_WIDTH_FALLBACK;
+      if (pw > maxPageWidth) maxPageWidth = pw;
+    }
+    return maxPageWidth * 2;
+  }
+
   let total = 0;
   for (let i = 0; i <= maxIndex; i++) {
     const front = frontPanels.find((p) => p.panel_index === i);
@@ -33,8 +49,8 @@ function computeUnfoldedCardWidth(panels: Panel[]): number {
 
 function useCardDetailScale(card: CardDetailData | null) {
   const totalWidth = useMemo(
-    () => (card?.panels?.length ? computeUnfoldedCardWidth(card.panels) : PANEL_WIDTH_FALLBACK * 3),
-    [card?.panels]
+    () => (card?.panels?.length ? computeUnfoldedCardWidth(card.panels, card.is_booklet) : PANEL_WIDTH_FALLBACK * 3),
+    [card?.panels, card?.is_booklet]
   );
 
   const getScale = useCallback(() => {
@@ -71,6 +87,7 @@ export const PublicCardDetail: React.FC = () => {
   const [showInfo, setShowInfo] = useState(false);
   const [showLightbox, setShowLightbox] = useState(false);
   const [lightboxSide, setLightboxSide] = useState<'front' | 'back'>('front');
+  const [lightboxPage, setLightboxPage] = useState(0);
   const [lbView, setLbView] = useState({ zoom: 1, panX: 0, panY: 0 });
   const lbViewRef = useRef(lbView);
   lbViewRef.current = lbView;
@@ -135,7 +152,8 @@ export const PublicCardDetail: React.FC = () => {
 
   useEffect(() => {
     setLbView({ zoom: 1, panX: 0, panY: 0 });
-  }, [lightboxSide, showLightbox]);
+    if (!showLightbox) setLightboxPage(0);
+  }, [lightboxSide, showLightbox, lightboxPage]);
 
   useEffect(() => {
     const el = lbContentRef.current;
@@ -283,7 +301,7 @@ export const PublicCardDetail: React.FC = () => {
   const panelCount = card.panel_count ?? 0;
   const hasPanels = card.panels.filter((p) => p.side === 'front').length > 0 || card.panels.filter((p) => p.side === 'back').length > 0;
   const allCropsComplete = hasPanels && card.panels.length >= panelCount * 2;
-  const has3D = allCropsComplete && card.creases.length > 0;
+  const has3D = allCropsComplete && (card.creases.length > 0 || card.is_booklet);
 
   const manufacturers = [...new Set(card.aircraft.map((a) => a.manufacturerName).filter(Boolean))];
   const models = [...new Set(card.aircraft.map((a) => a.modelName).filter(Boolean))];
@@ -338,6 +356,14 @@ export const PublicCardDetail: React.FC = () => {
 
       {has3D ? (
         <div className="w-full h-full" style={{ transform: `scale(${detailScale})`, transformOrigin: 'center center' }}>
+          {card.is_booklet ? (
+          <BookletVisualizer
+            panels={card.panels}
+            cover={card.cover}
+            minimal
+            hintOnLoad
+          />
+          ) : (
           <CardVisualizer3D
             panels={card.panels}
             creases={card.creases}
@@ -346,6 +372,7 @@ export const PublicCardDetail: React.FC = () => {
             minimal
             hintOnLoad
           />
+          )}
         </div>
       ) : (
         <div className="flex items-center justify-center h-full">
@@ -401,22 +428,73 @@ export const PublicCardDetail: React.FC = () => {
       </InfoSheet>
 
       {showLightbox && card.panels.length > 0 && (() => {
-        const currentSidePanels = card.panels
-          .filter((p) => p.side === lightboxSide)
-          .sort((a, b) => a.panel_index - b.panel_index);
+        const isBooklet = card.is_booklet;
+        const allFront = card.panels.filter((p) => p.side === 'front').sort((a, b) => a.panel_index - b.panel_index);
+        const allBack = card.panels.filter((p) => p.side === 'back').sort((a, b) => a.panel_index - b.panel_index);
+        const pageCount = Math.max(allFront.length, allBack.length);
 
-        const panelHeights = currentSidePanels.map((p) => p.height_px ?? 0).filter((h) => h > 0);
-        const maxPanelHeight = panelHeights.length > 0 ? Math.max(...panelHeights) : 600;
+        // Build the list of images to display for the current view
+        let currentImages: { id: string; url: string; alt: string; width_px: number; height_px: number }[] = [];
+        let navLabel = '';
+        let totalNavStates = 0;
+
+        if (isBooklet) {
+          // Booklet: front cover, interior spreads, back cover
+          // lightboxPage 0 = front cover (page 0 front)
+          // lightboxPage 1..pageCount-1 = interior spreads (page N-1 back + page N front)
+          // lightboxPage pageCount = back cover (last page back)
+          totalNavStates = pageCount + 1;
+
+          if (lightboxPage === 0) {
+            navLabel = 'Cover';
+            const p = allFront[0];
+            if (p) {
+              const url = card.fullUrls[p.id] || card.displayUrls[p.id] || p.thumbnail_url;
+              if (url) currentImages.push({ id: p.id, url, alt: 'Cover', width_px: p.width_px ?? 600, height_px: p.height_px ?? 800 });
+            }
+          } else if (lightboxPage >= pageCount) {
+            navLabel = 'Back Cover';
+            const p = allBack[pageCount - 1];
+            if (p) {
+              const url = card.fullUrls[p.id] || card.displayUrls[p.id] || p.thumbnail_url;
+              if (url) currentImages.push({ id: p.id, url, alt: 'Back Cover', width_px: p.width_px ?? 600, height_px: p.height_px ?? 800 });
+            }
+          } else {
+            const leftIdx = lightboxPage - 1;
+            const rightIdx = lightboxPage;
+            navLabel = `Spread ${lightboxPage}`;
+            const leftPanel = allBack[leftIdx];
+            const rightPanel = allFront[rightIdx];
+            if (leftPanel) {
+              const url = card.fullUrls[leftPanel.id] || card.displayUrls[leftPanel.id] || leftPanel.thumbnail_url;
+              if (url) currentImages.push({ id: leftPanel.id, url, alt: `Page ${leftIdx + 1} back`, width_px: leftPanel.width_px ?? 600, height_px: leftPanel.height_px ?? 800 });
+            }
+            if (rightPanel) {
+              const url = card.fullUrls[rightPanel.id] || card.displayUrls[rightPanel.id] || rightPanel.thumbnail_url;
+              if (url) currentImages.push({ id: rightPanel.id, url, alt: `Page ${rightIdx + 1} front`, width_px: rightPanel.width_px ?? 600, height_px: rightPanel.height_px ?? 800 });
+            }
+          }
+        } else {
+          // Folding card: front/back side toggle
+          totalNavStates = 2;
+          const currentSidePanels = lightboxSide === 'front' ? allFront : allBack;
+          navLabel = lightboxSide === 'front' ? 'Front Side' : 'Back Side';
+          currentImages = currentSidePanels.map((p) => {
+            const url = card.fullUrls[p.id] || card.displayUrls[p.id] || p.thumbnail_url;
+            return { id: p.id, url: url || '', alt: `${p.side} panel ${p.panel_index + 1}`, width_px: p.width_px ?? 600, height_px: p.height_px ?? 800 };
+          }).filter((img) => img.url);
+        }
+
+        const heights = currentImages.map((img) => img.height_px).filter((h) => h > 0);
+        const maxPanelHeight = heights.length > 0 ? Math.max(...heights) : 600;
         const vw = window.innerWidth;
         const vh = window.innerHeight;
         const availableWidth = vw - 80;
         const availableHeight = vh - 32;
         const uniformHeight = Math.min(maxPanelHeight, availableHeight);
 
-        const totalWidth = currentSidePanels.reduce((sum, p) => {
-          const w = p.width_px ?? 1;
-          const h = p.height_px ?? 1;
-          return sum + uniformHeight * (w / h);
+        const totalWidth = currentImages.reduce((sum, img) => {
+          return sum + uniformHeight * (img.width_px / img.height_px);
         }, 0);
 
         const scaleX = totalWidth > 0 ? availableWidth / totalWidth : 1;
@@ -428,17 +506,52 @@ export const PublicCardDetail: React.FC = () => {
             className="fixed inset-0 z-[100] bg-black/95 backdrop-blur-xl flex items-center justify-center overflow-hidden"
             onClick={() => setShowLightbox(false)}
           >
-            <div className="fixed top-0 right-0 z-[110] flex">
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setLightboxSide((s) => s === 'front' ? 'back' : 'front');
-                }}
-                className="flex items-center justify-center w-11 h-11 sm:w-8 sm:h-8 bg-black/70 hover:bg-black/90 text-white transition-colors border-b border-l border-white/20"
-                aria-label="Flip to other side"
-              >
-                <RotateCw className="h-6 w-6 sm:h-4 sm:w-4" />
-              </button>
+            <div className="fixed top-0 left-1/2 -translate-x-1/2 z-[110] flex border border-t-0 border-white/20 rounded-b-md overflow-hidden" onClick={(e) => e.stopPropagation()}>
+              {(isBooklet || totalNavStates > 1) && (
+                <>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (isBooklet) setLightboxPage((p) => Math.max(0, p - 1));
+                      else setLightboxSide((s) => s === 'back' ? 'front' : 'back');
+                    }}
+                    disabled={isBooklet ? lightboxPage === 0 : lightboxSide === 'front'}
+                    className="flex items-center justify-center w-11 h-11 sm:w-8 sm:h-8 bg-black/70 hover:bg-black/90 text-white disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                    aria-label="Previous"
+                  >
+                    <ChevronLeft className="h-6 w-6 sm:h-4 sm:w-4" />
+                  </button>
+                  <div className="flex items-center justify-center h-11 sm:h-8 px-3 bg-black/70 text-white/80 text-xs sm:text-[11px] font-medium border-l border-r border-white/20 min-w-[100px] text-center select-none">
+                    {navLabel}
+                  </div>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (isBooklet) setLightboxPage((p) => Math.min(totalNavStates - 1, p + 1));
+                      else setLightboxSide((s) => s === 'front' ? 'back' : 'front');
+                    }}
+                    disabled={isBooklet ? lightboxPage >= totalNavStates - 1 : lightboxSide === 'back'}
+                    className="flex items-center justify-center w-11 h-11 sm:w-8 sm:h-8 bg-black/70 hover:bg-black/90 text-white disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                    aria-label="Next"
+                  >
+                    <ChevronRight className="h-6 w-6 sm:h-4 sm:w-4" />
+                  </button>
+                </>
+              )}
+              {!isBooklet && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setLightboxSide((s) => s === 'front' ? 'back' : 'front');
+                  }}
+                  className="flex items-center justify-center w-11 h-11 sm:w-8 sm:h-8 bg-black/70 hover:bg-black/90 text-white transition-colors border-l border-white/20"
+                  aria-label="Flip to other side"
+                >
+                  <RotateCw className="h-6 w-6 sm:h-4 sm:w-4" />
+                </button>
+              )}
+            </div>
+            <div className="fixed top-0 right-0 z-[110]">
               <button
                 onClick={() => setShowLightbox(false)}
                 className="flex items-center justify-center w-11 h-11 sm:w-8 sm:h-8 bg-black/70 hover:bg-black/90 text-white transition-colors border-b border-l border-white/20"
@@ -447,6 +560,7 @@ export const PublicCardDetail: React.FC = () => {
                 <X className="h-6 w-6 sm:h-4 sm:w-4" />
               </button>
             </div>
+
             <div
               ref={lbContentRef}
               className="flex items-center justify-center w-full h-full overflow-hidden px-10 touch-none"
@@ -496,21 +610,16 @@ export const PublicCardDetail: React.FC = () => {
                   transformOrigin: 'center center',
                 }}
               >
-                {currentSidePanels.map((panel) => {
-                  const imageUrl = card.fullUrls[panel.id] || card.displayUrls[panel.id] || panel.thumbnail_url;
-                  if (!imageUrl) return null;
-
-                  return (
-                    <img
-                      key={panel.id}
-                      src={imageUrl}
-                      alt={`${panel.side} panel ${panel.panel_index + 1}`}
-                      className="min-h-0 shrink-0 w-auto object-contain object-left-top"
-                      style={{ height: `${uniformHeight}px`, maxHeight: `${uniformHeight}px` }}
-                      draggable={false}
-                    />
-                  );
-                })}
+                {currentImages.map((img) => (
+                  <img
+                    key={img.id}
+                    src={img.url}
+                    alt={img.alt}
+                    className="min-h-0 shrink-0 w-auto object-contain object-left-top"
+                    style={{ height: `${uniformHeight}px`, maxHeight: `${uniformHeight}px` }}
+                    draggable={false}
+                  />
+                ))}
               </div>
             </div>
           </div>

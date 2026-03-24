@@ -79,6 +79,7 @@ export interface CardDetailData {
   crop_height: number | null;
   cover_spread_index: number;
   cover_side: string;
+  is_booklet: boolean;
   created_at: string;
   airline_name: string | null;
   aircraft_label: string | null;
@@ -221,6 +222,7 @@ export async function saveCardToLibrary(
         cover_spread_index: state.cover.spreadIndex,
         cover_side: state.cover.side,
         pivot_index: state.pivotIndex,
+        is_booklet: state.isBooklet ?? false,
       })
       .select('id')
       .single();
@@ -550,7 +552,7 @@ export async function fetchCards(): Promise<CardSummary[]> {
   const { data: cards, error } = await supabase
     .from('safety_cards')
     .select(`
-      id, title, panel_count, cover_spread_index, cover_side, created_at, published_year,
+      id, title, panel_count, cover_spread_index, cover_side, is_booklet, created_at, published_year,
       airlines ( name ),
       aircraft_variants ( name, aircraft_models ( name, aircraft_manufacturers ( name ) ) ),
       card_aircraft ( sort_order,
@@ -658,7 +660,7 @@ export async function fetchCardDetail(cardId: string): Promise<CardDetailData | 
       .from('safety_cards')
       .select(`
         id, title, panel_count, crop_width, crop_height,
-        cover_spread_index, cover_side, pivot_index, created_at,
+        cover_spread_index, cover_side, pivot_index, is_booklet, created_at,
         published_year, revision, language, notes, airline_id,
         airlines ( name, logo_path, country ),
         aircraft_variants ( name, aircraft_models ( name, aircraft_manufacturers ( name, logo_path ) ) ),
@@ -970,6 +972,7 @@ export async function fetchCardDetail(cardId: string): Promise<CardDetailData | 
     crop_height: card.crop_height,
     cover_spread_index: card.cover_spread_index,
     cover_side: card.cover_side,
+    is_booklet: card.is_booklet === true,
     created_at: card.created_at,
     airline_name: (airline?.name as string) ?? null,
     aircraft_label: aircraftLabel,
@@ -1082,7 +1085,8 @@ export async function updateCardFolds(
   cardId: string,
   creases: Crease[],
   cover: { spreadIndex: number; side: Side },
-  pivotIndex: number | null
+  pivotIndex: number | null,
+  isBooklet?: boolean
 ): Promise<{ success: boolean; error?: string }> {
   try {
     const { error: cardErr } = await supabase
@@ -1091,6 +1095,7 @@ export async function updateCardFolds(
         cover_spread_index: cover.spreadIndex,
         cover_side: cover.side,
         pivot_index: pivotIndex,
+        is_booklet: isBooklet ?? false,
       })
       .eq('id', cardId);
     if (cardErr) return { success: false, error: cardErr.message };
@@ -1618,6 +1623,21 @@ export async function updatePanelCount(
   const { error } = await supabase
     .from('safety_cards')
     .update({ panel_count: panelCount })
+    .eq('id', cardId);
+
+  if (error) return { success: false, error: error.message };
+  return { success: true };
+}
+
+// ─── Update Booklet Flag ─────────────────────────────────────────
+
+export async function updateBookletFlag(
+  cardId: string,
+  isBooklet: boolean
+): Promise<{ success: boolean; error?: string }> {
+  const { error } = await supabase
+    .from('safety_cards')
+    .update({ is_booklet: isBooklet })
     .eq('id', cardId);
 
   if (error) return { success: false, error: error.message };

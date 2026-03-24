@@ -24,9 +24,11 @@ import {
   Check,
   Upload,
   Hash,
+  BookOpen,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { CardVisualizer3D } from '@/components/FoldEditor/CardVisualizer3D';
+import { BookletVisualizer } from '@/components/FoldEditor/BookletVisualizer';
 import { generateAndUploadOgImage, type OgImageInput } from '@/lib/ogImageGenerator';
 import { OgBuilder } from '@/components/Library/OgBuilder';
 import { analyzeCardScans, type CardSuggestions } from '@/lib/aiService';
@@ -37,6 +39,7 @@ import {
   updateCardMetadata,
   uploadScansToCard,
   updatePanelCount,
+  updateBookletFlag,
   addProvenanceEntry,
   deleteProvenanceEntry,
   addPriceObservation,
@@ -247,6 +250,16 @@ export const CardDetail: React.FC<CardDetailProps> = ({ cardId, onBack, onEditCr
     }
   }, [cardId, refreshCard]);
 
+  const handleBookletToggle = useCallback(async () => {
+    if (!card) return;
+    const result = await updateBookletFlag(cardId, !card.is_booklet);
+    if (result.success) {
+      await refreshCard();
+    } else {
+      alert(`Failed to update booklet flag: ${result.error}`);
+    }
+  }, [cardId, card?.is_booklet, refreshCard]);
+
   const handleSaveMetadata = useCallback(async (update: CardMetadataUpdate) => {
     setSaving(true);
     const result = await updateCardMetadata(cardId, update);
@@ -434,12 +447,19 @@ export const CardDetail: React.FC<CardDetailProps> = ({ cardId, onBack, onEditCr
             <div className="min-w-0 flex flex-col gap-5">
               {/* ── Card Visualizer (only when all crops are complete) ── */}
               {allCropsComplete && (
+                card.is_booklet ? (
+                <BookletVisualizer
+                  panels={card.panels}
+                  cover={card.cover}
+                />
+                ) : (
                 <CardVisualizer3D
                   panels={card.panels}
                   creases={card.creases}
                   cover={card.cover}
                   pivotIndex={card.pivotIndex ?? undefined}
                 />
+                )
               )}
 
               {/* ── Step 1: Upload Scans ────────────────────────────── */}
@@ -523,35 +543,54 @@ export const CardDetail: React.FC<CardDetailProps> = ({ cardId, onBack, onEditCr
               {/* ── Step 2: Panel Count ─────────────────────────────── */}
               <SetupStep
                 number={2}
-                title="Panel Count"
+                title={card.is_booklet ? 'Page Count' : 'Panel Count'}
                 icon={<Hash className="h-4 w-4" />}
                 complete={hasScans}
                 disabled={!hasScans}
-                summary={hasScans ? `${panelCount} panels per side` : undefined}
+                summary={hasScans ? (card.is_booklet ? `${panelCount} pages` : `${panelCount} panels per side`) : undefined}
               >
                 {isEditing ? (
-                  <div className="flex items-center gap-3">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => { if (panelCount > 1) handlePanelCountChange(panelCount - 1); }}
-                      disabled={!hasScans || panelCount <= 1}
+                  <div className="flex flex-col gap-3">
+                    <button
+                      type="button"
+                      onClick={handleBookletToggle}
+                      className={cn(
+                        'self-start flex items-center gap-2 rounded-lg border-2 px-3 py-1.5 text-sm font-medium transition-all',
+                        card.is_booklet
+                          ? 'border-primary bg-primary/10 text-primary'
+                          : 'border-muted text-muted-foreground hover:border-primary/40'
+                      )}
                     >
-                      <span className="text-lg leading-none">−</span>
-                    </Button>
-                    <span className="text-lg font-semibold tabular-nums w-8 text-center">{panelCount}</span>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => handlePanelCountChange(panelCount + 1)}
-                      disabled={!hasScans}
-                    >
-                      <Plus className="h-4 w-4" />
-                    </Button>
-                    <span className="text-sm text-muted-foreground">panels per side</span>
+                      <BookOpen className="h-4 w-4" />
+                      Booklet
+                    </button>
+                    <div className="flex items-center gap-3">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => { if (panelCount > 1) handlePanelCountChange(panelCount - 1); }}
+                        disabled={!hasScans || panelCount <= 1}
+                      >
+                        <span className="text-lg leading-none">−</span>
+                      </Button>
+                      <span className="text-lg font-semibold tabular-nums w-8 text-center">{panelCount}</span>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handlePanelCountChange(panelCount + 1)}
+                        disabled={!hasScans}
+                      >
+                        <Plus className="h-4 w-4" />
+                      </Button>
+                      <span className="text-sm text-muted-foreground">
+                        {card.is_booklet ? `page${panelCount !== 1 ? 's' : ''} (${panelCount * 2} faces)` : 'panels per side'}
+                      </span>
+                    </div>
                   </div>
                 ) : (
-                  <p className="text-sm text-muted-foreground">{panelCount} panels per side</p>
+                  <p className="text-sm text-muted-foreground">
+                    {card.is_booklet ? `${panelCount} pages (booklet)` : `${panelCount} panels per side`}
+                  </p>
                 )}
               </SetupStep>
 
@@ -559,13 +598,26 @@ export const CardDetail: React.FC<CardDetailProps> = ({ cardId, onBack, onEditCr
               <SetupStep
                 id="spreads"
                 number={3}
-                title="Panel Spreads"
+                title={card.is_booklet ? 'Pages' : 'Panel Spreads'}
                 icon={<Scissors className="h-4 w-4" />}
                 complete={allCropsComplete}
                 disabled={!hasScans}
-                summary={hasPanels ? `${card.panels.length} of ${panelCount * 2} panels cropped` : undefined}
+                summary={hasPanels ? `${card.panels.length} of ${panelCount * 2} ${card.is_booklet ? 'faces' : 'panels'} cropped` : undefined}
               >
                 {hasScans ? (
+                  card.is_booklet ? (
+                    <BookletSpreadLayout
+                      frontPanels={frontPanels}
+                      backPanels={backPanels}
+                      expectedCount={panelsPerSide}
+                      displayUrls={card.displayUrls}
+                      fullUrls={card.fullUrls}
+                      savingSlot={savingSlot}
+                      onZoom={setLightboxUrl}
+                      isEditing={isEditing}
+                      onEditCrops={onEditCrops}
+                    />
+                  ) : (
                   <>
                     <SpreadRow
                       label="Front"
@@ -593,6 +645,7 @@ export const CardDetail: React.FC<CardDetailProps> = ({ cardId, onBack, onEditCr
                       onEditCrops={onEditCrops}
                     />
                   </>
+                  )
                 ) : (
                   <p className="text-sm text-muted-foreground/50">Upload scans first</p>
                 )}
@@ -1532,6 +1585,138 @@ const SpreadRow: React.FC<SpreadRowProps> = ({
           </div>
         ))}
       </div>
+    </div>
+  );
+};
+
+// ─── Booklet Spread Layout ───────────────────────────────────────
+
+interface BookletSpreadLayoutProps {
+  frontPanels: Panel[];
+  backPanels: Panel[];
+  expectedCount: number;
+  displayUrls: Record<string, string>;
+  fullUrls: Record<string, string>;
+  savingSlot?: { panelIndex: number; side: string } | null;
+  onZoom: (url: string) => void;
+  isEditing?: boolean;
+  onEditCrops?: (panelIndex: number, side: string) => void;
+}
+
+const BookletSpreadLayout: React.FC<BookletSpreadLayoutProps> = ({
+  frontPanels,
+  backPanels,
+  expectedCount,
+  displayUrls,
+  fullUrls,
+  savingSlot,
+  onZoom,
+  isEditing,
+  onEditCrops,
+}) => {
+  const pageCount = expectedCount;
+
+  const getPanel = (index: number, side: 'front' | 'back') => {
+    const panels = side === 'front' ? frontPanels : backPanels;
+    return panels.find((p) => p.panel_index === index) ?? null;
+  };
+
+  const renderCell = (panelIndex: number, side: 'front' | 'back', label: string) => {
+    const panel = getPanel(panelIndex, side);
+    const displayUrl = panel ? (displayUrls[panel.id] || panel.thumbnail_url) : null;
+    const fullUrl = panel ? (fullUrls[panel.id] || displayUrl) : null;
+    const isSavingThis = savingSlot?.panelIndex === panelIndex && savingSlot?.side === side;
+    const isProcessing = (!!panel && !displayUrl) || isSavingThis;
+
+    return (
+      <div
+        key={`${side}-${panelIndex}`}
+        className={cn(
+          'relative group rounded-md overflow-hidden transition-all',
+          (displayUrl && !isSavingThis) ? 'bg-muted/50' : 'bg-muted/20 border-2 border-dashed border-muted-foreground/15',
+          isEditing && onEditCrops && !isProcessing && 'cursor-pointer hover:ring-2 hover:ring-primary/40',
+        )}
+        style={{ maxHeight: 120 }}
+        onClick={isEditing && onEditCrops && !isProcessing ? () => onEditCrops(panelIndex, side) : undefined}
+      >
+        {displayUrl && !isSavingThis ? (
+          <>
+            <img src={displayUrl} alt={label} className="w-full h-full object-contain block" style={{ maxHeight: 120 }} loading="lazy" />
+            {isEditing && onEditCrops ? (
+              <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
+                <div className="bg-black/60 rounded-full p-2"><Scissors className="h-4 w-4 text-white" /></div>
+              </div>
+            ) : fullUrl ? (
+              <button
+                onClick={() => onZoom(fullUrl)}
+                className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100"
+              >
+                <div className="bg-black/60 rounded-full p-2"><ZoomIn className="h-4 w-4 text-white" /></div>
+              </button>
+            ) : null}
+          </>
+        ) : isProcessing ? (
+          <div className="flex flex-col items-center justify-center gap-2 animate-pulse" style={{ height: 120 }}>
+            <Loader2 className="h-5 w-5 text-muted-foreground/50 animate-spin" />
+            <span className="text-[11px] text-muted-foreground/50">Processing...</span>
+          </div>
+        ) : (
+          <div className="flex flex-col items-center justify-center gap-1.5" style={{ height: 120 }}>
+            {isEditing && onEditCrops ? (
+              <><Scissors className="h-4 w-4 text-muted-foreground/40" /><span className="text-xs text-muted-foreground/60">Crop</span></>
+            ) : (
+              <span className="text-xs text-muted-foreground">{label}</span>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  // Build booklet page order:
+  // Front cover: page 1 front (alone)
+  // Interior spreads: page 1 back + page 2 front, page 2 back + page 3 front, ...
+  // Back cover: last page back (alone)
+
+  type SpreadEntry =
+    | { type: 'single'; label: string; panelIndex: number; side: 'front' | 'back' }
+    | { type: 'pair'; label: string; left: { panelIndex: number; side: 'front' | 'back'; label: string }; right: { panelIndex: number; side: 'front' | 'back'; label: string } };
+
+  const spreads: SpreadEntry[] = [];
+
+  // Front cover
+  spreads.push({ type: 'single', label: 'Cover', panelIndex: 0, side: 'front' });
+
+  // Interior spreads
+  for (let i = 0; i < pageCount - 1; i++) {
+    spreads.push({
+      type: 'pair',
+      label: `Spread ${i + 1}`,
+      left: { panelIndex: i, side: 'back', label: `Page ${i + 1} back` },
+      right: { panelIndex: i + 1, side: 'front', label: `Page ${i + 2} front` },
+    });
+  }
+
+  // Back cover
+  spreads.push({ type: 'single', label: 'Back Cover', panelIndex: pageCount - 1, side: 'back' });
+
+  return (
+    <div className="flex flex-col gap-3">
+      {spreads.map((spread, idx) => (
+        <div key={idx}>
+          <h2 className="text-xs font-medium text-muted-foreground/60 mb-1">{spread.label}</h2>
+          {spread.type === 'single' ? (
+            <div className="flex gap-1.5">
+              <div style={{ width: 74 }}>{renderCell(spread.panelIndex, spread.side, spread.label)}</div>
+            </div>
+          ) : (
+            <div className="flex gap-1.5">
+              <div style={{ width: 74 }}>{renderCell(spread.left.panelIndex, spread.left.side, spread.left.label)}</div>
+              <div style={{ width: 74 }}>{renderCell(spread.right.panelIndex, spread.right.side, spread.right.label)}</div>
+            </div>
+          )}
+        </div>
+      ))}
     </div>
   );
 };

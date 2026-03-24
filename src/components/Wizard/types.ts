@@ -106,6 +106,7 @@ export interface WizardState {
   creases: Crease[];
   cover: CoverDesignation;
   pivotIndex: number | null;
+  isBooklet: boolean;
 
   // UI state for step 3 (crop session)
   activeSlot: { panelIndex: number; side: PanelSide } | null;
@@ -118,8 +119,10 @@ export interface CardInfoStepProps {
   metadata: CardMetadata;
   panelCount: number;
   images: LibraryImage[];
+  isBooklet: boolean;
   onMetadataChange: (metadata: CardMetadata) => void;
   onPanelCountChange: (count: number) => void;
+  onBookletChange: (isBooklet: boolean) => void;
   onBack: () => void;
   onContinue: () => void;
 }
@@ -166,6 +169,8 @@ export interface FoldStepProps {
   creases: Crease[];
   cover: CoverDesignation;
   pivotIndex: number | null;
+  isBooklet: boolean;
+  onBookletChange: (isBooklet: boolean) => void;
   onCreaseChange: (betweenPanel: number, direction: 'forward' | 'backward', side: Side) => void;
   onSequenceChange: (betweenPanel: number, sequence: number, side: Side) => void;
   onCoverChange: (spreadIndex: number, side: Side) => void;
