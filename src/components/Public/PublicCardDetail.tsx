@@ -301,7 +301,7 @@ export const PublicCardDetail: React.FC = () => {
   const panelCount = card.panel_count ?? 0;
   const hasPanels = card.panels.filter((p) => p.side === 'front').length > 0 || card.panels.filter((p) => p.side === 'back').length > 0;
   const allCropsComplete = hasPanels && card.panels.length >= panelCount * 2;
-  const has3D = allCropsComplete && (card.creases.length > 0 || card.is_booklet);
+  const has3D = allCropsComplete;
 
   const manufacturers = [...new Set(card.aircraft.map((a) => a.manufacturerName).filter(Boolean))];
   const models = [...new Set(card.aircraft.map((a) => a.modelName).filter(Boolean))];
