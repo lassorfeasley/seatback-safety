@@ -315,7 +315,7 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
 
       // Crosshair — shape varies by mode; hidden once a crop region exists (unless straightening)
       if (regions.length === 0 || straightenMode) {
-        const crosshairColor = straightenMode ? '#22d3ee' : '#ff0000';
+        const crosshairColor = '#ff0000';
         const isLockedCornerCursor = hasLockedDimensions && !straightenMode;
         const isCornerCursor = isLockedCornerCursor || (hasConstrainedHeight && !hasLockedDimensions && !straightenMode && !clickCropPoint);
         const isLineCursor = hasConstrainedHeight && !hasLockedDimensions && !straightenMode && !!clickCropPoint;
@@ -329,6 +329,9 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
           ctx.lineTo(r, size - 8);
           ctx.moveTo(r, r);
           ctx.lineTo(size - 8, r);
+        } else if (isLineCursor) {
+          ctx.moveTo(r, 8);
+          ctx.lineTo(r, size - 8);
         } else if (isCornerCursor && isBackFace) {
           ctx.moveTo(r, r);
           ctx.lineTo(r, size - 8);
@@ -339,9 +342,6 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
           ctx.lineTo(r, size - 8);
           ctx.moveTo(r, r);
           ctx.lineTo(size - 8, r);
-        } else if (isLineCursor) {
-          ctx.moveTo(r, 8);
-          ctx.lineTo(r, size - 8);
         } else {
           ctx.moveTo(r, 8);
           ctx.lineTo(r, size - 8);
@@ -519,10 +519,10 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
 
   const handleMouseMove = useCallback(
     (_e: Konva.KonvaEventObject<MouseEvent>) => {
-      // Full-canvas crosshair tracking
+      // Full-canvas crosshair tracking — track across entire stage, not just image
       {
         const pos = pointerToCanvas();
-        if (pos && rotatedBounds && pos.x >= 0 && pos.y >= 0 && pos.x <= rotatedBounds.width && pos.y <= rotatedBounds.height) {
+        if (pos) {
           setCrosshairPos(pos);
         } else {
           setCrosshairPos(null);
@@ -845,16 +845,24 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
             return guideLines;
           })()}
 
-          {/* Full-canvas crosshair lines */}
-          {crosshairPos && rotatedBounds && (straightenMode || regions.length === 0) && (() => {
+          {/* Full-canvas crosshair lines — extend across entire visible area */}
+          {crosshairPos && (straightenMode || regions.length === 0) && (() => {
             const sw = 1 / stageScale;
-            const color = straightenMode ? 'rgba(34,211,238,0.7)' : 'rgba(255,0,0,0.6)';
-            const w = rotatedBounds.width;
-            const h = rotatedBounds.height;
+            const color = 'rgba(255,0,0,0.6)';
+            const extL = -stagePosition.x / stageScale - 10000;
+            const extR = (stageSize.width - stagePosition.x) / stageScale + 10000;
+            const extT = -stagePosition.y / stageScale - 10000;
+            const extB = (stageSize.height - stagePosition.y) / stageScale + 10000;
+            const showVertical = true;
+            const showHorizontal = !(hasConstrainedHeight && clickCropPoint);
             return (
               <>
-                <Line points={[crosshairPos.x, 0, crosshairPos.x, h]} stroke={color} strokeWidth={sw} listening={false} />
-                <Line points={[0, crosshairPos.y, w, crosshairPos.y]} stroke={color} strokeWidth={sw} listening={false} />
+                {showVertical && (
+                  <Line points={[crosshairPos.x, extT, crosshairPos.x, extB]} stroke={color} strokeWidth={sw} listening={false} />
+                )}
+                {showHorizontal && (
+                  <Line points={[extL, crosshairPos.y, extR, crosshairPos.y]} stroke={color} strokeWidth={sw} listening={false} />
+                )}
               </>
             );
           })()}
@@ -912,7 +920,6 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
                       points={[0, clickCropPoint.y, imgW, clickCropPoint.y]}
                       stroke="#CCFF00"
                       strokeWidth={sw}
-                      dash={[6 * sw, 3 * sw]}
                       listening={false}
                     />
                     <Rect
@@ -927,7 +934,6 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
                       points={[0, clickCropPoint.y + Math.round(constrainHeight!), imgW, clickCropPoint.y + Math.round(constrainHeight!)]}
                       stroke="rgba(204, 255, 0, 0.3)"
                       strokeWidth={sw}
-                      dash={[6 * sw, 3 * sw]}
                       listening={false}
                     />
                     <Line
@@ -953,8 +959,7 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
                         height={previewH}
                         fill="rgba(204, 255, 0, 0.12)"
                         stroke="#CCFF00"
-                        strokeWidth={2 * sw}
-                        dash={[8 * sw, 4 * sw]}
+                        strokeWidth={sw}
                         listening={false}
                       />
                       {!hasConstrainedHeight && (

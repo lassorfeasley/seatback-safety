@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import { Check, ChevronsUpDown, Plus, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from './button';
@@ -41,25 +41,36 @@ export const Combobox: React.FC<ComboboxProps> = ({
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
   const [creating, setCreating] = useState(false);
+  const searchRef = useRef(search);
+  searchRef.current = search;
 
   const selectedLabel = options.find((o) => o.value === value)?.label;
 
   const handleCreate = useCallback(async () => {
-    if (!onCreateNew || !search.trim() || creating) return;
+    const term = searchRef.current.trim();
+    if (!onCreateNew || !term || creating) return;
     setCreating(true);
     try {
-      const result = await onCreateNew(search.trim());
+      const result = await onCreateNew(term);
       onChange(result.value, result.label);
       setOpen(false);
       setSearch('');
+    } catch (err) {
+      console.error('Failed to create item:', err);
     } finally {
       setCreating(false);
     }
-  }, [onCreateNew, search, creating, onChange]);
+  }, [onCreateNew, creating, onChange]);
 
   const exactMatch = options.some(
     (o) => o.label.toLowerCase() === search.toLowerCase()
   );
+
+  const filteredOptions = options.filter((o) =>
+    o.label.toLowerCase().includes(search.toLowerCase())
+  );
+
+  const showCreate = onCreateNew && search.trim() && !exactMatch;
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -80,34 +91,18 @@ export const Combobox: React.FC<ComboboxProps> = ({
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
-        <Command shouldFilter={true}>
+        <Command shouldFilter={false}>
           <CommandInput
             placeholder={searchPlaceholder}
             value={search}
             onValueChange={setSearch}
           />
           <CommandList>
-            <CommandEmpty>
-              {onCreateNew && search.trim() ? (
-                <button
-                  onClick={handleCreate}
-                  disabled={creating}
-                  className="flex items-center gap-2 px-2 py-1.5 text-sm w-full justify-center
-                             hover:bg-accent rounded-sm transition-colors"
-                >
-                  {creating ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Plus className="h-4 w-4" />
-                  )}
-                  Create &ldquo;{search.trim()}&rdquo;
-                </button>
-              ) : (
-                'No results found.'
-              )}
-            </CommandEmpty>
+            {filteredOptions.length === 0 && !showCreate && (
+              <CommandEmpty>No results found.</CommandEmpty>
+            )}
             <CommandGroup>
-              {options.map((option) => (
+              {filteredOptions.map((option) => (
                 <CommandItem
                   key={option.value}
                   value={option.label}
@@ -127,17 +122,22 @@ export const Combobox: React.FC<ComboboxProps> = ({
                 </CommandItem>
               ))}
             </CommandGroup>
-            {onCreateNew && search.trim() && !exactMatch && options.length > 0 && (
-              <CommandGroup>
-                <CommandItem onSelect={handleCreate} disabled={creating}>
+            {showCreate && (
+              <div className="overflow-hidden p-1 text-foreground">
+                <button
+                  type="button"
+                  onClick={handleCreate}
+                  disabled={creating}
+                  className="relative flex w-full cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground"
+                >
                   {creating ? (
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                   ) : (
                     <Plus className="mr-2 h-4 w-4" />
                   )}
                   Create &ldquo;{search.trim()}&rdquo;
-                </CommandItem>
-              </CommandGroup>
+                </button>
+              </div>
             )}
           </CommandList>
         </Command>

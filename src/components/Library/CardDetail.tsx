@@ -1124,7 +1124,24 @@ const MetadataEditor: React.FC<MetadataEditorProps> = ({ card, onSave, onCancel,
   }, [suggestions, manufacturers]);
 
   const acceptModels = useCallback(async () => {
-    if (!suggestions?.aircraft?.length || !manufacturerId) return;
+    if (!suggestions?.aircraft?.length) return;
+
+    let mfrId = manufacturerId;
+    if (!mfrId) {
+      const firstMfr = suggestions.aircraft.find((a) => a.manufacturer)?.manufacturer;
+      if (!firstMfr) return;
+      const mfrMatch = manufacturers.find((m) => m.label.toLowerCase() === firstMfr.toLowerCase());
+      if (mfrMatch) {
+        mfrId = mfrMatch.value;
+      } else {
+        const item = await createManufacturer(firstMfr);
+        setManufacturers((prev) => [...prev, { value: item.id, label: item.name }]);
+        mfrId = item.id;
+      }
+      setManufacturerId(mfrId);
+      setAcceptedFields((prev) => new Set(prev).add('manufacturer'));
+    }
+
     const rowsByModel = new Map<string, typeof aircraftRows[number]>();
     for (const a of suggestions.aircraft) {
       if (!a.model) continue;
@@ -1137,7 +1154,7 @@ const MetadataEditor: React.FC<MetadataEditorProps> = ({ card, onSave, onCancel,
         modelId = modelMatch.value;
         modelName = modelMatch.label;
       } else {
-        const item = await createModel(manufacturerId, a.model);
+        const item = await createModel(mfrId, a.model);
         setModels((prev) => [...prev, { value: item.id, label: item.name }]);
         modelId = item.id;
         modelName = item.name;
@@ -1147,7 +1164,7 @@ const MetadataEditor: React.FC<MetadataEditorProps> = ({ card, onSave, onCancel,
     const rows = [...rowsByModel.values()];
     if (rows.length > 0) setAircraftRows(rows);
     setAcceptedFields((prev) => new Set(prev).add('models'));
-  }, [suggestions, manufacturerId, models]);
+  }, [suggestions, manufacturerId, manufacturers, models]);
 
   const acceptVariants = useCallback(async () => {
     if (!suggestions?.aircraft?.length) return;

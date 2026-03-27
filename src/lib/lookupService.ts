@@ -149,9 +149,18 @@ export async function fetchAirlinesBrowse(): Promise<AirlineBrowse[]> {
 }
 
 export async function createAirline(name: string): Promise<LookupItem> {
+  const slug = slugify(name);
+
+  const { data: existing } = await supabase
+    .from('airlines')
+    .select('id, name')
+    .ilike('name', name)
+    .maybeSingle();
+  if (existing) return existing as LookupItem;
+
   const { data, error } = await supabase
     .from('airlines')
-    .insert({ name, slug: slugify(name) })
+    .insert({ name, slug })
     .select('id, name')
     .single();
   if (error || !data) throw new Error(error?.message ?? 'Failed to create airline');
@@ -258,9 +267,18 @@ export async function fetchDistinctLanguageCount(): Promise<number> {
 }
 
 export async function createManufacturer(name: string): Promise<LookupItem> {
+  const slug = slugify(name);
+
+  const { data: existing } = await supabase
+    .from('aircraft_manufacturers')
+    .select('id, name')
+    .ilike('name', name)
+    .maybeSingle();
+  if (existing) return existing as LookupItem;
+
   const { data, error } = await supabase
     .from('aircraft_manufacturers')
-    .insert({ name, slug: slugify(name) })
+    .insert({ name, slug })
     .select('id, name')
     .single();
   if (error || !data) throw new Error(error?.message ?? 'Failed to create manufacturer');
@@ -317,11 +335,33 @@ export async function fetchModelsBrowse(manufacturerId?: string): Promise<ModelB
 }
 
 export async function createModel(manufacturerId: string, name: string): Promise<LookupItem> {
+  const slug = slugify(name);
+
+  const { data: existing } = await supabase
+    .from('aircraft_models')
+    .select('id, name')
+    .eq('manufacturer_id', manufacturerId)
+    .ilike('name', name)
+    .maybeSingle();
+  if (existing) return existing as LookupItem;
+
   const { data, error } = await supabase
     .from('aircraft_models')
-    .insert({ manufacturer_id: manufacturerId, name, slug: slugify(name) })
+    .insert({ manufacturer_id: manufacturerId, name, slug })
     .select('id, name')
     .single();
+
+  if (error?.message?.includes('aircraft_models_slug_key')) {
+    const uniqueSlug = `${slug}-${manufacturerId.slice(0, 8)}`;
+    const { data: retry, error: retryErr } = await supabase
+      .from('aircraft_models')
+      .insert({ manufacturer_id: manufacturerId, name, slug: uniqueSlug })
+      .select('id, name')
+      .single();
+    if (retryErr || !retry) throw new Error(retryErr?.message ?? 'Failed to create model');
+    return retry as LookupItem;
+  }
+
   if (error || !data) throw new Error(error?.message ?? 'Failed to create model');
   return data as LookupItem;
 }
@@ -372,11 +412,33 @@ export async function fetchVariantsBrowse(modelId?: string): Promise<VariantBrow
 }
 
 export async function createVariant(modelId: string, name: string): Promise<LookupItem> {
+  const slug = slugify(name);
+
+  const { data: existing } = await supabase
+    .from('aircraft_variants')
+    .select('id, name')
+    .eq('model_id', modelId)
+    .ilike('name', name)
+    .maybeSingle();
+  if (existing) return existing as LookupItem;
+
   const { data, error } = await supabase
     .from('aircraft_variants')
-    .insert({ model_id: modelId, name, slug: slugify(name) })
+    .insert({ model_id: modelId, name, slug })
     .select('id, name')
     .single();
+
+  if (error?.message?.includes('_slug_key')) {
+    const uniqueSlug = `${slug}-${modelId.slice(0, 8)}`;
+    const { data: retry, error: retryErr } = await supabase
+      .from('aircraft_variants')
+      .insert({ model_id: modelId, name, slug: uniqueSlug })
+      .select('id, name')
+      .single();
+    if (retryErr || !retry) throw new Error(retryErr?.message ?? 'Failed to create variant');
+    return retry as LookupItem;
+  }
+
   if (error || !data) throw new Error(error?.message ?? 'Failed to create variant');
   return data as LookupItem;
 }
