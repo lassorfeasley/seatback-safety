@@ -57,8 +57,8 @@ export const AdminAirlineDetail: React.FC = () => {
 
   return (
     <>
-      <header className="flex-shrink-0 bg-card border-b">
-        <div className="max-w-5xl mx-auto px-6 py-5">
+      <header className="flex-shrink-0">
+        <div className="max-w-6xl mx-auto px-6 pt-6 pb-2">
           <button
             onClick={() => navigate('/admin/airlines')}
             className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors mb-4"
@@ -69,7 +69,7 @@ export const AdminAirlineDetail: React.FC = () => {
       </header>
 
       <main className="flex-1 min-h-0 overflow-auto">
-        <div className="max-w-5xl mx-auto px-6 py-8">
+        <div className="max-w-6xl mx-auto px-6 py-8">
           {editing ? (
             <AirlineProfileEditor
               airline={airline}
@@ -328,7 +328,7 @@ const AdminCardTile: React.FC<{ card: CardSummary; onClick: () => void }> = ({ c
                  transition-all hover:shadow-lg focus-visible:outline-none
                  focus-visible:ring-2 focus-visible:ring-primary text-left"
     >
-      <div className="aspect-square bg-muted/60 relative overflow-hidden rounded-lg">
+      <div className="aspect-square bg-[#ebeaef] relative overflow-hidden rounded-lg">
         {imgSrc ? (
           <img
             src={imgSrc}

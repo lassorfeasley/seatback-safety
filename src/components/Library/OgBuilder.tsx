@@ -1,6 +1,6 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
-import { Loader2, RefreshCw, X, Layers } from 'lucide-react';
+import { Loader2, RefreshCw, X, Layers, ChevronDown, ChevronUp } from 'lucide-react';
 import type { Panel, CoverDesignation } from '@/components/FoldEditor/types';
 
 interface OgBuilderProps {
@@ -152,37 +152,53 @@ export const OgBuilder: React.FC<OgBuilderProps> = ({
     ? `${secondPanel.side === 'front' ? 'Front' : 'Back'} ${secondPanel.panel_index + 1}`
     : null;
 
+  const [open, setOpen] = useState(false);
+
   return (
-    <section>
-      <div className="flex items-center justify-between mb-2">
-        <h2 className="text-sm font-medium text-muted-foreground">OG Image</h2>
-        <div className="flex gap-1.5">
-          {panelOptions.length > 0 && (
+    <section className="border bg-card">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex items-center gap-2 w-full px-4 py-3 text-left"
+      >
+        <span className="text-sm font-medium flex-1">OG Image</span>
+        {ogExists && (
+          <span className="text-[11px] text-muted-foreground/70 flex-shrink-0">Generated</span>
+        )}
+        {open ? (
+          <ChevronUp className="h-3.5 w-3.5 text-muted-foreground/50 flex-shrink-0" />
+        ) : (
+          <ChevronDown className="h-3.5 w-3.5 text-muted-foreground/50 flex-shrink-0" />
+        )}
+      </button>
+      {open && (
+        <div className="px-4 pb-4 pt-0">
+          <div className="flex gap-1.5 mb-3">
+            {panelOptions.length > 0 && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={openSecondPanelDialog}
+                disabled={generatingOg}
+                className="h-7 px-2 text-xs gap-1.5"
+              >
+                <Layers className="h-3 w-3" />
+                With second panel
+              </Button>
+            )}
             <Button
               variant="outline"
               size="sm"
-              onClick={openSecondPanelDialog}
+              onClick={handleRegenerate}
               disabled={generatingOg}
               className="h-7 px-2 text-xs gap-1.5"
             >
-              <Layers className="h-3 w-3" />
-              With second panel
+              <RefreshCw className="h-3 w-3" />
+              {ogExists ? 'Regenerate' : 'Generate'}
             </Button>
-          )}
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleRegenerate}
-            disabled={generatingOg}
-            className="h-7 px-2 text-xs gap-1.5"
-          >
-            <RefreshCw className="h-3 w-3" />
-            {ogExists ? 'Regenerate' : 'Generate'}
-          </Button>
-        </div>
-      </div>
+          </div>
 
-      <div className="rounded-xl border bg-card overflow-hidden">
+      <div className="border bg-card overflow-hidden max-w-[280px]">
         {generatingOg ? (
           <div className="flex items-center justify-center gap-2 py-8 text-sm text-muted-foreground">
             <Loader2 className="h-4 w-4 animate-spin" />
@@ -196,6 +212,9 @@ export const OgBuilder: React.FC<OgBuilderProps> = ({
           </div>
         )}
       </div>
+
+        </div>
+      )}
 
       {/* Second panel dialog */}
       {dialogOpen && (

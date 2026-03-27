@@ -91,28 +91,44 @@ const SetupStep: React.FC<{
   disabled?: boolean;
   summary?: string;
   children: React.ReactNode;
-}> = ({ id, number, title, icon, complete, disabled, summary, children }) => (
-  <section id={id} className={cn('rounded-xl border bg-card p-5 transition-opacity', disabled && 'opacity-40')}>
-    <div className="flex items-center gap-2.5 mb-4">
-      <div className={cn(
-        'flex items-center justify-center w-6 h-6 rounded-full text-xs font-semibold flex-shrink-0 transition-colors',
-        complete
-          ? 'bg-emerald-500/10 text-emerald-600 ring-1 ring-emerald-500/20'
-          : 'bg-muted text-muted-foreground'
-      )}>
-        {complete ? <Check className="h-3.5 w-3.5" /> : number}
-      </div>
-      <div className="flex items-center gap-1.5 flex-1 min-w-0">
-        <span className="text-muted-foreground">{icon}</span>
-        <span className="text-sm font-medium">{title}</span>
-      </div>
-      {summary && (
-        <span className="text-[11px] text-muted-foreground/70 flex-shrink-0 tabular-nums">{summary}</span>
+  defaultOpen?: boolean;
+}> = ({ id, number, title, icon, complete, disabled, summary, children, defaultOpen }) => {
+  const [open, setOpen] = useState(defaultOpen ?? !complete);
+
+  return (
+    <section id={id} className={cn('border bg-card transition-opacity', disabled && 'opacity-40')}>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex items-center gap-2.5 w-full px-4 py-3 text-left"
+      >
+        <div className={cn(
+          'flex items-center justify-center w-5 h-5 text-[10px] font-semibold flex-shrink-0 transition-colors',
+          complete
+            ? 'bg-emerald-500/10 text-emerald-600 ring-1 ring-emerald-500/20'
+            : 'bg-muted text-muted-foreground'
+        )}>
+          {complete ? <Check className="h-3 w-3" /> : number}
+        </div>
+        <span className="text-muted-foreground flex-shrink-0">{icon}</span>
+        <span className="text-sm font-medium flex-1 min-w-0 truncate">{title}</span>
+        {summary && (
+          <span className="text-[11px] text-muted-foreground/70 flex-shrink-0 tabular-nums">{summary}</span>
+        )}
+        {open ? (
+          <ChevronUp className="h-3.5 w-3.5 text-muted-foreground/50 flex-shrink-0" />
+        ) : (
+          <ChevronDown className="h-3.5 w-3.5 text-muted-foreground/50 flex-shrink-0" />
+        )}
+      </button>
+      {open && (
+        <div className="px-4 pb-4 pt-0">
+          {children}
+        </div>
       )}
-    </div>
-    <div className="pl-[34px]">{children}</div>
-  </section>
-);
+    </section>
+  );
+};
 
 const EditorField: React.FC<{ label: string; children: React.ReactNode }> = ({ label, children }) => (
   <div className="flex flex-col gap-1.5">
@@ -631,7 +647,7 @@ export const CardDetail: React.FC<CardDetailProps> = ({ cardId, onBack, onEditCr
                       isEditing={isEditing}
                       onEditCrops={onEditCrops}
                     />
-                    <div className="my-4" />
+                    <div className="my-2" />
                     <SpreadRow
                       label="Back"
                       side="back"
@@ -681,16 +697,7 @@ export const CardDetail: React.FC<CardDetailProps> = ({ cardId, onBack, onEditCr
                 />
               )}
               {!isEditing && ogExists && ogImageUrl && (
-                <section>
-                  <h2 className="text-sm font-medium text-muted-foreground mb-2">OG Image</h2>
-                  <div className="rounded-xl border bg-card overflow-hidden">
-                    <img
-                      src={ogImageUrl}
-                      alt="Generated Open Graph image"
-                      className="w-full h-auto"
-                    />
-                  </div>
-                </section>
+                <OgAccordion ogImageUrl={ogImageUrl} />
               )}
             </div>
 
@@ -829,6 +836,36 @@ export const CardDetail: React.FC<CardDetailProps> = ({ cardId, onBack, onEditCr
         <Lightbox url={lightboxUrl} onClose={() => setLightboxUrl(null)} />
       )}
     </div>
+  );
+};
+
+// ─── OG Image Accordion (read-only) ─────────────────────────────
+
+const OgAccordion: React.FC<{ ogImageUrl: string }> = ({ ogImageUrl }) => {
+  const [open, setOpen] = useState(false);
+  return (
+    <section className="border bg-card">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex items-center gap-2 w-full px-4 py-3 text-left"
+      >
+        <span className="text-sm font-medium flex-1">OG Image</span>
+        <span className="text-[11px] text-muted-foreground/70 flex-shrink-0">Generated</span>
+        {open ? (
+          <ChevronUp className="h-3.5 w-3.5 text-muted-foreground/50 flex-shrink-0" />
+        ) : (
+          <ChevronDown className="h-3.5 w-3.5 text-muted-foreground/50 flex-shrink-0" />
+        )}
+      </button>
+      {open && (
+        <div className="px-4 pb-4">
+          <div className="border bg-card overflow-hidden max-w-[280px]">
+            <img src={ogImageUrl} alt="Generated Open Graph image" className="w-full h-auto" />
+          </div>
+        </div>
+      )}
+    </section>
   );
 };
 
@@ -1283,7 +1320,7 @@ const MetadataEditor: React.FC<MetadataEditorProps> = ({ card, onSave, onCancel,
                 );
               const suggestedVariant = matchedSuggestion?.variant?.replace(/^-+/, '').trim() || null;
               return (
-                <div key={idx} className="flex flex-col gap-1.5 rounded-lg border border-border/60 p-2.5">
+                <div key={idx} className="flex flex-col gap-1.5 border border-border/60 p-2.5">
                   <div className="flex items-center gap-1.5">
                     <div className="flex-1">
                       <Combobox
@@ -1309,11 +1346,12 @@ const MetadataEditor: React.FC<MetadataEditorProps> = ({ card, onSave, onCancel,
                       </button>
                     )}
                   </div>
-                  <div className="flex flex-col gap-1.5">
+                  {row.modelId && (
+                  <div className="flex flex-col gap-1.5 pl-3 border-l-2 border-border/40">
                     {row.variantIds.length > 0 && (
                       <div className="flex flex-wrap gap-1">
                         {row.variantIds.map((vid, vi) => (
-                              <span key={vid} className="inline-flex items-center gap-1 bg-primary/5 text-primary/80 rounded-full px-2.5 py-0.5 text-xs font-medium">
+                              <span key={vid} className="inline-flex items-center gap-1 bg-primary/5 text-primary/80 px-2.5 py-0.5 text-xs font-medium">
                             {row.variantNames[vi] || vid}
                             <button
                               className="text-muted-foreground hover:text-destructive"
@@ -1343,9 +1381,9 @@ const MetadataEditor: React.FC<MetadataEditorProps> = ({ card, onSave, onCancel,
                         }));
                         return { value: item.id, label: item.name };
                       } : undefined}
-                      placeholder={loadingVariants.has(row.modelId) ? 'Loading variants...' : 'Add variant (optional)...'}
+                      placeholder={loadingVariants.has(row.modelId) ? 'Loading variants...' : 'Variant (optional)...'}
                       searchPlaceholder="Search variants..."
-                      disabled={!row.modelId || loadingVariants.has(row.modelId)}
+                      disabled={loadingVariants.has(row.modelId)}
                     />
                     {suggestedVariant && (
                       <InlineSuggestion
@@ -1356,6 +1394,10 @@ const MetadataEditor: React.FC<MetadataEditorProps> = ({ card, onSave, onCancel,
                       />
                     )}
                   </div>
+                  )}
+                  {!row.modelId && suggestedVariant && (
+                    <p className="text-[10px] text-muted-foreground/60 italic pl-1">Apply a model first to add variant</p>
+                  )}
                 </div>
               );
             })}
@@ -1496,19 +1538,18 @@ const SpreadRow: React.FC<SpreadRowProps> = ({
 
   return (
     <div>
-      <div className="flex items-baseline gap-2 mb-2">
-        <h2 className="text-sm font-medium">
-          {label} Side
+      <div className="flex items-baseline gap-2 mb-1">
+        <h2 className="text-xs font-medium">
+          {label}
         </h2>
         {side === 'back' && (
           <span className="text-[10px] text-muted-foreground">
-            Flipped — as if you turned the card over
+            (flipped)
           </span>
         )}
       </div>
       <div
-        className="grid gap-1.5"
-        style={{ gridTemplateColumns: `repeat(${slots.length}, 1fr)`, maxHeight: 300 }}
+        className="flex gap-1 max-h-[180px]"
       >
         {slots.map(({ panel, panelIndex }) => {
           const displayUrl = panel ? (displayUrls[panel.id] || panel.thumbnail_url) : null;
@@ -1520,11 +1561,11 @@ const SpreadRow: React.FC<SpreadRowProps> = ({
             <div
               key={panel?.id ?? `empty-${panelIndex}`}
               className={cn(
-                'relative group rounded-md overflow-hidden transition-all',
-                (displayUrl && !isSavingThis) ? 'bg-muted/50' : 'bg-muted/20 border-2 border-dashed border-muted-foreground/15',
+                'relative group overflow-hidden transition-all flex-1 min-w-0',
+                (displayUrl && !isSavingThis) ? '' : 'border border-dashed border-muted-foreground/20',
                 isEditing && onEditCrops && !isProcessing && 'cursor-pointer hover:ring-2 hover:ring-primary/40',
               )}
-              style={{ maxHeight: 300 }}
+              style={displayUrl && !isSavingThis ? {} : { aspectRatio: '1 / 1.618' }}
               onClick={isEditing && onEditCrops && !isProcessing ? () => onEditCrops(panelIndex, side) : undefined}
             >
               {displayUrl && !isSavingThis ? (
@@ -1532,15 +1573,13 @@ const SpreadRow: React.FC<SpreadRowProps> = ({
                   <img
                     src={displayUrl}
                     alt={`${label} Panel ${panelIndex + 1}`}
-                    className="w-full h-full object-contain block"
+                    className="w-full h-full object-cover block"
                     loading="lazy"
                   />
                   {isEditing && onEditCrops ? (
                     <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors
                                    flex items-center justify-center opacity-0 group-hover:opacity-100">
-                      <div className="bg-black/60 rounded-full p-2">
-                        <Scissors className="h-4 w-4 text-white" />
-                      </div>
+                      <Scissors className="h-3.5 w-3.5 text-white" />
                     </div>
                   ) : fullUrl ? (
                     <button
@@ -1548,42 +1587,22 @@ const SpreadRow: React.FC<SpreadRowProps> = ({
                       className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors
                                  flex items-center justify-center opacity-0 group-hover:opacity-100"
                     >
-                      <div className="bg-black/60 rounded-full p-2">
-                        <ZoomIn className="h-4 w-4 text-white" />
-                      </div>
+                      <ZoomIn className="h-3.5 w-3.5 text-white" />
                     </button>
                   ) : null}
                 </>
               ) : isProcessing ? (
-                <div className="aspect-[3/4] max-h-[300px] flex flex-col items-center justify-center gap-2 animate-pulse">
-                  <Loader2 className="h-5 w-5 text-muted-foreground/50 animate-spin" />
-                  <span className="text-[11px] text-muted-foreground/50">Processing...</span>
+                <div className="absolute inset-0 flex items-center justify-center animate-pulse">
+                  <Loader2 className="h-4 w-4 text-muted-foreground/50 animate-spin" />
                 </div>
               ) : (
-                <div className="aspect-[3/4] max-h-[300px] flex flex-col items-center justify-center gap-1.5">
-                  {isEditing && onEditCrops ? (
-                    <>
-                      <Scissors className="h-4 w-4 text-muted-foreground/40" />
-                      <span className="text-xs text-muted-foreground/60">Crop</span>
-                    </>
-                  ) : (
-                    <span className="text-xs text-muted-foreground">Panel {panelIndex + 1}</span>
-                  )}
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <Scissors className="h-3.5 w-3.5 text-muted-foreground/30" />
                 </div>
               )}
             </div>
           );
         })}
-      </div>
-      <div
-        className="grid gap-1.5 mt-1.5"
-        style={{ gridTemplateColumns: `repeat(${slots.length}, 1fr)` }}
-      >
-        {slots.map(({ panelIndex }) => (
-          <div key={panelIndex} className="text-center text-[10px] text-muted-foreground/60 font-medium">
-            Panel {panelIndex + 1}
-          </div>
-        ))}
       </div>
     </div>
   );

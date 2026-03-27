@@ -323,14 +323,18 @@ export const CardVisualizer3D: React.FC<CardVisualizer3DProps> = ({
     return () => el.removeEventListener('touchmove', handleTouchMove);
   }, [moveDrag]);
 
+  const isSingleSheet = creasesByUnfoldOrder.length === 0;
+
   const handleCanvasClick = useCallback(() => {
     if (!minimal || dragDistance.current > 5) return;
-    if (targetFoldState === 1) {
+    if (isSingleSheet) {
+      handleFlip();
+    } else if (targetFoldState === 1) {
       handleUnfold();
     } else {
       handleFold();
     }
-  }, [minimal, targetFoldState, handleUnfold, handleFold]);
+  }, [minimal, isSingleSheet, targetFoldState, handleFlip, handleUnfold, handleFold]);
 
   // Cursor-follow tilt for minimal mode
   useEffect(() => {
@@ -383,7 +387,18 @@ export const CardVisualizer3D: React.FC<CardVisualizer3DProps> = ({
 
   // Hint animation: quickly unfold then refold on load
   useEffect(() => {
-    if (!hintOnLoad || creasesByUnfoldOrder.length === 0) return;
+    if (!hintOnLoad) return;
+
+    if (creasesByUnfoldOrder.length === 0) {
+      const t1 = setTimeout(() => {
+        setRotation((prev) => ({ x: prev.x, y: prev.y + 180 }));
+      }, 600);
+      const t2 = setTimeout(() => {
+        setRotation((prev) => ({ x: prev.x, y: prev.y + 180 }));
+      }, 1800);
+      animationTimeouts.current.push(t1, t2);
+      return;
+    }
 
     const n = creasesByUnfoldOrder.length;
     const unfoldTime = n * (FOLD_DURATION - FOLD_STAGGER);
@@ -430,7 +445,9 @@ export const CardVisualizer3D: React.FC<CardVisualizer3DProps> = ({
   const foldedCenterFromPivot = pivotWidth / 2;
   const centerX = foldedCenterFromPivot + (flatCenterFromPivot - foldedCenterFromPivot) * (1 - overallFoldProgress);
   const centerY = PANEL_HEIGHT / 2;
-  const staticFlipY = coverDesignation.side === 'front' ? 180 : 0;
+  const staticFlipY = frontCreases.length === 0
+    ? (coverDesignation.side === 'back' ? 180 : 0)
+    : (coverDesignation.side === 'front' ? 180 : 0);
   const foldTransition = isSliderActive
     ? 'none'
     : `transform ${FOLD_DURATION}ms cubic-bezier(0.4, 0, 0.2, 1)`;

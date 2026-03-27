@@ -548,7 +548,7 @@ function buildAircraftLabel(variant: Record<string, unknown> | null): string | n
   return [mfr?.name, model?.name, variant.name].filter(Boolean).join(' ') || null;
 }
 
-export async function fetchCards(): Promise<CardSummary[]> {
+export async function fetchCards(opts?: { includeUnpublished?: boolean }): Promise<CardSummary[]> {
   const { data: cards, error } = await supabase
     .from('safety_cards')
     .select(`
@@ -651,7 +651,7 @@ export async function fetchCards(): Promise<CardSummary[]> {
       aircraft_label: label,
       published_year: (card.published_year as number) ?? null,
     };
-  });
+  }).filter((c) => opts?.includeUnpublished || c.thumbnail_url || c.og_url);
 }
 
 export async function fetchCardDetail(cardId: string): Promise<CardDetailData | null> {

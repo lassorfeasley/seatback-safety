@@ -357,10 +357,10 @@ export const AdminSocial: React.FC = () => {
 
   return (
     <>
-      <header className="flex-shrink-0 bg-card border-b">
-        <div className="max-w-7xl mx-auto px-6 py-5 space-y-4">
+      <header className="flex-shrink-0">
+        <div className="max-w-6xl mx-auto px-6 pt-8 pb-4 space-y-4">
           <div className="flex items-center justify-between">
-            <h1 className="text-2xl font-semibold tracking-tight">Social</h1>
+            <h1 className="text-sm font-medium tracking-widest uppercase text-black/60">Social</h1>
             {tab === 'calendar' && (
               <Button
                 onClick={handleGenerate}
@@ -379,41 +379,41 @@ export const AdminSocial: React.FC = () => {
               </Button>
             )}
           </div>
-          <div className="flex gap-1 border-b -mb-5 pb-0">
+          <div className="flex gap-4 border-b border-black/5 -mb-5 pb-0">
             <button
               onClick={() => setTab('calendar')}
               className={cn(
-                'flex items-center gap-1.5 px-3 py-2 text-sm font-medium border-b-2 -mb-px transition-colors',
+                'flex items-center gap-1.5 px-1 py-2 text-[10px] font-medium tracking-widest uppercase border-b-2 -mb-px transition-colors',
                 tab === 'calendar'
-                  ? 'border-primary text-foreground'
-                  : 'border-transparent text-muted-foreground hover:text-foreground'
+                  ? 'border-red-600 text-red-600'
+                  : 'border-transparent text-black/40 hover:text-black/70'
               )}
             >
-              <Calendar className="h-4 w-4" />
+              <Calendar className="h-3.5 w-3.5" />
               Calendar
             </button>
             <button
               onClick={() => setTab('create')}
               className={cn(
-                'flex items-center gap-1.5 px-3 py-2 text-sm font-medium border-b-2 -mb-px transition-colors',
+                'flex items-center gap-1.5 px-1 py-2 text-[10px] font-medium tracking-widest uppercase border-b-2 -mb-px transition-colors',
                 tab === 'create'
-                  ? 'border-primary text-foreground'
-                  : 'border-transparent text-muted-foreground hover:text-foreground'
+                  ? 'border-red-600 text-red-600'
+                  : 'border-transparent text-black/40 hover:text-black/70'
               )}
             >
-              <ImagePlus className="h-4 w-4" />
+              <ImagePlus className="h-3.5 w-3.5" />
               New post
             </button>
             <button
               onClick={() => setTab('style-guide')}
               className={cn(
-                'flex items-center gap-1.5 px-3 py-2 text-sm font-medium border-b-2 -mb-px transition-colors',
+                'flex items-center gap-1.5 px-1 py-2 text-[10px] font-medium tracking-widest uppercase border-b-2 -mb-px transition-colors',
                 tab === 'style-guide'
-                  ? 'border-primary text-foreground'
-                  : 'border-transparent text-muted-foreground hover:text-foreground'
+                  ? 'border-red-600 text-red-600'
+                  : 'border-transparent text-black/40 hover:text-black/70'
               )}
             >
-              <Palette className="h-4 w-4" />
+              <Palette className="h-3.5 w-3.5" />
               Style Guide
             </button>
           </div>
@@ -421,7 +421,7 @@ export const AdminSocial: React.FC = () => {
       </header>
 
       <main className="flex-1 min-h-0 overflow-auto">
-        <div className="max-w-7xl mx-auto px-6 py-8 space-y-8">
+        <div className="max-w-6xl mx-auto px-6 py-8 space-y-8">
           {tab === 'style-guide' ? (
             <AdminStyleGuide />
           ) : tab === 'create' ? (

@@ -305,15 +305,50 @@ export const PublicHome: React.FC = () => {
     const startRow = Math.floor(cy / CELL) - BUFFER;
     const endRow = Math.ceil((cy + vh) / CELL) + BUFFER;
 
+    const numCols = endCol - startCol + 1;
+    const numRows = endRow - startRow + 1;
+    const assigned = new Int32Array(numRows * numCols).fill(-1);
+
+    const getAssigned = (r: number, c: number) => {
+      const lr = r - startRow;
+      const lc = c - startCol;
+      if (lr < 0 || lr >= numRows || lc < 0 || lc >= numCols) return -1;
+      return assigned[lr * numCols + lc];
+    };
+
     const tiles: { row: number; col: number; x: number; y: number; cardIdx: number }[] = [];
+
     for (let r = startRow; r <= endRow; r++) {
       for (let c = startCol; c <= endCol; c++) {
+        let cardIdx = hashCoord(r, c) % cardCount;
+
+        const nearby = new Set<number>();
+        for (let dr = -2; dr <= 0; dr++) {
+          const dcEnd = dr < 0 ? 2 : -1;
+          for (let dc = -2; dc <= dcEnd; dc++) {
+            const val = getAssigned(r + dr, c + dc);
+            if (val !== -1) nearby.add(val);
+          }
+        }
+
+        if (nearby.has(cardIdx)) {
+          for (let offset = 1; offset < cardCount; offset++) {
+            const candidate = (cardIdx + offset) % cardCount;
+            if (!nearby.has(candidate)) {
+              cardIdx = candidate;
+              break;
+            }
+          }
+        }
+
+        assigned[(r - startRow) * numCols + (c - startCol)] = cardIdx;
+
         tiles.push({
           row: r,
           col: c,
           x: c * CELL - cx,
           y: r * CELL - cy,
-          cardIdx: hashCoord(r, c) % cardCount,
+          cardIdx,
         });
       }
     }

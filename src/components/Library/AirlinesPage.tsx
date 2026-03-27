@@ -33,13 +33,14 @@ export const AirlinesPage: React.FC<AirlinesPageProps> = ({ onSelectAirline }) =
 
   return (
     <>
-      <header className="flex-shrink-0 bg-card border-b">
-        <div className="max-w-7xl mx-auto flex items-center justify-between px-6 py-5">
-          <h1 className="text-2xl font-semibold tracking-tight">Airlines</h1>
+      <header className="flex-shrink-0">
+        <div className="max-w-6xl mx-auto flex items-center justify-between px-6 pt-8 pb-4">
+          <h1 className="text-sm font-medium tracking-widest uppercase text-black/60">Airlines</h1>
           <Button
             onClick={() => setShowCreate(true)}
             size="sm"
-            className="gap-1.5"
+            variant="outline"
+            className="gap-1.5 border-black/20 text-black/60 hover:text-black hover:bg-gray-50"
             disabled={showCreate}
           >
             <Plus className="h-4 w-4" />
@@ -49,7 +50,7 @@ export const AirlinesPage: React.FC<AirlinesPageProps> = ({ onSelectAirline }) =
       </header>
 
       <main className="flex-1 min-h-0 overflow-auto">
-        <div className="max-w-7xl mx-auto px-6 py-8">
+        <div className="max-w-6xl mx-auto px-6 py-8">
           {showCreate && (
             <AirlineCreateCard
               onCreated={() => { setShowCreate(false); refresh(); }}
