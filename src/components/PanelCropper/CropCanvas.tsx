@@ -362,6 +362,23 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
         ctx.fill();
         ctx.restore();
       }
+
+      // Circle border — drawn on canvas to avoid CSS square artifacts
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(r, r, r - 1, 0, Math.PI * 2);
+      ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      ctx.restore();
+
+      // Clear corners outside the circle so no square background leaks
+      ctx.save();
+      ctx.globalCompositeOperation = 'destination-in';
+      ctx.beginPath();
+      ctx.arc(r, r, r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
     },
     [image, imageDimensions, imageOffset, rotation, straightenMode, hasConstrainedHeight, hasLockedDimensions, lockedWidth, lockedHeight, clickCropPoint, regions.length, isBackFace]
   );
@@ -1044,12 +1061,10 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
           ref={magnifierCanvasRef}
           width={MAGNIFIER_SIZE}
           height={MAGNIFIER_SIZE}
-          className="rounded-full"
           style={{
             width: MAGNIFIER_SIZE,
             height: MAGNIFIER_SIZE,
-            boxShadow: '0 4px 20px rgba(0,0,0,0.5)',
-            border: '2px solid rgba(255,255,255,0.35)',
+            display: 'block',
           }}
         />
         {hasLockedDimensions && !straightenMode && regions.length === 0 && (
@@ -1066,48 +1081,6 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
         )}
       </div>
 
-      {/* Zoom controls */}
-      <div className="absolute bottom-4 right-4 flex gap-1.5">
-        <button
-          className={`rounded-md px-3 py-1.5 text-sm font-medium shadow-md transition-colors ${
-            showMagnifier ? 'bg-indigo-500/80 text-white hover:bg-indigo-500' : 'bg-white/90 hover:bg-white'
-          }`}
-          onClick={() => setShowMagnifier((prev) => !prev)}
-          title={`Magnifier: ${showMagnifier ? 'on' : 'off'} (M)`}
-        >
-          ◎
-        </button>
-        <button
-          className={`rounded-md px-3 py-1.5 text-sm font-medium shadow-md transition-colors ${
-            guideMode !== 'off' ? 'bg-red-500/80 text-white hover:bg-red-500' : 'bg-white/90 hover:bg-white'
-          }`}
-          onClick={() => setGuideMode((prev) => prev === 'off' ? 'grid' : 'off')}
-          title={`Guides: ${guideMode === 'off' ? 'off' : 'on'} (G)`}
-        >
-          {guideMode === 'off' ? '⊞' : '▦'}
-        </button>
-        <button
-          className="bg-white/90 hover:bg-white rounded-md px-3 py-1.5 text-sm font-medium shadow-md transition-colors"
-          onClick={() => zoomBy(1.3)}
-          title="Zoom in"
-        >
-          +
-        </button>
-        <button
-          className="bg-white/90 hover:bg-white rounded-md px-3 py-1.5 text-sm font-medium shadow-md transition-colors"
-          onClick={() => zoomBy(1 / 1.3)}
-          title="Zoom out"
-        >
-          &minus;
-        </button>
-        <button
-          className="bg-white/90 hover:bg-white rounded-md px-3 py-1.5 text-sm font-medium shadow-md transition-colors"
-          onClick={fitToContainer}
-          title="Fit to screen"
-        >
-          Fit
-        </button>
-      </div>
 
       {/* Image info overlay */}
       {imageDimensions && (

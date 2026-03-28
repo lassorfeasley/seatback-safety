@@ -8,6 +8,7 @@ import {
   Scissors,
   RotateCcw,
   RotateCw,
+  Lock,
   Unlock,
   Ruler,
 } from 'lucide-react';
@@ -333,7 +334,8 @@ interface CropSessionProps {
     imageId: string,
     region: CropRegion,
     thumbnailUrl: string,
-    rotation: number
+    rotation: number,
+    advanceTo?: { panelIndex: number; side: 'front' | 'back' }
   ) => void;
   onResetWidthLock: (panelIndex: number, side: 'front' | 'back') => void;
   onSetCropDimensions: (width: number, height: number) => void;
@@ -425,7 +427,7 @@ const CropSession: React.FC<CropSessionProps> = ({
 
   // Generate thumbnail and confirm — uses a single small canvas
   // instead of creating a huge full-resolution rotated intermediate.
-  const handleConfirm = useCallback(async () => {
+  const handleConfirm = useCallback(async (advanceTo?: { panelIndex: number; side: 'front' | 'back' }) => {
     if (!region || !selectedImageId || !selectedImage) return;
 
     const img = new Image();
@@ -466,7 +468,8 @@ const CropSession: React.FC<CropSessionProps> = ({
       selectedImageId,
       region,
       thumbnailUrl,
-      localRotation
+      localRotation,
+      advanceTo
     );
   }, [region, selectedImageId, selectedImage, localRotation, activeSlot, onSetCropDimensions, onConfirmCrop]);
 
@@ -474,8 +477,6 @@ const CropSession: React.FC<CropSessionProps> = ({
     const order: { panelIndex: number; side: 'front' | 'back' }[] = [];
     for (let i = 0; i < panelCount; i++) {
       order.push({ panelIndex: i, side: 'front' });
-    }
-    for (let i = 0; i < panelCount; i++) {
       order.push({ panelIndex: i, side: 'back' });
     }
     const currentIdx = order.findIndex(
@@ -492,11 +493,10 @@ const CropSession: React.FC<CropSessionProps> = ({
   }, [panelCount, activeSlot, allSlots]);
 
   const handleConfirmAndNext = useCallback(async () => {
-    await handleConfirm();
     if (nextUnfilledSlot) {
-      onSelectSlot(nextUnfilledSlot.panelIndex, nextUnfilledSlot.side);
+      await handleConfirm(nextUnfilledSlot);
     }
-  }, [handleConfirm, nextUnfilledSlot, onSelectSlot]);
+  }, [handleConfirm, nextUnfilledSlot]);
 
   const sideLabel = activeSlot.side === 'front' ? 'Front' : 'Back';
 
@@ -697,7 +697,7 @@ const CropSession: React.FC<CropSessionProps> = ({
             </Button>
           )}
           <div className="flex gap-1.5">
-            <Button variant="outline" size="sm" onClick={handleConfirm} disabled={!region || !selectedImageId} className="flex-1 gap-1.5">
+            <Button variant="outline" size="sm" onClick={() => handleConfirm()} disabled={!region || !selectedImageId} className="flex-1 gap-1.5">
               <Check className="h-3.5 w-3.5" />
               Save
             </Button>

@@ -367,7 +367,8 @@ export const SafetyCardWizard: React.FC<SafetyCardWizardProps> = ({
       imageId: string,
       region: CropRegion,
       thumbnailUrl: string,
-      rotation: number
+      rotation: number,
+      advanceTo?: { panelIndex: number; side: PanelSide }
     ) => {
       const updatedSlots = state.slots.map((slot) =>
         slot.panelIndex === panelIndex && slot.side === side
@@ -379,14 +380,47 @@ export const SafetyCardWizard: React.FC<SafetyCardWizardProps> = ({
         img.id === imageId ? { ...img, rotation } : img
       );
 
-      setState((prev) => ({
-        ...prev,
-        slots: updatedSlots,
-        images: updatedImages,
-        cropWidth: region.width,
-        cropHeight: prev.cropHeight ?? region.height,
-        ...(initialSlot ? {} : { activeSlot: null, selectedImageId: null }),
-      }));
+      setState((prev) => {
+        let nextActiveSlot: { panelIndex: number; side: PanelSide } | null = null;
+        let nextSelectedImageId: string | null = null;
+
+        if (advanceTo) {
+          nextActiveSlot = advanceTo;
+          const existingSlot = updatedSlots.find(
+            (s) => s.panelIndex === advanceTo.panelIndex && s.side === advanceTo.side
+          );
+          if (existingSlot?.imageId) {
+            nextSelectedImageId = existingSlot.imageId;
+          } else {
+            const oppSide: PanelSide = advanceTo.side === 'front' ? 'back' : 'front';
+            const oppSlot = updatedSlots.find(
+              (s) => s.panelIndex === advanceTo.panelIndex && s.side === oppSide
+            );
+            const oppImageId = oppSlot?.imageId ?? null;
+            nextSelectedImageId = prev.images[0]?.id || null;
+            if (prev.images.length === 2) {
+              if (oppImageId) {
+                nextSelectedImageId = prev.images.find((i) => i.id !== oppImageId)?.id ?? nextSelectedImageId;
+              } else if (advanceTo.side === 'back') {
+                nextSelectedImageId = prev.images[1]?.id ?? nextSelectedImageId;
+              }
+            } else if (prev.images.length > 2 && oppImageId) {
+              nextSelectedImageId = prev.images.find((i) => i.id !== oppImageId)?.id ?? nextSelectedImageId;
+            }
+          }
+        }
+
+        return {
+          ...prev,
+          slots: updatedSlots,
+          images: updatedImages,
+          cropWidth: region.width,
+          cropHeight: prev.cropHeight ?? region.height,
+          ...(initialSlot
+            ? {}
+            : { activeSlot: nextActiveSlot, selectedImageId: nextSelectedImageId }),
+        };
+      });
 
       if (initialSlot && editCardId) {
         onBackToLibrary?.({ panelIndex, side });

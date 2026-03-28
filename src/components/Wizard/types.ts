@@ -152,7 +152,8 @@ export interface CropStepProps {
     imageId: string,
     region: CropRegion,
     thumbnailUrl: string,
-    rotation: number
+    rotation: number,
+    advanceTo?: { panelIndex: number; side: PanelSide }
   ) => void;
   onClearSlot: (panelIndex: number, side: PanelSide) => void;
   onResetWidthLock: (panelIndex: number, side: PanelSide) => void;
