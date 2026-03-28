@@ -526,8 +526,6 @@ const CropSession: React.FC<CropSessionProps> = ({
     }
   }, [handleConfirm, nextUnfilledSlot]);
 
-  const sideLabel = activeSlot.side === 'front' ? 'Front' : 'Back';
-
   // Build the instruction text for the crop canvas card
   // Instruction varies by constraint mode — used in UI below if needed
 
