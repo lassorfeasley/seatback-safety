@@ -65,7 +65,6 @@ export const CropStep: React.FC<CropStepProps> = ({
         onConfirmCrop={onConfirmCrop}
         onResetWidthLock={onResetWidthLock}
         onSetCropDimensions={onSetCropDimensions}
-        onSelectSlot={onSelectSlot}
       />
     );
   }
@@ -339,7 +338,6 @@ interface CropSessionProps {
   ) => void;
   onResetWidthLock: (panelIndex: number, side: 'front' | 'back') => void;
   onSetCropDimensions: (width: number, height: number) => void;
-  onSelectSlot: (panelIndex: number, side: 'front' | 'back') => void;
 }
 
 const CropSession: React.FC<CropSessionProps> = ({
@@ -357,7 +355,6 @@ const CropSession: React.FC<CropSessionProps> = ({
   onConfirmCrop,
   onResetWidthLock,
   onSetCropDimensions,
-  onSelectSlot,
 }) => {
   // Local state for the crop region being drawn
   const [region, setRegion] = useState<CropRegion | null>(

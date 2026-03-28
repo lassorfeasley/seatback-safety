@@ -252,26 +252,6 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
     [stageScale, stagePosition]
   );
 
-  // ─── Zoom buttons (center-centric) ────────────────────────────
-
-  const zoomBy = useCallback(
-    (factor: number) => {
-      const newScale = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, stageScale * factor));
-      // Zoom towards the center of the viewport
-      const centerX = stageSize.width / 2;
-      const centerY = stageSize.height / 2;
-      const mousePointTo = {
-        x: (centerX - stagePosition.x) / stageScale,
-        y: (centerY - stagePosition.y) / stageScale,
-      };
-      setStageScale(newScale);
-      setStagePosition({
-        x: centerX - mousePointTo.x * newScale,
-        y: centerY - mousePointTo.y * newScale,
-      });
-    },
-    [stageScale, stagePosition, stageSize]
-  );
 
   // ─── Magnifier drawing ─────────────────────────────────────────
 
