@@ -1553,6 +1553,14 @@ const SpreadRow: React.FC<SpreadRowProps> = ({
     return { panel: panels.find((p) => p.panel_index === panelIndex) ?? null, panelIndex };
   });
 
+  const getAspectRatio = (panelIndex: number): number => {
+    const panel = panels.find((p) => p.panel_index === panelIndex);
+    if (panel?.width_px && panel?.height_px) return panel.width_px / panel.height_px;
+    const anyPanel = panels.find((p) => p.width_px && p.height_px);
+    if (anyPanel) return anyPanel.width_px / anyPanel.height_px;
+    return 3 / 4;
+  };
+
   return (
     <div>
       <div className="flex items-baseline gap-2 mb-1">
@@ -1565,58 +1573,62 @@ const SpreadRow: React.FC<SpreadRowProps> = ({
           </span>
         )}
       </div>
-      <div
-        className="flex gap-1 max-h-[180px]"
-      >
+      <div className="flex items-stretch gap-0 overflow-x-auto pb-1">
         {slots.map(({ panel, panelIndex }) => {
           const displayUrl = panel ? (displayUrls[panel.id] || panel.thumbnail_url) : null;
           const fullUrl = panel ? (fullUrls[panel.id] || displayUrl) : null;
           const isSavingThis = savingSlot?.panelIndex === panelIndex && savingSlot?.side === side;
           const isProcessing = (!!panel && !displayUrl) || isSavingThis;
+          const aspect = getAspectRatio(panelIndex);
 
           return (
             <div
               key={panel?.id ?? `empty-${panelIndex}`}
-              className={cn(
-                'relative group overflow-hidden transition-all flex-1 min-w-0',
-                (displayUrl && !isSavingThis) ? '' : 'border border-dashed border-muted-foreground/20',
-                isEditing && onEditCrops && !isProcessing && 'cursor-pointer hover:ring-2 hover:ring-primary/40',
-              )}
-              style={displayUrl && !isSavingThis ? {} : { aspectRatio: '1 / 1.618' }}
-              onClick={isEditing && onEditCrops && !isProcessing ? () => onEditCrops(panelIndex, side) : undefined}
+              className="relative group"
+              style={{ flex: `${aspect} 0 0%`, minWidth: 80 }}
             >
-              {displayUrl && !isSavingThis ? (
-                <>
-                  <img
-                    src={displayUrl}
-                    alt={`${label} Panel ${panelIndex + 1}`}
-                    className="w-full h-full object-cover block"
-                    loading="lazy"
-                  />
-                  {isEditing && onEditCrops ? (
-                    <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors
-                                   flex items-center justify-center opacity-0 group-hover:opacity-100">
-                      <Scissors className="h-3.5 w-3.5 text-white" />
-                    </div>
-                  ) : fullUrl ? (
-                    <button
-                      onClick={() => onZoom(fullUrl)}
-                      className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors
-                                 flex items-center justify-center opacity-0 group-hover:opacity-100"
-                    >
-                      <ZoomIn className="h-3.5 w-3.5 text-white" />
-                    </button>
-                  ) : null}
-                </>
-              ) : isProcessing ? (
-                <div className="absolute inset-0 flex items-center justify-center animate-pulse">
-                  <Loader2 className="h-4 w-4 text-muted-foreground/50 animate-spin" />
-                </div>
-              ) : (
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <Scissors className="h-3.5 w-3.5 text-muted-foreground/30" />
-                </div>
-              )}
+              <div
+                className={cn(
+                  'relative rounded-lg overflow-hidden border-2 transition-all',
+                  (displayUrl && !isSavingThis) ? 'border-muted' : 'border-dashed border-muted-foreground/20',
+                  isEditing && onEditCrops && !isProcessing && 'cursor-pointer hover:border-primary/40',
+                )}
+                style={{ aspectRatio: `${aspect}` }}
+                onClick={isEditing && onEditCrops && !isProcessing ? () => onEditCrops(panelIndex, side) : undefined}
+              >
+                {displayUrl && !isSavingThis ? (
+                  <>
+                    <img
+                      src={displayUrl}
+                      alt={`${label} Panel ${panelIndex + 1}`}
+                      className="w-full h-full object-contain bg-muted/30 block"
+                      loading="lazy"
+                    />
+                    {isEditing && onEditCrops ? (
+                      <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors
+                                     flex items-center justify-center opacity-0 group-hover:opacity-100">
+                        <Scissors className="h-3.5 w-3.5 text-white" />
+                      </div>
+                    ) : fullUrl ? (
+                      <button
+                        onClick={() => onZoom(fullUrl)}
+                        className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors
+                                   flex items-center justify-center opacity-0 group-hover:opacity-100"
+                      >
+                        <ZoomIn className="h-3.5 w-3.5 text-white" />
+                      </button>
+                    ) : null}
+                  </>
+                ) : isProcessing ? (
+                  <div className="absolute inset-0 flex items-center justify-center animate-pulse">
+                    <Loader2 className="h-4 w-4 text-muted-foreground/50 animate-spin" />
+                  </div>
+                ) : (
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <Scissors className="h-3.5 w-3.5 text-muted-foreground/30" />
+                  </div>
+                )}
+              </div>
             </div>
           );
         })}

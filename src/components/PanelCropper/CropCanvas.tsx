@@ -321,34 +321,38 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
         const isLineCursor = hasConstrainedHeight && !hasLockedDimensions && !straightenMode && !!clickCropPoint;
 
         ctx.save();
+        ctx.beginPath();
+        ctx.arc(r, r, r, 0, Math.PI * 2);
+        ctx.clip();
         ctx.strokeStyle = crosshairColor;
         ctx.lineWidth = 0.75;
-        ctx.beginPath();
         if (isLockedCornerCursor) {
-          ctx.moveTo(r, r);
-          ctx.lineTo(r, size - 8);
-          ctx.moveTo(r, r);
-          ctx.lineTo(size - 8, r);
-        } else if (isLineCursor) {
-          ctx.moveTo(r, 8);
-          ctx.lineTo(r, size - 8);
-        } else if (isCornerCursor && isBackFace) {
-          ctx.moveTo(r, r);
-          ctx.lineTo(r, size - 8);
-          ctx.moveTo(r, r);
-          ctx.lineTo(8, r);
-        } else if (isCornerCursor) {
-          ctx.moveTo(r, r);
-          ctx.lineTo(r, size - 8);
-          ctx.moveTo(r, r);
-          ctx.lineTo(size - 8, r);
+          const rectW = lockedWidth! * zoom;
+          const rectH = lockedHeight! * zoom;
+          ctx.strokeRect(r, r, rectW, rectH);
         } else {
-          ctx.moveTo(r, 8);
-          ctx.lineTo(r, size - 8);
-          ctx.moveTo(8, r);
-          ctx.lineTo(size - 8, r);
+          ctx.beginPath();
+          if (isLineCursor) {
+            ctx.moveTo(r, 8);
+            ctx.lineTo(r, size - 8);
+          } else if (isCornerCursor && isBackFace) {
+            ctx.moveTo(r, r);
+            ctx.lineTo(r, size - 8);
+            ctx.moveTo(r, r);
+            ctx.lineTo(8, r);
+          } else if (isCornerCursor) {
+            ctx.moveTo(r, r);
+            ctx.lineTo(r, size - 8);
+            ctx.moveTo(r, r);
+            ctx.lineTo(size - 8, r);
+          } else {
+            ctx.moveTo(r, 8);
+            ctx.lineTo(r, size - 8);
+            ctx.moveTo(8, r);
+            ctx.lineTo(size - 8, r);
+          }
+          ctx.stroke();
         }
-        ctx.stroke();
         ctx.restore();
 
         ctx.save();
@@ -359,7 +363,7 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
         ctx.restore();
       }
     },
-    [image, imageDimensions, imageOffset, rotation, straightenMode, hasConstrainedHeight, hasLockedDimensions, clickCropPoint, regions.length, isBackFace]
+    [image, imageDimensions, imageOffset, rotation, straightenMode, hasConstrainedHeight, hasLockedDimensions, lockedWidth, lockedHeight, clickCropPoint, regions.length, isBackFace]
   );
 
   // ─── Mouse handlers ────────────────────────────────────────────
@@ -849,6 +853,21 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
           {crosshairPos && (straightenMode || regions.length === 0) && (() => {
             const sw = 1 / stageScale;
             const color = 'rgba(255,0,0,0.6)';
+
+            if (hasLockedDimensions && !straightenMode && lockedWidth != null && lockedHeight != null) {
+              return (
+                <Rect
+                  x={crosshairPos.x}
+                  y={crosshairPos.y}
+                  width={lockedWidth}
+                  height={lockedHeight}
+                  stroke={color}
+                  strokeWidth={sw}
+                  listening={false}
+                />
+              );
+            }
+
             const extL = -stagePosition.x / stageScale - 10000;
             const extR = (stageSize.width - stagePosition.x) / stageScale + 10000;
             const extT = -stagePosition.y / stageScale - 10000;
@@ -912,13 +931,13 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
             const imgW = rotatedBounds?.width ?? 0;
             return (
               <>
-                <Circle x={clickCropPoint.x} y={clickCropPoint.y} radius={r} fill="#CCFF00" stroke="#fff" strokeWidth={sw} listening={false} />
+                <Circle x={clickCropPoint.x} y={clickCropPoint.y} radius={r} fill="#ff0000" stroke="#fff" strokeWidth={sw} listening={false} />
                 {/* Height-constrained: show top-edge guide line + locked height band + vertical edge line */}
                 {hasConstrainedHeight && rotatedBounds && (
                   <>
                     <Line
                       points={[0, clickCropPoint.y, imgW, clickCropPoint.y]}
-                      stroke="#CCFF00"
+                      stroke="#ff0000"
                       strokeWidth={sw}
                       listening={false}
                     />
@@ -927,18 +946,18 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
                       y={clickCropPoint.y}
                       width={imgW}
                       height={Math.round(constrainHeight!)}
-                      fill="rgba(204, 255, 0, 0.06)"
+                      fill="rgba(255, 0, 0, 0.06)"
                       listening={false}
                     />
                     <Line
                       points={[0, clickCropPoint.y + Math.round(constrainHeight!), imgW, clickCropPoint.y + Math.round(constrainHeight!)]}
-                      stroke="rgba(204, 255, 0, 0.3)"
+                      stroke="rgba(255, 0, 0, 0.3)"
                       strokeWidth={sw}
                       listening={false}
                     />
                     <Line
                       points={[clickCropPoint.x, clickCropPoint.y, clickCropPoint.x, clickCropPoint.y + Math.round(constrainHeight!)]}
-                      stroke="#CCFF00"
+                      stroke="#ff0000"
                       strokeWidth={sw}
                       listening={false}
                     />
@@ -957,13 +976,13 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
                         y={previewY}
                         width={previewW}
                         height={previewH}
-                        fill="rgba(204, 255, 0, 0.12)"
-                        stroke="#CCFF00"
+                        fill="rgba(255, 0, 0, 0.12)"
+                        stroke="#ff0000"
                         strokeWidth={sw}
                         listening={false}
                       />
                       {!hasConstrainedHeight && (
-                        <Circle x={p2.x} y={p2.y} radius={r} fill="#CCFF00" stroke="#fff" strokeWidth={sw} listening={false} />
+                        <Circle x={p2.x} y={p2.y} radius={r} fill="#ff0000" stroke="#fff" strokeWidth={sw} listening={false} />
                       )}
                     </>
                   );

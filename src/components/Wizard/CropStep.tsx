@@ -50,6 +50,8 @@ export const CropStep: React.FC<CropStepProps> = ({
     return (
       <CropSession
         activeSlot={activeSlot}
+        panelCount={panelCount}
+        slots={slots}
         images={images}
         selectedImageId={selectedImageId}
         cropWidth={cropWidth}
@@ -63,6 +65,7 @@ export const CropStep: React.FC<CropStepProps> = ({
         onConfirmCrop={onConfirmCrop}
         onResetWidthLock={onResetWidthLock}
         onSetCropDimensions={onSetCropDimensions}
+        onSelectSlot={onSelectSlot}
       />
     );
   }
@@ -315,6 +318,8 @@ const PanelPlaceholder: React.FC<PanelPlaceholderProps> = ({
 
 interface CropSessionProps {
   activeSlot: { panelIndex: number; side: 'front' | 'back' };
+  panelCount: number;
+  slots: { panelIndex: number; side: 'front' | 'back'; cropRegion: CropRegion | null }[];
   images: LibraryImage[];
   selectedImageId: string | null;
   cropWidth: number | null;
@@ -333,10 +338,13 @@ interface CropSessionProps {
   ) => void;
   onResetWidthLock: (panelIndex: number, side: 'front' | 'back') => void;
   onSetCropDimensions: (width: number, height: number) => void;
+  onSelectSlot: (panelIndex: number, side: 'front' | 'back') => void;
 }
 
 const CropSession: React.FC<CropSessionProps> = ({
   activeSlot,
+  panelCount,
+  slots: allSlots,
   images,
   selectedImageId,
   cropWidth: _cropWidth,
@@ -348,6 +356,7 @@ const CropSession: React.FC<CropSessionProps> = ({
   onConfirmCrop,
   onResetWidthLock,
   onSetCropDimensions,
+  onSelectSlot,
 }) => {
   // Local state for the crop region being drawn
   const [region, setRegion] = useState<CropRegion | null>(
@@ -462,35 +471,63 @@ const CropSession: React.FC<CropSessionProps> = ({
     );
   }, [region, selectedImageId, selectedImage, localRotation, activeSlot, onSetCropDimensions, onConfirmCrop]);
 
+  const nextUnfilledSlot = useMemo(() => {
+    const order: { panelIndex: number; side: 'front' | 'back' }[] = [];
+    for (let i = 0; i < panelCount; i++) {
+      order.push({ panelIndex: i, side: 'front' });
+    }
+    for (let i = 0; i < panelCount; i++) {
+      order.push({ panelIndex: i, side: 'back' });
+    }
+    const currentIdx = order.findIndex(
+      (o) => o.panelIndex === activeSlot.panelIndex && o.side === activeSlot.side
+    );
+    for (let offset = 1; offset < order.length; offset++) {
+      const candidate = order[(currentIdx + offset) % order.length];
+      const slot = allSlots.find(
+        (s) => s.panelIndex === candidate.panelIndex && s.side === candidate.side
+      );
+      if (!slot || slot.cropRegion === null) return candidate;
+    }
+    return null;
+  }, [panelCount, activeSlot, allSlots]);
+
+  const handleConfirmAndNext = useCallback(async () => {
+    await handleConfirm();
+    if (nextUnfilledSlot) {
+      onSelectSlot(nextUnfilledSlot.panelIndex, nextUnfilledSlot.side);
+    }
+  }, [handleConfirm, nextUnfilledSlot, onSelectSlot]);
+
   const sideLabel = activeSlot.side === 'front' ? 'Front' : 'Back';
-  const sideColor = activeSlot.side === 'front' ? 'bg-blue-500' : 'bg-amber-500';
 
   // Build the constraint description for the header
   let constraintMessage: React.ReactNode = null;
   if (dimensionsLocked) {
     constraintMessage = (
-      <p className="text-sm text-muted-foreground flex items-center gap-1.5">
-        <Lock className="h-3.5 w-3.5" />
-        Crop locked to{' '}
-        <span className="font-mono font-medium">
-          {oppositeWidth} &times; {cropHeight}px
+      <div className="text-xs text-muted-foreground flex items-center gap-1.5">
+        <Lock className="h-3 w-3 flex-shrink-0" />
+        <span>
+          Locked to{' '}
+          <span className="font-mono font-medium">{oppositeWidth} &times; {cropHeight}px</span>
         </span>
-        {' '}(matching opposite face)
-      </p>
+      </div>
     );
   } else if (heightConstrained) {
     constraintMessage = (
-      <p className="text-sm text-muted-foreground flex items-center gap-1.5">
-        <Lock className="h-3.5 w-3.5" />
-        Height locked to{' '}
-        <span className="font-mono font-medium">{cropHeight}px</span>
-        {' '}&mdash; set the width for this panel
-      </p>
+      <div className="text-xs text-muted-foreground flex items-center gap-1.5">
+        <Lock className="h-3 w-3 flex-shrink-0" />
+        <span>
+          Height locked to{' '}
+          <span className="font-mono font-medium">{cropHeight}px</span>
+          {' '}&mdash; set width
+        </span>
+      </div>
     );
   } else {
     constraintMessage = (
-      <p className="text-sm text-muted-foreground">
-        Draw your first crop to set the shared height for all panels
+      <p className="text-xs text-muted-foreground">
+        Draw your first crop to set the shared height
       </p>
     );
   }
@@ -532,29 +569,51 @@ const CropSession: React.FC<CropSessionProps> = ({
 
       {/* Right sidebar — controls */}
       <div className="w-64 flex-shrink-0 border-l bg-card flex flex-col overflow-y-auto">
-        {/* Panel info + actions */}
-        <div className="p-4 border-b flex flex-col gap-3">
-          <div className="flex items-center gap-2">
-            <span className={`w-2 h-2 rounded-full flex-shrink-0 ${sideColor}`} />
-            <span className="text-sm font-semibold">
-              Panel {activeSlot.panelIndex + 1} {sideLabel}
-            </span>
+        {/* Panel map */}
+        <div className="p-3 border-b">
+          <span className="text-xs font-medium mb-1">
+            Panel {activeSlot.panelIndex + 1} {sideLabel}
+          </span>
+          <div className="flex flex-col gap-0.5">
+            <div className="flex gap-0.5" style={{ maxWidth: panelCount * 28 }}>
+              {Array.from({ length: panelCount }, (_, i) => {
+                const isActive = activeSlot.panelIndex === i && activeSlot.side === 'front';
+                const slot = allSlots.find((s) => s.panelIndex === i && s.side === 'front');
+                const isFilled = slot?.cropRegion !== null;
+                return (
+                  <div
+                    key={`front-${i}`}
+                    style={{
+                      width: 16,
+                      height: 26,
+                      flexShrink: 0,
+                      border: `1px solid ${isActive ? '#ef4444' : '#000'}`,
+                      background: isActive ? '#ef4444' : '#fff',
+                    }}
+                  />
+                );
+              })}
+            </div>
+            <div className="flex gap-0.5" style={{ maxWidth: panelCount * 28 }}>
+              {Array.from({ length: panelCount }, (_, i) => {
+                const isActive = activeSlot.panelIndex === i && activeSlot.side === 'back';
+                const slot = allSlots.find((s) => s.panelIndex === i && s.side === 'back');
+                const isFilled = slot?.cropRegion !== null;
+                return (
+                  <div
+                    key={`back-${i}`}
+                    style={{
+                      width: 16,
+                      height: 26,
+                      flexShrink: 0,
+                      border: `1px solid ${isActive ? '#ef4444' : '#000'}`,
+                      background: isActive ? '#ef4444' : '#fff',
+                    }}
+                  />
+                );
+              })}
+            </div>
           </div>
-          {constraintMessage}
-          {dimensionsLocked && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                onResetWidthLock(activeSlot.panelIndex, activeSlot.side);
-                setRegion(null);
-              }}
-              className="w-full gap-1.5 text-destructive hover:text-destructive"
-            >
-              <Unlock className="h-3.5 w-3.5" />
-              Reset width lock
-            </Button>
-          )}
         </div>
 
         {/* Scan picker */}
@@ -592,51 +651,97 @@ const CropSession: React.FC<CropSessionProps> = ({
           </div>
         </div>
 
-        {/* Rotation */}
+        {/* Rotation + Straighten */}
         {selectedImage && (
           <div className="p-4 border-b flex flex-col gap-2">
             <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Rotation</span>
-            <RotationStrip rotation={localRotation} onRotationChange={setLocalRotation} />
-          </div>
-        )}
-
-        {/* Straighten tool */}
-        {selectedImage && (
-          <div className={`p-4 border-b flex flex-col gap-2 transition-colors ${straightenMode ? 'bg-cyan-600 border-cyan-600' : ''}`}>
-            <span className={`text-xs font-medium uppercase tracking-wider ${straightenMode ? 'text-white' : 'text-muted-foreground'}`}>Straighten</span>
-            <Button
-              variant={straightenMode ? 'outline' : 'outline'}
-              size="sm"
-              onClick={() => setStraightenMode((m) => !m)}
-              className={`w-full gap-1.5 ${straightenMode ? 'bg-white hover:bg-white/90 text-cyan-700 border-white' : ''}`}
-            >
-              <Ruler className="h-3.5 w-3.5" />
-              {straightenMode ? 'Click two points on an edge…' : 'Straighten Edge'}
-            </Button>
+            <div className="flex items-center gap-1.5">
+              <button
+                className="flex items-center gap-1 px-2 py-1 bg-background hover:bg-accent border border-border rounded-md text-xs font-medium transition-colors"
+                onClick={() => setLocalRotation((r) => {
+                  const base = Math.round(r / 90) * 90;
+                  const f = r - base;
+                  return ((base - 90 + 360) % 360) + f;
+                })}
+                title="Rotate 90° counter-clockwise"
+              >
+                <RotateCcw className="h-3 w-3" />
+              </button>
+              <button
+                className="flex items-center gap-1 px-2 py-1 bg-background hover:bg-accent border border-border rounded-md text-xs font-medium transition-colors"
+                onClick={() => setLocalRotation((r) => {
+                  const base = Math.round(r / 90) * 90;
+                  const f = r - base;
+                  return ((base + 90) % 360) + f;
+                })}
+                title="Rotate 90° clockwise"
+              >
+                <RotateCw className="h-3 w-3" />
+              </button>
+              <button
+                className={`flex-1 flex items-center justify-center gap-1 px-2 py-1 border rounded-md text-xs font-medium transition-colors ${
+                  straightenMode
+                    ? 'bg-cyan-600 border-cyan-600 text-white hover:bg-cyan-700'
+                    : 'bg-background hover:bg-accent border-border'
+                }`}
+                onClick={() => setStraightenMode((m) => !m)}
+                title="Click two points on a straight edge to auto-straighten"
+              >
+                <Ruler className="h-3 w-3" />
+                Straighten
+              </button>
+            </div>
             {straightenMode && (
-              <p className="text-[11px] text-white/80 leading-tight">
-                Click two points along a straight edge (like the card border). The image will auto-rotate to make that line perfectly vertical or horizontal.
+              <p className="text-[11px] text-muted-foreground leading-tight">
+                Click two points on a straight edge to auto-align.
               </p>
             )}
           </div>
         )}
 
         {/* Actions */}
-        <div className="p-4 mt-auto flex flex-col gap-2">
-          {region && (
-            <Button variant="outline" size="sm" onClick={() => setRegion(null)} className="w-full gap-1.5">
-              <RotateCcw className="h-3.5 w-3.5" />
-              Redraw
+        <div className="p-4 flex flex-col gap-2 mt-auto">
+          {(region || dimensionsLocked) && (
+            <div className="flex gap-1.5">
+              {region && (
+                <button
+                  onClick={() => setRegion(null)}
+                  className="flex-1 flex items-center justify-center gap-1 text-[11px] text-muted-foreground hover:text-foreground py-1 rounded-md hover:bg-muted transition-colors"
+                >
+                  <RotateCcw className="h-3 w-3" />
+                  Redraw
+                </button>
+              )}
+              {dimensionsLocked && (
+                <button
+                  onClick={() => {
+                    onResetWidthLock(activeSlot.panelIndex, activeSlot.side);
+                    setRegion(null);
+                  }}
+                  className="flex-1 flex items-center justify-center gap-1 text-[11px] text-destructive/70 hover:text-destructive py-1 rounded-md hover:bg-muted transition-colors"
+                >
+                  <Unlock className="h-3 w-3" />
+                  Reset lock
+                </button>
+              )}
+            </div>
+          )}
+          {nextUnfilledSlot && (
+            <Button size="sm" onClick={handleConfirmAndNext} disabled={!region || !selectedImageId} className="w-full gap-1.5">
+              <ArrowRight className="h-3.5 w-3.5" />
+              Save &amp; Next
             </Button>
           )}
-          <Button size="sm" onClick={handleConfirm} disabled={!region || !selectedImageId} className="w-full gap-1.5">
-            <Check className="h-3.5 w-3.5" />
-            Confirm Crop
-          </Button>
-          <Button variant="outline" size="sm" onClick={onCancelCrop} className="w-full gap-1.5">
-            <X className="h-3.5 w-3.5" />
-            Cancel
-          </Button>
+          <div className="flex gap-1.5">
+            <Button variant="outline" size="sm" onClick={handleConfirm} disabled={!region || !selectedImageId} className="flex-1 gap-1.5">
+              <Check className="h-3.5 w-3.5" />
+              Save
+            </Button>
+            <Button variant="outline" size="sm" onClick={onCancelCrop} className="flex-1 gap-1.5">
+              <X className="h-3.5 w-3.5" />
+              Cancel
+            </Button>
+          </div>
         </div>
       </div>
     </div>
