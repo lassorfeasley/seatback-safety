@@ -8,7 +8,6 @@ import {
   Scissors,
   RotateCcw,
   RotateCw,
-  Lock,
   Unlock,
   Ruler,
 } from 'lucide-react';
@@ -501,37 +500,6 @@ const CropSession: React.FC<CropSessionProps> = ({
 
   const sideLabel = activeSlot.side === 'front' ? 'Front' : 'Back';
 
-  // Build the constraint description for the header
-  let constraintMessage: React.ReactNode = null;
-  if (dimensionsLocked) {
-    constraintMessage = (
-      <div className="text-xs text-muted-foreground flex items-center gap-1.5">
-        <Lock className="h-3 w-3 flex-shrink-0" />
-        <span>
-          Locked to{' '}
-          <span className="font-mono font-medium">{oppositeWidth} &times; {cropHeight}px</span>
-        </span>
-      </div>
-    );
-  } else if (heightConstrained) {
-    constraintMessage = (
-      <div className="text-xs text-muted-foreground flex items-center gap-1.5">
-        <Lock className="h-3 w-3 flex-shrink-0" />
-        <span>
-          Height locked to{' '}
-          <span className="font-mono font-medium">{cropHeight}px</span>
-          {' '}&mdash; set width
-        </span>
-      </div>
-    );
-  } else {
-    constraintMessage = (
-      <p className="text-xs text-muted-foreground">
-        Draw your first crop to set the shared height
-      </p>
-    );
-  }
-
   // Build the instruction text for the crop canvas card
   // Instruction varies by constraint mode — used in UI below if needed
 
@@ -578,8 +546,6 @@ const CropSession: React.FC<CropSessionProps> = ({
             <div className="flex gap-0.5" style={{ maxWidth: panelCount * 28 }}>
               {Array.from({ length: panelCount }, (_, i) => {
                 const isActive = activeSlot.panelIndex === i && activeSlot.side === 'front';
-                const slot = allSlots.find((s) => s.panelIndex === i && s.side === 'front');
-                const isFilled = slot?.cropRegion !== null;
                 return (
                   <div
                     key={`front-${i}`}
@@ -597,8 +563,6 @@ const CropSession: React.FC<CropSessionProps> = ({
             <div className="flex gap-0.5" style={{ maxWidth: panelCount * 28 }}>
               {Array.from({ length: panelCount }, (_, i) => {
                 const isActive = activeSlot.panelIndex === i && activeSlot.side === 'back';
-                const slot = allSlots.find((s) => s.panelIndex === i && s.side === 'back');
-                const isFilled = slot?.cropRegion !== null;
                 return (
                   <div
                     key={`back-${i}`}
@@ -748,80 +712,3 @@ const CropSession: React.FC<CropSessionProps> = ({
   );
 };
 
-// ─── RotationStrip ────────────────────────────────────────────────
-
-const RotationStrip: React.FC<{
-  rotation: number;
-  onRotationChange: React.Dispatch<React.SetStateAction<number>>;
-}> = ({ rotation, onRotationChange }) => {
-  const coarseBase = Math.round(rotation / 90) * 90;
-  const fine = rotation - coarseBase;
-
-  return (
-    <div className="flex flex-col gap-2">
-      {/* 90° buttons + numeric input */}
-      <div className="flex items-center gap-1.5">
-        <button
-          className="flex items-center gap-1 px-2 py-1 bg-background hover:bg-accent border border-border rounded-md text-xs font-medium transition-colors"
-          onClick={() => onRotationChange((r) => {
-            const base = Math.round(r / 90) * 90;
-            const f = r - base;
-            return ((base - 90 + 360) % 360) + f;
-          })}
-          title="Rotate 90° counter-clockwise"
-        >
-          <RotateCcw className="h-3 w-3" />
-        </button>
-        <button
-          className="flex items-center gap-1 px-2 py-1 bg-background hover:bg-accent border border-border rounded-md text-xs font-medium transition-colors"
-          onClick={() => onRotationChange((r) => {
-            const base = Math.round(r / 90) * 90;
-            const f = r - base;
-            return ((base + 90) % 360) + f;
-          })}
-          title="Rotate 90° clockwise"
-        >
-          <RotateCw className="h-3 w-3" />
-        </button>
-        <input
-          type="number"
-          value={Math.round(rotation * 10) / 10}
-          onChange={(e) => {
-            const v = parseFloat(e.target.value);
-            if (!isNaN(v)) onRotationChange(((v % 360) + 360) % 360);
-          }}
-          className="flex-1 min-w-0 px-1.5 py-1 text-xs font-mono border border-border rounded-md bg-background text-center"
-          step={0.1}
-        />
-        <span className="text-xs text-muted-foreground">°</span>
-        {rotation !== 0 && (
-          <button
-            className="px-1.5 py-1 text-[10px] text-muted-foreground hover:text-foreground border border-border rounded-md transition-colors whitespace-nowrap"
-            onClick={() => onRotationChange(0)}
-            title="Reset rotation"
-          >
-            Reset
-          </button>
-        )}
-      </div>
-      {/* Fine-tune slider */}
-      <div className="flex items-center gap-1.5">
-        <span className="text-[10px] text-muted-foreground">-15°</span>
-        <input
-          type="range"
-          min={-15}
-          max={15}
-          step={0.1}
-          value={fine}
-          onChange={(e) => {
-            const newFine = parseFloat(e.target.value);
-            onRotationChange(coarseBase + newFine);
-          }}
-          className="flex-1 h-1.5 accent-primary cursor-pointer"
-          title="Fine-tune rotation"
-        />
-        <span className="text-[10px] text-muted-foreground">+15°</span>
-      </div>
-    </div>
-  );
-};

@@ -1557,7 +1557,7 @@ const SpreadRow: React.FC<SpreadRowProps> = ({
     const panel = panels.find((p) => p.panel_index === panelIndex);
     if (panel?.width_px && panel?.height_px) return panel.width_px / panel.height_px;
     const anyPanel = panels.find((p) => p.width_px && p.height_px);
-    if (anyPanel) return anyPanel.width_px / anyPanel.height_px;
+    if (anyPanel) return anyPanel.width_px! / anyPanel.height_px!;
     return 3 / 4;
   };
 
