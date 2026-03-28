@@ -8,6 +8,7 @@ export const AdminCardDetail: React.FC = () => {
 
   const isNew = searchParams.get('new') === '1';
   const editing = searchParams.get('editing') === '1';
+  const fromFolds = searchParams.get('from') === 'folds';
 
   if (!id) return null;
 
@@ -16,6 +17,7 @@ export const AdminCardDetail: React.FC = () => {
       cardId={id}
       isNew={isNew}
       initialEditing={isNew || editing}
+      autoGenerateOg={fromFolds}
       onBack={() => navigate('/admin')}
       onEditCrops={(panelIndex, side) => navigate(`/admin/cards/${id}/crop?panel=${panelIndex}&side=${side}`)}
       onEditFolds={() => navigate(`/admin/cards/${id}/folds`)}

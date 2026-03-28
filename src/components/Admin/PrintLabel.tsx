@@ -94,8 +94,11 @@ export const PrintLabel: React.FC = () => {
       <div className="label-toolbar sticky top-0 z-10 bg-card border-b px-6 py-3 flex items-center gap-3">
         <button
           onClick={() => {
-            if (window.history.length > 1) navigate(-1);
-            else window.close();
+            if (window.opener) {
+              window.close();
+            } else {
+              navigate(`/admin/cards/${id}`);
+            }
           }}
           className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
         >

@@ -4,6 +4,8 @@ import { Loader2, RefreshCw, X, Layers, ChevronDown, ChevronUp } from 'lucide-re
 import type { Panel, CoverDesignation } from '@/components/FoldEditor/types';
 
 interface OgBuilderProps {
+  id?: string;
+  defaultOpen?: boolean;
   panels: Panel[];
   cover: CoverDesignation;
   displayUrls: Record<string, string>;
@@ -17,7 +19,7 @@ const BG_COLOR = '#ebeaef';
 const SHADOW_COLOR = '#a8a7b2';
 
 export const OgBuilder: React.FC<OgBuilderProps> = ({
-  panels, cover, displayUrls, ogImageUrl, ogExists, generatingOg, onGenerate,
+  id, defaultOpen, panels, cover, displayUrls, ogImageUrl, ogExists, generatingOg, onGenerate,
 }) => {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [secondPanelId, setSecondPanelId] = useState<string | null>(null);
@@ -152,10 +154,10 @@ export const OgBuilder: React.FC<OgBuilderProps> = ({
     ? `${secondPanel.side === 'front' ? 'Front' : 'Back'} ${secondPanel.panel_index + 1}`
     : null;
 
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(defaultOpen ?? false);
 
   return (
-    <section className="border bg-card">
+    <section id={id} className="border bg-card">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}

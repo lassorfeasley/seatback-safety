@@ -72,6 +72,7 @@ interface CardDetailProps {
   onPrintLabel?: () => void;
   isNew?: boolean;
   initialEditing?: boolean;
+  autoGenerateOg?: boolean;
 }
 
 function formatBytes(bytes: number): string {
@@ -169,7 +170,7 @@ const InlineSuggestion: React.FC<{
 
 // ─── Main Component ──────────────────────────────────────────────
 
-export const CardDetail: React.FC<CardDetailProps> = ({ cardId, onBack, onEditCrops, onEditFolds, onPrintLabel, isNew, initialEditing }) => {
+export const CardDetail: React.FC<CardDetailProps> = ({ cardId, onBack, onEditCrops, onEditFolds, onPrintLabel, isNew, initialEditing, autoGenerateOg }) => {
   const [card, setCard] = useState<CardDetailData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -322,6 +323,18 @@ export const CardDetail: React.FC<CardDetailProps> = ({ cardId, onBack, onEditCr
       setOgExists(true);
     }
   }, [card, cardId]);
+
+  // Auto-generate OG image when returning from fold editor
+  const autoOgTriggeredRef = useRef(false);
+  useEffect(() => {
+    if (autoGenerateOg && card && card.panels.length > 0 && !autoOgTriggeredRef.current && !generatingOg) {
+      autoOgTriggeredRef.current = true;
+      handleGenerateOg();
+      setTimeout(() => {
+        document.getElementById('og-builder')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }, 200);
+    }
+  }, [autoGenerateOg, card, generatingOg, handleGenerateOg]);
 
   const handleBack = useCallback(async () => {
     if (isNew && card && card.panels.length === 0 && card.scans.length === 0 && !card.title) {
@@ -687,6 +700,8 @@ export const CardDetail: React.FC<CardDetailProps> = ({ cardId, onBack, onEditCr
 
               {isEditing && card.panels.length > 0 && (
                 <OgBuilder
+                  id="og-builder"
+                  defaultOpen={!!autoGenerateOg}
                   panels={card.panels}
                   cover={card.cover}
                   displayUrls={card.displayUrls}
@@ -1553,13 +1568,20 @@ const SpreadRow: React.FC<SpreadRowProps> = ({
     return { panel: panels.find((p) => p.panel_index === panelIndex) ?? null, panelIndex };
   });
 
-  const getAspectRatio = (panelIndex: number): number => {
-    const panel = panels.find((p) => p.panel_index === panelIndex);
-    if (panel?.width_px && panel?.height_px) return panel.width_px / panel.height_px;
-    const anyPanel = panels.find((p) => p.width_px && p.height_px);
-    if (anyPanel) return anyPanel.width_px! / anyPanel.height_px!;
+  const referenceHeight = panels.find((p) => p.height_px)?.height_px ?? null;
+
+  const getFlexWeight = (panelIndex: number): number => {
+    if (referenceHeight) {
+      const panel = panels.find((p) => p.panel_index === panelIndex);
+      const w = panel?.width_px;
+      if (w) return w / referenceHeight;
+      const anyWidth = panels.find((p) => p.width_px)?.width_px;
+      if (anyWidth) return anyWidth / referenceHeight;
+    }
     return 3 / 4;
   };
+
+  const totalAspect = slots.reduce((sum, { panelIndex }) => sum + getFlexWeight(panelIndex), 0);
 
   return (
     <div>
@@ -1573,27 +1595,29 @@ const SpreadRow: React.FC<SpreadRowProps> = ({
           </span>
         )}
       </div>
-      <div className="flex items-stretch gap-0 overflow-x-auto pb-1">
+      <div
+        className="flex items-stretch gap-0 overflow-x-auto pb-1"
+        style={{ aspectRatio: `${totalAspect} / 1`, maxHeight: 200 }}
+      >
         {slots.map(({ panel, panelIndex }) => {
           const displayUrl = panel ? (displayUrls[panel.id] || panel.thumbnail_url) : null;
           const fullUrl = panel ? (fullUrls[panel.id] || displayUrl) : null;
           const isSavingThis = savingSlot?.panelIndex === panelIndex && savingSlot?.side === side;
           const isProcessing = (!!panel && !displayUrl) || isSavingThis;
-          const aspect = getAspectRatio(panelIndex);
+          const weight = getFlexWeight(panelIndex);
 
           return (
             <div
               key={panel?.id ?? `empty-${panelIndex}`}
               className="relative group"
-              style={{ flex: `${aspect} 0 0%`, minWidth: 80 }}
+              style={{ flex: `${weight} 0 0%` }}
             >
               <div
                 className={cn(
-                  'relative rounded-lg overflow-hidden border-2 transition-all',
+                  'relative rounded-lg overflow-hidden border-2 transition-all h-full',
                   (displayUrl && !isSavingThis) ? 'border-muted' : 'border-dashed border-muted-foreground/20',
                   isEditing && onEditCrops && !isProcessing && 'cursor-pointer hover:border-primary/40',
                 )}
-                style={{ aspectRatio: `${aspect}` }}
                 onClick={isEditing && onEditCrops && !isProcessing ? () => onEditCrops(panelIndex, side) : undefined}
               >
                 {displayUrl && !isSavingThis ? (

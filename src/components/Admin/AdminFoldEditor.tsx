@@ -11,7 +11,7 @@ export const AdminFoldEditor: React.FC = () => {
     <SafetyCardWizard
       editCardId={id}
       initialStep={4}
-      onSaveComplete={() => navigate(`/admin/cards/${id}?editing=1`)}
+      onSaveComplete={() => navigate(`/admin/cards/${id}?editing=1&from=folds`)}
       onBackToLibrary={() => navigate(`/admin/cards/${id}?editing=1`)}
     />
   );

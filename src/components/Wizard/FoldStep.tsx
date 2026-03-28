@@ -397,7 +397,7 @@ const FoldPanel: React.FC<FoldPanelProps> = ({
     >
       <div
         className={`relative rounded-lg overflow-hidden border-2 transition-all ${borderClass}`}
-        style={{ aspectRatio: `${aspectRatio}` }}
+        style={{ aspectRatio: `${aspectRatio}`, maxHeight: 200 }}
       >
         {thumbnailUrl ? (
           <img

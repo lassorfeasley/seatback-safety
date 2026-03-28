@@ -40,12 +40,21 @@ export const CropStep: React.FC<CropStepProps> = ({
   const totalCount = slots.length;
   const allFilled = filledCount === totalCount;
 
+  // Carry-over rotation: persists across Save & Next navigations
+  const carryRotationRef = React.useRef<number | null>(null);
+
   // If we're in a crop session, show the crop UI
   if (activeSlot) {
     const oppositeSide = activeSlot.side === 'front' ? 'back' : 'front';
     const oppositeSlot = slots.find(
       (s) => s.panelIndex === activeSlot.panelIndex && s.side === oppositeSide
     );
+
+    const existingSlot = slots.find(
+      (s) => s.panelIndex === activeSlot.panelIndex && s.side === activeSlot.side
+    );
+    const selectedImg = images.find((i) => i.id === selectedImageId);
+    const rotation = carryRotationRef.current ?? selectedImg?.rotation ?? 0;
 
     return (
       <CropSession
@@ -56,15 +65,18 @@ export const CropStep: React.FC<CropStepProps> = ({
         selectedImageId={selectedImageId}
         cropWidth={cropWidth}
         cropHeight={cropHeight}
-        existingSlot={slots.find(
-          (s) => s.panelIndex === activeSlot.panelIndex && s.side === activeSlot.side
-        )}
+        existingSlot={existingSlot}
         oppositeSlot={oppositeSlot}
+        initialRotation={rotation}
         onSelectImage={onSelectImage}
-        onCancelCrop={onCancelCrop}
-        onConfirmCrop={onConfirmCrop}
+        onCancelCrop={() => { carryRotationRef.current = null; onCancelCrop(); }}
+        onConfirmCrop={(pi, s, iid, r, tu, rot, adv) => {
+          carryRotationRef.current = adv ? rot : null;
+          onConfirmCrop(pi, s, iid, r, tu, rot, adv);
+        }}
         onResetWidthLock={onResetWidthLock}
         onSetCropDimensions={onSetCropDimensions}
+        onSelectSlot={onSelectSlot}
       />
     );
   }
@@ -325,6 +337,7 @@ interface CropSessionProps {
   cropHeight: number | null;
   existingSlot: { imageId: string | null; cropRegion: CropRegion | null } | undefined;
   oppositeSlot: { imageId: string | null; cropRegion: CropRegion | null } | undefined;
+  initialRotation: number;
   onSelectImage: (imageId: string) => void;
   onCancelCrop: () => void;
   onConfirmCrop: (
@@ -338,6 +351,7 @@ interface CropSessionProps {
   ) => void;
   onResetWidthLock: (panelIndex: number, side: 'front' | 'back') => void;
   onSetCropDimensions: (width: number, height: number) => void;
+  onSelectSlot: (panelIndex: number, side: 'front' | 'back') => void;
 }
 
 const CropSession: React.FC<CropSessionProps> = ({
@@ -355,6 +369,8 @@ const CropSession: React.FC<CropSessionProps> = ({
   onConfirmCrop,
   onResetWidthLock,
   onSetCropDimensions,
+  onSelectSlot,
+  initialRotation,
 }) => {
   // Local state for the crop region being drawn
   const [region, setRegion] = useState<CropRegion | null>(
@@ -364,22 +380,35 @@ const CropSession: React.FC<CropSessionProps> = ({
 
   const selectedImage = images.find((i) => i.id === selectedImageId);
 
-  // Rotation controls for the selected image during crop
-  const [localRotation, setLocalRotation] = useState(selectedImage?.rotation || 0);
+  // Rotation controls — initialized from prop, synced on manual scan switch
+  const [localRotation, setLocalRotation] = useState(initialRotation);
 
   // Straighten tool
   const [straightenMode, setStraightenMode] = useState(false);
+
+  // Reset local state when navigating to a different panel
+  const slotKey = `${activeSlot.panelIndex}-${activeSlot.side}`;
+  const prevSlotKeyRef = React.useRef(slotKey);
+  React.useEffect(() => {
+    if (prevSlotKeyRef.current !== slotKey) {
+      prevSlotKeyRef.current = slotKey;
+      setRegion(existingSlot?.cropRegion || null);
+      setImageDimensions(null);
+      setStraightenMode(false);
+      setLocalRotation(initialRotation);
+    }
+  }, [slotKey, existingSlot, initialRotation]);
   const handleStraighten = useCallback((angleDelta: number) => {
     setLocalRotation((r) => r + angleDelta);
     setStraightenMode(false);
   }, []);
 
-  // Sync rotation when image changes
-  useEffect(() => {
-    if (selectedImage) {
-      setLocalRotation(selectedImage.rotation);
-    }
-  }, [selectedImage]);
+  // Sync rotation when user manually switches scan — handled via onSelectImage wrapper
+  const handleSelectImage = useCallback((imageId: string) => {
+    const img = images.find((i) => i.id === imageId);
+    if (img) setLocalRotation(img.rotation);
+    onSelectImage(imageId);
+  }, [images, onSelectImage]);
 
   // Reset region when image changes (unless it's the same image the slot already has)
   useEffect(() => {
@@ -474,6 +503,8 @@ const CropSession: React.FC<CropSessionProps> = ({
     const order: { panelIndex: number; side: 'front' | 'back' }[] = [];
     for (let i = 0; i < panelCount; i++) {
       order.push({ panelIndex: i, side: 'front' });
+    }
+    for (let i = panelCount - 1; i >= 0; i--) {
       order.push({ panelIndex: i, side: 'back' });
     }
     const currentIdx = order.findIndex(
@@ -534,49 +565,6 @@ const CropSession: React.FC<CropSessionProps> = ({
 
       {/* Right sidebar — controls */}
       <div className="w-64 flex-shrink-0 border-l bg-card flex flex-col overflow-y-auto">
-        {/* Panel map */}
-        <div className="p-3 border-b">
-          <span className="text-xs font-medium mb-1">
-            Panel {activeSlot.panelIndex + 1} {sideLabel}
-          </span>
-          <div className="flex flex-col gap-0.5">
-            <div className="flex gap-0.5" style={{ maxWidth: panelCount * 28 }}>
-              {Array.from({ length: panelCount }, (_, i) => {
-                const isActive = activeSlot.panelIndex === i && activeSlot.side === 'front';
-                return (
-                  <div
-                    key={`front-${i}`}
-                    style={{
-                      width: 16,
-                      height: 26,
-                      flexShrink: 0,
-                      border: `1px solid ${isActive ? '#ef4444' : '#000'}`,
-                      background: isActive ? '#ef4444' : '#fff',
-                    }}
-                  />
-                );
-              })}
-            </div>
-            <div className="flex gap-0.5" style={{ maxWidth: panelCount * 28 }}>
-              {Array.from({ length: panelCount }, (_, i) => {
-                const isActive = activeSlot.panelIndex === i && activeSlot.side === 'back';
-                return (
-                  <div
-                    key={`back-${i}`}
-                    style={{
-                      width: 16,
-                      height: 26,
-                      flexShrink: 0,
-                      border: `1px solid ${isActive ? '#ef4444' : '#000'}`,
-                      background: isActive ? '#ef4444' : '#fff',
-                    }}
-                  />
-                );
-              })}
-            </div>
-          </div>
-        </div>
-
         {/* Scan picker */}
         <div className="p-4 border-b flex flex-col gap-2">
           <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Source Scan</span>
@@ -591,7 +579,7 @@ const CropSession: React.FC<CropSessionProps> = ({
                     : 'border-muted hover:border-primary/50'
                   }
                 `}
-                onClick={() => onSelectImage(img.id)}
+                onClick={() => handleSelectImage(img.id)}
               >
                 <img
                   src={img.thumbnailUrl ?? img.imageUrl}
@@ -661,7 +649,75 @@ const CropSession: React.FC<CropSessionProps> = ({
         )}
 
         {/* Actions */}
-        <div className="p-4 flex flex-col gap-2 mt-auto">
+        <div className="p-4 flex flex-col gap-3 mt-auto">
+          {/* Panel map */}
+          <div className="flex flex-col gap-0.5">
+            <div className="flex items-center gap-2 mb-0.5">
+              <span className="text-[10px] text-muted-foreground w-7">Front</span>
+              <div className="flex gap-0.5">
+                {Array.from({ length: panelCount }, (_, i) => {
+                  const isActive = activeSlot.panelIndex === i && activeSlot.side === 'front';
+                  const slot = allSlots.find((s) => s.panelIndex === i && s.side === 'front');
+                  const isFilled = !isActive && slot?.cropRegion !== null;
+                  return (
+                    <button
+                      key={`front-${i}`}
+                      type="button"
+                      onClick={() => {
+                        if (isActive) return;
+                        if (region && selectedImageId) {
+                          handleConfirm({ panelIndex: i, side: 'front' });
+                        } else {
+                          onSelectSlot(i, 'front');
+                        }
+                      }}
+                      style={{
+                        width: 14,
+                        height: 22,
+                        flexShrink: 0,
+                        border: `1px solid ${isActive ? '#ef4444' : isFilled ? '#999' : '#000'}`,
+                        background: isActive ? '#ef4444' : isFilled ? '#d4d4d4' : '#fff',
+                        cursor: isActive ? 'default' : 'pointer',
+                      }}
+                    />
+                  );
+                })}
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] text-muted-foreground w-7">Back</span>
+              <div className="flex gap-0.5">
+                {Array.from({ length: panelCount }, (_, rawI) => {
+                  const i = panelCount - 1 - rawI;
+                  const isActive = activeSlot.panelIndex === i && activeSlot.side === 'back';
+                  const slot = allSlots.find((s) => s.panelIndex === i && s.side === 'back');
+                  const isFilled = !isActive && slot?.cropRegion !== null;
+                  return (
+                    <button
+                      key={`back-${i}`}
+                      type="button"
+                      onClick={() => {
+                        if (isActive) return;
+                        if (region && selectedImageId) {
+                          handleConfirm({ panelIndex: i, side: 'back' });
+                        } else {
+                          onSelectSlot(i, 'back');
+                        }
+                      }}
+                      style={{
+                        width: 14,
+                        height: 22,
+                        flexShrink: 0,
+                        border: `1px solid ${isActive ? '#ef4444' : isFilled ? '#999' : '#000'}`,
+                        background: isActive ? '#ef4444' : isFilled ? '#d4d4d4' : '#fff',
+                        cursor: isActive ? 'default' : 'pointer',
+                      }}
+                    />
+                  );
+                })}
+              </div>
+            </div>
+          </div>
           {(region || dimensionsLocked) && (
             <div className="flex gap-1.5">
               {region && (

@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useMemo, useEffect } from 'react';
+import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { StepIndicator } from './StepIndicator';
 import { CardInfoStep } from './CardInfoStep';
 import { ImageLibraryStep } from './ImageLibraryStep';
@@ -391,6 +391,8 @@ export const SafetyCardWizard: React.FC<SafetyCardWizardProps> = ({
           );
           if (existingSlot?.imageId) {
             nextSelectedImageId = existingSlot.imageId;
+          } else if (advanceTo.side === side) {
+            nextSelectedImageId = imageId;
           } else {
             const oppSide: PanelSide = advanceTo.side === 'front' ? 'back' : 'front';
             const oppSlot = updatedSlots.find(
@@ -416,29 +418,47 @@ export const SafetyCardWizard: React.FC<SafetyCardWizardProps> = ({
           images: updatedImages,
           cropWidth: region.width,
           cropHeight: prev.cropHeight ?? region.height,
-          ...(initialSlot
+          ...(initialSlot && !advanceTo
             ? {}
             : { activeSlot: nextActiveSlot, selectedImageId: nextSelectedImageId }),
         };
       });
 
-      if (initialSlot && editCardId) {
+      if (initialSlot && editCardId && !advanceTo) {
         onBackToLibrary?.({ panelIndex, side });
-
-        const stateSnapshot: WizardState = {
-          ...state,
-          slots: updatedSlots,
-          images: updatedImages,
-          cropWidth: region.width,
-          cropHeight: state.cropHeight ?? region.height,
-        };
-        updateCardPanels(editCardId, stateSnapshot, editSideIds).catch((err) => {
-          console.error('Background crop save failed:', err);
-        });
       }
     },
-    [initialSlot, editCardId, editSideIds, onBackToLibrary, state]
+    [initialSlot, editCardId, onBackToLibrary, state]
   );
+
+  // Background save: process dirty slots whenever they appear
+  const savingRef = useRef(false);
+  useEffect(() => {
+    if (!editCardId) return;
+    const dirtySlots = state.slots.filter((s) => s.dirty);
+    if (dirtySlots.length === 0 || savingRef.current) return;
+
+    savingRef.current = true;
+    const snapshot: WizardState = { ...state };
+
+    updateCardPanels(editCardId, snapshot, editSideIds)
+      .then(() => {
+        setState((prev) => ({
+          ...prev,
+          slots: prev.slots.map((s) =>
+            dirtySlots.some((d) => d.panelIndex === s.panelIndex && d.side === s.side)
+              ? { ...s, dirty: false }
+              : s
+          ),
+        }));
+      })
+      .catch((err) => {
+        console.error('Background crop save failed:', err);
+      })
+      .finally(() => {
+        savingRef.current = false;
+      });
+  }, [editCardId, state, editSideIds]);
 
   const handleClearSlot = useCallback((panelIndex: number, side: PanelSide) => {
     setState((prev) => ({
