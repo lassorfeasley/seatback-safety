@@ -17,7 +17,10 @@ Return ONLY valid JSON with this exact structure (use null for any field you can
 }
 
 Guidelines:
-- For airline, use the full official name (e.g. "Republic Airways" not "Republic")
+- For airline, always use the full official trade name, never abbreviations or initials (e.g. "KLM Royal Dutch Airlines" not "KLM", "British Airways" not "BA", "All Nippon Airways" not "ANA", "Japan Airlines" not "JAL", "Trans World Airlines" not "TWA", "Scandinavian Airlines System" not "SAS")
+- Always include common suffixes like "Airlines", "Airways", "Air Lines" where they are part of the official brand name (e.g. "Southwest Airlines" not "Southwest", "American Airlines" not "American", "Republic Airways" not "Republic")
+- Use the English marketing/trade name, not the legal holding company name (e.g. "Lufthansa" not "Deutsche Lufthansa AG", "Air France" not "Societe Air France")
+- For defunct or historical airlines, use the name as it appeared during the era of the card's publication
 - The aircraft array should contain one entry PER distinct model on the card. Many safety cards cover multiple models from the same manufacturer (e.g. "E170/175" = two entries: E170 and E175; "737-800/900" = two entries: 737 with variant 800 and 737 with variant 900; "A319/A320/A321" = three entries)
 - Separate manufacturer, model, and variant carefully. Variants include numeric suffixes like 800, 900ER AND letter suffixes like SR, LR, ER, NEO, MAX, F, Adv, Combi, etc. Do NOT include a leading dash/hyphen in the variant — use "800" not "-800", "200" not "-200". For example "A320 SR" → model "A320", variant "SR"; "747-400 Combi" → model "747", variant "400 Combi"; "737 MAX 8" → model "737", variant "MAX 8"; "727-200" → model "727", variant "200"
 - Use your aviation domain knowledge to identify the manufacturer even when it is not explicitly written on the card. Model designation prefixes reliably identify the manufacturer. Always provide the manufacturer — if the model prefix or aircraft silhouette makes it identifiable, that is not guessing.

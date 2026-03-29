@@ -1,4 +1,5 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState, useCallback } from 'react';
+import { X } from 'lucide-react';
 import { Combobox, type ComboboxOption } from './combobox';
 
 const COUNTRIES = [
@@ -68,5 +69,88 @@ export const CountrySelect: React.FC<CountrySelectProps> = ({
       className={className}
       disabled={disabled}
     />
+  );
+};
+
+// ─── Multi-select variant ─────────────────────────────────────────
+
+interface CountryMultiSelectProps {
+  value: string[];
+  onChange: (countries: string[]) => void;
+  placeholder?: string;
+  className?: string;
+  disabled?: boolean;
+}
+
+export const CountryMultiSelect: React.FC<CountryMultiSelectProps> = ({
+  value,
+  onChange,
+  placeholder = 'Add country...',
+  className,
+  disabled,
+}) => {
+  const [adding, setAdding] = useState(false);
+
+  const options: ComboboxOption[] = useMemo(
+    () => COUNTRIES
+      .filter((c) => !value.includes(c))
+      .map((c) => ({ value: c, label: c })),
+    [value]
+  );
+
+  const handleAdd = useCallback((country: string) => {
+    if (!value.includes(country)) {
+      onChange([...value, country].sort());
+    }
+    setAdding(false);
+  }, [value, onChange]);
+
+  const handleRemove = useCallback((country: string) => {
+    onChange(value.filter((c) => c !== country));
+  }, [value, onChange]);
+
+  return (
+    <div className={className}>
+      {value.length > 0 && (
+        <div className="flex flex-wrap gap-1.5 mb-2">
+          {value.map((country) => (
+            <span
+              key={country}
+              className="inline-flex items-center gap-1 rounded-md bg-muted px-2 py-0.5 text-xs font-medium"
+            >
+              {country}
+              {!disabled && (
+                <button
+                  type="button"
+                  onClick={() => handleRemove(country)}
+                  className="ml-0.5 rounded-sm hover:bg-accent p-0.5 -mr-0.5"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              )}
+            </span>
+          ))}
+        </div>
+      )}
+      {adding ? (
+        <Combobox
+          options={options}
+          value={null}
+          onChange={(val) => handleAdd(val)}
+          placeholder={placeholder}
+          searchPlaceholder="Search countries..."
+          disabled={disabled}
+        />
+      ) : (
+        <button
+          type="button"
+          onClick={() => setAdding(true)}
+          disabled={disabled}
+          className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+        >
+          + Add country
+        </button>
+      )}
+    </div>
   );
 };

@@ -1,6 +1,6 @@
-import React, { useEffect, useState, useCallback, useRef } from 'react';
+import React, { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
-import { Plus, Loader2, Pencil, Upload, X } from 'lucide-react';
+import { Plus, Loader2, Pencil, Upload, X, Search } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
   fetchAirlinesBrowse,
@@ -11,7 +11,7 @@ import {
   type AirlineBrowse,
   type AirlineUpdate,
 } from '@/lib/lookupService';
-import { CountrySelect } from '@/components/ui/country-select';
+import { CountryMultiSelect } from '@/components/ui/country-select';
 
 interface AirlinesPageProps {
   onSelectAirline?: (id: string) => void;
@@ -22,6 +22,7 @@ export const AirlinesPage: React.FC<AirlinesPageProps> = ({ onSelectAirline }) =
   const [loading, setLoading] = useState(true);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
+  const [query, setQuery] = useState('');
 
   const refresh = useCallback(async () => {
     const data = await fetchAirlinesBrowse();
@@ -31,21 +32,46 @@ export const AirlinesPage: React.FC<AirlinesPageProps> = ({ onSelectAirline }) =
 
   useEffect(() => { refresh(); }, [refresh]);
 
+  const filtered = useMemo(() => {
+    const q = query.toLowerCase().trim();
+    if (!q) return airlines;
+    return airlines.filter((a) => {
+      const haystack = [a.name, a.iata_code, a.icao_code, ...(a.countries ?? [])]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+      return haystack.includes(q);
+    });
+  }, [airlines, query]);
+
   return (
     <>
       <header className="flex-shrink-0">
         <div className="max-w-6xl mx-auto flex items-center justify-between px-6 pt-8 pb-4">
           <h1 className="text-sm font-medium tracking-widest uppercase text-black/60">Airlines</h1>
-          <Button
-            onClick={() => setShowCreate(true)}
-            size="sm"
-            variant="outline"
-            className="gap-1.5 border-black/20 text-black/60 hover:text-black hover:bg-gray-50"
-            disabled={showCreate}
-          >
-            <Plus className="h-4 w-4" />
-            Add Airline
-          </Button>
+          <div className="flex items-center gap-2">
+            <div className="relative">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+              <input
+                type="text"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Search airlines..."
+                className="h-8 w-52 rounded-md border border-input bg-transparent pl-8 pr-3 text-sm
+                           placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              />
+            </div>
+            <Button
+              onClick={() => setShowCreate(true)}
+              size="sm"
+              variant="outline"
+              className="gap-1.5 border-black/20 text-black/60 hover:text-black hover:bg-gray-50"
+              disabled={showCreate}
+            >
+              <Plus className="h-4 w-4" />
+              Add Airline
+            </Button>
+          </div>
         </div>
       </header>
 
@@ -68,9 +94,13 @@ export const AirlinesPage: React.FC<AirlinesPageProps> = ({ onSelectAirline }) =
               <h2 className="text-lg font-medium">No airlines yet</h2>
               <p className="text-sm text-muted-foreground">Add your first airline to get started.</p>
             </div>
+          ) : filtered.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-24 gap-2 text-center">
+              <p className="text-sm text-muted-foreground">No airlines match "{query}"</p>
+            </div>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {airlines.map((airline) => (
+              {filtered.map((airline) => (
                 <AirlineTile
                   key={airline.id}
                   airline={airline}
@@ -159,8 +189,8 @@ const AirlineTile: React.FC<{
           {airline.iata_code && (
             <span className="text-xs text-muted-foreground font-mono">{airline.iata_code}</span>
           )}
-          {airline.country && (
-            <span className="text-xs text-muted-foreground">{airline.country}</span>
+          {airline.countries && airline.countries.length > 0 && (
+            <span className="text-xs text-muted-foreground">{airline.countries.join(', ')}</span>
           )}
         </div>
         <p className="text-xs text-muted-foreground mt-1">
@@ -191,7 +221,7 @@ const AirlineEditForm: React.FC<{
   const [name, setName] = useState(airline.name);
   const [iata, setIata] = useState(airline.iata_code ?? '');
   const [icao, setIcao] = useState(airline.icao_code ?? '');
-  const [country, setCountry] = useState(airline.country ?? '');
+  const [country, setCountry] = useState<string[]>(airline.countries ?? []);
   const [description, setDescription] = useState(airline.description ?? '');
   const [logoPath, setLogoPath] = useState(airline.logo_path);
   const [logoPreview, setLogoPreview] = useState(airline.logo_url);
@@ -228,7 +258,7 @@ const AirlineEditForm: React.FC<{
         name: name.trim() || undefined,
         iata_code: iata.trim().toUpperCase() || null,
         icao_code: icao.trim().toUpperCase() || null,
-        country: country.trim() || null,
+        countries: country,
         description: description.trim() || null,
         logo_path: logoPath,
       };
@@ -272,7 +302,7 @@ const AirlineEditForm: React.FC<{
           <input className={INPUT_CLASS} value={iata} onChange={(e) => setIata(e.target.value)} placeholder="IATA (e.g. AA)" maxLength={3} />
           <input className={INPUT_CLASS} value={icao} onChange={(e) => setIcao(e.target.value)} placeholder="ICAO (e.g. AAL)" maxLength={4} />
           <div className="col-span-2">
-            <CountrySelect value={country} onChange={setCountry} placeholder="Country" />
+            <CountryMultiSelect value={country} onChange={setCountry} />
           </div>
         </div>
       </div>

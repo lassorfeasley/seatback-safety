@@ -232,7 +232,7 @@ export const PublicHomeArchive: React.FC = () => {
   const maxYear = years.length > 0 ? Math.max(...years) : null;
   const yearSpan = minYear && maxYear ? maxYear - minYear : null;
   const airlineCount = allAirlines.length;
-  const countries = [...new Set(allAirlines.map((a) => a.country).filter((c): c is string => !!c))];
+  const countries = [...new Set(allAirlines.flatMap((a) => a.countries ?? []))];
   const countryCount = countries.length;
 
   return (

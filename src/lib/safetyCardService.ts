@@ -15,6 +15,7 @@ export interface CardSummary {
   thumbnail_url: string | null;
   preview_url: string | null;
   og_url: string | null;
+  airline_id: string | null;
   airline_name: string | null;
   aircraft_label: string | null;
   published_year: number | null;
@@ -100,7 +101,7 @@ export interface CardDetailData {
   thumbnail_url: string | null;
   og_url: string | null;
   airline_id: string | null;
-  airline_country: string | null;
+  airline_countries: string[];
   airline_logo_url: string | null;
   manufacturer_logo_url: string | null;
   aircraft: DetailAircraftEntry[];
@@ -553,7 +554,7 @@ export async function fetchCards(opts?: { includeUnpublished?: boolean }): Promi
   const { data: cards, error } = await supabase
     .from('safety_cards')
     .select(`
-      id, title, panel_count, cover_spread_index, cover_side, is_booklet, created_at, published_year,
+      id, title, panel_count, cover_spread_index, cover_side, is_booklet, created_at, published_year, airline_id,
       airlines ( name ),
       aircraft_variants ( name, aircraft_models ( name, aircraft_manufacturers ( name ) ) ),
       card_aircraft ( sort_order,
@@ -648,6 +649,7 @@ export async function fetchCards(opts?: { includeUnpublished?: boolean }): Promi
       thumbnail_url: thumbnailUrl,
       preview_url: previewUrl,
       og_url: ogUrl,
+      airline_id: (card.airline_id as string) ?? null,
       airline_name: (airline?.name as string) ?? null,
       aircraft_label: label,
       published_year: (card.published_year as number) ?? null,
@@ -663,7 +665,7 @@ export async function fetchCardDetail(cardId: string): Promise<CardDetailData | 
         id, title, panel_count, crop_width, crop_height,
         cover_spread_index, cover_side, pivot_index, is_booklet, created_at,
         published_year, revision, language, notes, airline_id,
-        airlines ( name, logo_path, country ),
+        airlines ( name, logo_path ),
         aircraft_variants ( name, aircraft_models ( name, aircraft_manufacturers ( name, logo_path ) ) ),
         card_aircraft ( aircraft_variant_id, aircraft_model_id, sort_order,
           aircraft_variants ( name, aircraft_models ( id, name, manufacturer_id, aircraft_manufacturers ( id, name, logo_path ) ) ),
@@ -804,6 +806,16 @@ export async function fetchCardDetail(cardId: string): Promise<CardDetailData | 
   const airlineLogoUrl = airlineLogoPath
     ? supabase.storage.from('entity-images').getPublicUrl(airlineLogoPath).data.publicUrl
     : null;
+
+  let airlineCountries: string[] = [];
+  if (card.airline_id) {
+    const { data: countryRows } = await supabase
+      .from('airline_countries')
+      .select('country_name')
+      .eq('airline_id', card.airline_id as string)
+      .order('country_name');
+    airlineCountries = (countryRows ?? []).map((r: { country_name: string }) => r.country_name);
+  }
 
   // Build aircraft label from card_aircraft join table
   const cardAircraft = (card.card_aircraft ?? []) as Array<Record<string, unknown>>;
@@ -1004,7 +1016,7 @@ export async function fetchCardDetail(cardId: string): Promise<CardDetailData | 
     })(),
     og_url: derivativePublicUrl(`${cardId}/og.jpg`),
     airline_id: (card.airline_id as string) ?? null,
-    airline_country: (airline?.country as string) ?? null,
+    airline_countries: airlineCountries,
     airline_logo_url: airlineLogoUrl,
     manufacturer_logo_url: manufacturerLogoUrl,
     aircraft: structuredAircraft,

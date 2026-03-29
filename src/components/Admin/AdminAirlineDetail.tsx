@@ -1,18 +1,23 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Loader2, Pencil, Upload, X, Globe } from 'lucide-react';
+import { ArrowLeft, Loader2, Pencil, Upload, X, Globe, Merge, AlertTriangle, Check, ArrowRight, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
 import { cn } from '@/lib/utils';
 import {
   fetchAirlineDetail,
+  fetchAirlines,
   updateAirline,
+  mergeAirlines,
+  deleteAirline,
   uploadEntityImage,
   deleteEntityImage,
   type AirlineDetail,
   type AirlineUpdate,
+  type LookupItem,
 } from '@/lib/lookupService';
 import { fetchCards, type CardSummary } from '@/lib/safetyCardService';
-import { CountrySelect } from '@/components/ui/country-select';
+import { CountryMultiSelect } from '@/components/ui/country-select';
 
 const INPUT_CLASS =
   'h-9 rounded-md border border-input bg-transparent px-3 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring';
@@ -25,16 +30,23 @@ export const AdminAirlineDetail: React.FC = () => {
   const [cards, setCards] = useState<CardSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(false);
+  const [merging, setMerging] = useState(false);
 
   const load = useCallback(async () => {
     if (!id) return;
     const [a, allCards] = await Promise.all([fetchAirlineDetail(id), fetchCards()]);
     setAirline(a);
-    setCards(allCards.filter((c) => c.airline_name === a?.name));
+    setCards(allCards.filter((c) => c.airline_id === id));
     setLoading(false);
   }, [id]);
 
   useEffect(() => { load(); }, [load]);
+
+  useEffect(() => {
+    setEditing(false);
+    setMerging(false);
+    setLoading(true);
+  }, [id]);
 
   if (loading) {
     return (
@@ -70,14 +82,35 @@ export const AdminAirlineDetail: React.FC = () => {
 
       <main className="flex-1 min-h-0 overflow-auto">
         <div className="max-w-6xl mx-auto px-6 py-8">
-          {editing ? (
+          {merging ? (
+            <AirlineMergePanel
+              airline={airline}
+              cardCount={cards.length}
+              onMerged={(targetId) => navigate(`/admin/airlines/${targetId}`)}
+              onCancel={() => setMerging(false)}
+            />
+          ) : editing ? (
             <AirlineProfileEditor
               airline={airline}
               onSaved={() => { setEditing(false); load(); }}
               onCancel={() => setEditing(false)}
             />
           ) : (
-            <AirlineProfileCard airline={airline} onEdit={() => setEditing(true)} />
+            <AirlineProfileCard
+              airline={airline}
+              cardCount={cards.length}
+              onEdit={() => setEditing(true)}
+              onMerge={() => setMerging(true)}
+              onDelete={async () => {
+                try {
+                  await deleteAirline(airline.id);
+                  navigate('/admin/airlines');
+                } catch (err) {
+                  alert(err instanceof Error ? err.message : 'Delete failed');
+                  throw err;
+                }
+              }}
+            />
           )}
 
           <section className="mt-10">
@@ -113,15 +146,50 @@ export const AdminAirlineDetail: React.FC = () => {
 
 const AirlineProfileCard: React.FC<{
   airline: AirlineDetail;
+  cardCount: number;
   onEdit: () => void;
-}> = ({ airline, onEdit }) => (
+  onMerge: () => void;
+  onDelete: () => void;
+}> = ({ airline, cardCount, onEdit, onMerge, onDelete }) => {
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  const handleDelete = async () => {
+    setDeleting(true);
+    try {
+      await onDelete();
+    } catch {
+      setDeleting(false);
+      setConfirmingDelete(false);
+    }
+  };
+
+  return (
   <div className="relative rounded-xl border bg-card p-6">
-    <button
-      onClick={onEdit}
-      className="absolute top-4 right-4 p-2 rounded-md hover:bg-accent transition-colors"
-    >
-      <Pencil className="h-4 w-4 text-muted-foreground" />
-    </button>
+    <div className="absolute top-4 right-4 flex items-center gap-1">
+      {cardCount === 0 && (
+        <button
+          onClick={() => setConfirmingDelete(true)}
+          className="p-2 rounded-md hover:bg-destructive/10 transition-colors"
+          title="Delete airline (no cards)"
+        >
+          <Trash2 className="h-4 w-4 text-destructive/70" />
+        </button>
+      )}
+      <button
+        onClick={onMerge}
+        className="p-2 rounded-md hover:bg-accent transition-colors"
+        title="Merge into another airline"
+      >
+        <Merge className="h-4 w-4 text-muted-foreground" />
+      </button>
+      <button
+        onClick={onEdit}
+        className="p-2 rounded-md hover:bg-accent transition-colors"
+      >
+        <Pencil className="h-4 w-4 text-muted-foreground" />
+      </button>
+    </div>
 
     <div className="flex items-start gap-5">
       <div className="h-20 w-20 rounded-xl bg-muted/60 flex-shrink-0 flex items-center justify-center overflow-hidden">
@@ -148,9 +216,9 @@ const AirlineProfileCard: React.FC<{
               ICAO: <span className="font-mono font-medium text-foreground">{airline.icao_code}</span>
             </span>
           )}
-          {airline.country && (
+          {airline.countries.length > 0 && (
             <span className="inline-flex items-center gap-1 text-sm text-muted-foreground">
-              <Globe className="h-3.5 w-3.5" /> {airline.country}
+              <Globe className="h-3.5 w-3.5" /> {airline.countries.join(', ')}
             </span>
           )}
         </div>
@@ -173,8 +241,35 @@ const AirlineProfileCard: React.FC<{
         </div>
       </div>
     </div>
+
+    {confirmingDelete && (
+      <div className="mt-4 rounded-lg border border-destructive/30 bg-destructive/5 p-4">
+        <div className="flex items-start gap-3">
+          <AlertTriangle className="h-5 w-5 text-destructive flex-shrink-0 mt-0.5" />
+          <div className="flex-1">
+            <p className="text-sm font-medium text-destructive">
+              Delete {airline.name}?
+            </p>
+            <p className="text-sm text-muted-foreground mt-1">
+              This airline has no safety cards and will be permanently removed. This cannot be undone.
+            </p>
+            <div className="flex gap-2 mt-3">
+              <Button variant="destructive" size="sm" onClick={handleDelete} disabled={deleting}>
+                {deleting
+                  ? <><Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> Deleting...</>
+                  : <><Trash2 className="h-3.5 w-3.5 mr-1.5" /> Delete permanently</>}
+              </Button>
+              <Button variant="ghost" size="sm" onClick={() => setConfirmingDelete(false)} disabled={deleting}>
+                Cancel
+              </Button>
+            </div>
+          </div>
+        </div>
+      </div>
+    )}
   </div>
-);
+  );
+};
 
 // ─── Profile Editor ───────────────────────────────────────────────
 
@@ -186,7 +281,7 @@ const AirlineProfileEditor: React.FC<{
   const [name, setName] = useState(airline.name);
   const [iata, setIata] = useState(airline.iata_code ?? '');
   const [icao, setIcao] = useState(airline.icao_code ?? '');
-  const [country, setCountry] = useState(airline.country ?? '');
+  const [country, setCountry] = useState<string[]>(airline.countries ?? []);
   const [description, setDescription] = useState(airline.description ?? '');
   const [active, setActive] = useState(airline.active);
   const [logoPath, setLogoPath] = useState(airline.logo_path);
@@ -224,7 +319,7 @@ const AirlineProfileEditor: React.FC<{
         name: name.trim() || undefined,
         iata_code: iata.trim().toUpperCase() || null,
         icao_code: icao.trim().toUpperCase() || null,
-        country: country.trim() || null,
+        countries: country,
         description: description.trim() || null,
         active,
         logo_path: logoPath,
@@ -278,7 +373,7 @@ const AirlineProfileEditor: React.FC<{
           <input className={INPUT_CLASS} value={iata} onChange={(e) => setIata(e.target.value)} placeholder="IATA (e.g. AA)" maxLength={3} />
           <input className={INPUT_CLASS} value={icao} onChange={(e) => setIcao(e.target.value)} placeholder="ICAO (e.g. AAL)" maxLength={4} />
           <div className="col-span-2">
-            <CountrySelect value={country} onChange={setCountry} placeholder="Country" />
+            <CountryMultiSelect value={country} onChange={setCountry} />
           </div>
         </div>
       </div>
@@ -309,6 +404,184 @@ const AirlineProfileEditor: React.FC<{
             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Save'}
           </Button>
         </div>
+      </div>
+    </div>
+  );
+};
+
+// ─── Merge Panel ──────────────────────────────────────────────────
+
+const AirlineMergePanel: React.FC<{
+  airline: AirlineDetail;
+  cardCount: number;
+  onMerged: (targetId: string) => void;
+  onCancel: () => void;
+}> = ({ airline, cardCount, onMerged, onCancel }) => {
+  const [allAirlines, setAllAirlines] = useState<LookupItem[]>([]);
+  const [targetId, setTargetId] = useState<string | null>(null);
+  const [targetDetail, setTargetDetail] = useState<AirlineDetail | null>(null);
+  const [loadingTarget, setLoadingTarget] = useState(false);
+  const [executing, setExecuting] = useState(false);
+  const [confirmed, setConfirmed] = useState(false);
+
+  // Fields from source to carry over (only when target lacks them)
+  const [carryIata, setCarryIata] = useState(false);
+  const [carryIcao, setCarryIcao] = useState(false);
+  const [carryLogo, setCarryLogo] = useState(false);
+  const [carryDescription, setCarryDescription] = useState(false);
+
+  useEffect(() => {
+    fetchAirlines().then(setAllAirlines);
+  }, []);
+
+  useEffect(() => {
+    if (!targetId) { setTargetDetail(null); return; }
+    setLoadingTarget(true);
+    setConfirmed(false);
+    fetchAirlineDetail(targetId).then((d) => {
+      setTargetDetail(d);
+      setLoadingTarget(false);
+    });
+  }, [targetId]);
+
+  const options: ComboboxOption[] = allAirlines
+    .filter((a) => a.id !== airline.id)
+    .map((a) => ({ value: a.id, label: a.name }));
+
+  const handleMerge = async () => {
+    if (!targetId) return;
+    setExecuting(true);
+    try {
+      const fieldsToCarry: Partial<AirlineUpdate> = {};
+      if (carryIata && airline.iata_code) fieldsToCarry.iata_code = airline.iata_code;
+      if (carryIcao && airline.icao_code) fieldsToCarry.icao_code = airline.icao_code;
+      if (carryLogo && airline.logo_path) fieldsToCarry.logo_path = airline.logo_path;
+      if (carryDescription && airline.description) fieldsToCarry.description = airline.description;
+
+      await mergeAirlines(airline.id, targetId, fieldsToCarry);
+      onMerged(targetId);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Merge failed');
+      setExecuting(false);
+    }
+  };
+
+  const hasTransferableFields = !!(
+    (airline.iata_code && !targetDetail?.iata_code) ||
+    (airline.icao_code && !targetDetail?.icao_code) ||
+    (airline.logo_path && !targetDetail?.logo_path) ||
+    (airline.description && !targetDetail?.description)
+  );
+
+  return (
+    <div className="rounded-xl border-2 border-amber-500/40 bg-card p-6">
+      <div className="flex items-center gap-2 mb-4">
+        <AlertTriangle className="h-5 w-5 text-amber-500" />
+        <h2 className="text-lg font-semibold">Merge Airline</h2>
+      </div>
+
+      <p className="text-sm text-muted-foreground mb-4">
+        Merge <strong>{airline.name}</strong> into another airline. All {cardCount} safety card{cardCount !== 1 ? 's' : ''} will
+        be reassigned, and <strong>{airline.name}</strong> will be permanently deleted.
+      </p>
+
+      <div className="mb-4">
+        <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-1.5 block">
+          Merge into
+        </label>
+        <Combobox
+          options={options}
+          value={targetId}
+          onChange={(value) => setTargetId(value)}
+          placeholder="Select target airline..."
+          searchPlaceholder="Search airlines..."
+        />
+      </div>
+
+      {loadingTarget && (
+        <div className="flex items-center gap-2 py-4 text-sm text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin" /> Loading target details...
+        </div>
+      )}
+
+      {targetDetail && (
+        <div className="rounded-lg border bg-muted/30 p-4 mb-4">
+          <div className="flex items-center gap-3 mb-3">
+            <div className="flex items-center gap-2 flex-1 min-w-0">
+              <div className="h-8 w-8 rounded-md bg-muted/60 flex-shrink-0 flex items-center justify-center overflow-hidden text-xs font-bold text-muted-foreground">
+                {airline.logo_url
+                  ? <img src={airline.logo_url} alt="" className="h-full w-full object-contain" />
+                  : airline.name.charAt(0).toUpperCase()}
+              </div>
+              <span className="text-sm font-medium truncate">{airline.name}</span>
+            </div>
+            <ArrowRight className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+            <div className="flex items-center gap-2 flex-1 min-w-0">
+              <div className="h-8 w-8 rounded-md bg-muted/60 flex-shrink-0 flex items-center justify-center overflow-hidden text-xs font-bold text-muted-foreground">
+                {targetDetail.logo_url
+                  ? <img src={targetDetail.logo_url} alt="" className="h-full w-full object-contain" />
+                  : targetDetail.name.charAt(0).toUpperCase()}
+              </div>
+              <span className="text-sm font-medium truncate">{targetDetail.name}</span>
+            </div>
+          </div>
+
+          {hasTransferableFields && (
+            <div className="border-t pt-3 mt-3">
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2">
+                Carry over from {airline.name}
+              </p>
+              <div className="space-y-1.5">
+                {airline.iata_code && !targetDetail.iata_code && (
+                  <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
+                    <input type="checkbox" checked={carryIata} onChange={(e) => setCarryIata(e.target.checked)} className="rounded border-input" />
+                    IATA code: <span className="font-mono font-medium">{airline.iata_code}</span>
+                  </label>
+                )}
+                {airline.icao_code && !targetDetail.icao_code && (
+                  <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
+                    <input type="checkbox" checked={carryIcao} onChange={(e) => setCarryIcao(e.target.checked)} className="rounded border-input" />
+                    ICAO code: <span className="font-mono font-medium">{airline.icao_code}</span>
+                  </label>
+                )}
+                {airline.logo_path && !targetDetail.logo_path && (
+                  <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
+                    <input type="checkbox" checked={carryLogo} onChange={(e) => setCarryLogo(e.target.checked)} className="rounded border-input" />
+                    Logo
+                  </label>
+                )}
+                {airline.description && !targetDetail.description && (
+                  <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
+                    <input type="checkbox" checked={carryDescription} onChange={(e) => setCarryDescription(e.target.checked)} className="rounded border-input" />
+                    Description
+                  </label>
+                )}
+              </div>
+            </div>
+          )}
+
+          <div className="border-t pt-3 mt-3 text-sm text-muted-foreground">
+            <strong>{cardCount}</strong> card{cardCount !== 1 ? 's' : ''} will be moved to <strong>{targetDetail.name}</strong>.
+          </div>
+        </div>
+      )}
+
+      <div className="flex items-center justify-between">
+        {targetDetail && !confirmed ? (
+          <Button variant="destructive" size="sm" onClick={() => setConfirmed(true)}>
+            <AlertTriangle className="h-3.5 w-3.5 mr-1.5" />
+            Merge &amp; Delete {airline.name}
+          </Button>
+        ) : targetDetail && confirmed ? (
+          <Button variant="destructive" size="sm" onClick={handleMerge} disabled={executing}>
+            {executing
+              ? <><Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> Merging...</>
+              : <><Check className="h-3.5 w-3.5 mr-1.5" /> Confirm: permanently delete {airline.name}</>}
+          </Button>
+        ) : (
+          <div />
+        )}
+        <Button variant="ghost" size="sm" onClick={onCancel} disabled={executing}>Cancel</Button>
       </div>
     </div>
   );

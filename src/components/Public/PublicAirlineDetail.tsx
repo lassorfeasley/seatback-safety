@@ -28,9 +28,9 @@ export const PublicAirlineDetail: React.FC = () => {
   useEffect(() => {
     if (!airline) return;
     const crumbs: Breadcrumb[] = [];
-    if (airline.country) {
+    if (airline.countries && airline.countries.length > 0) {
       crumbs.push({ label: 'Countries', to: '/countries' });
-      crumbs.push({ label: airline.country, to: `/airlines?q=${encodeURIComponent(airline.country)}` });
+      crumbs.push({ label: airline.countries.join(', '), to: `/airlines?q=${encodeURIComponent(airline.countries[0])}` });
     }
     crumbs.push({ label: 'Airlines', to: '/airlines' });
     crumbs.push({ label: airline.name });

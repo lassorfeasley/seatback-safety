@@ -46,7 +46,7 @@ export const PublicAirlinesBrowse: React.FC = () => {
     const q = query.toLowerCase().trim();
     if (q) {
       list = list.filter((a) => {
-        const haystack = [a.name, a.iata_code, a.icao_code, a.country]
+        const haystack = [a.name, a.iata_code, a.icao_code, ...(a.countries ?? [])]
           .filter(Boolean)
           .join(' ')
           .toLowerCase();

@@ -761,7 +761,7 @@ export const PublicHome: React.FC = () => {
               { value: cards.length, label: 'Cards' },
               { value: allAirlines.length, label: 'Airlines' },
               { value: manufacturers.length, label: 'Manufacturers' },
-              { value: new Set(allAirlines.map((a) => a.country).filter(Boolean)).size, label: 'Countries' },
+              { value: new Set(allAirlines.flatMap((a) => a.countries ?? [])).size, label: 'Countries' },
               { value: languageCount, label: 'Languages' },
               { value: (() => { const yrs = cards.map((c) => c.published_year).filter((y): y is number => y != null); return yrs.length > 0 ? Math.max(...yrs) - Math.min(...yrs) : 0; })(), label: 'Years span' },
             ].map((stat) => (

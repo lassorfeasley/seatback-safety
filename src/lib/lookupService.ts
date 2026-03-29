@@ -13,7 +13,7 @@ export interface AirlineDetail {
   slug: string;
   iata_code: string | null;
   icao_code: string | null;
-  country: string | null;
+  countries: string[];
   logo_path: string | null;
   logo_url: string | null;
   active: boolean;
@@ -129,11 +129,19 @@ export async function fetchAirlines(): Promise<LookupItem[]> {
 export async function fetchAirlineDetail(id: string): Promise<AirlineDetail | null> {
   const { data } = await supabase
     .from('airlines')
-    .select('id, name, slug, iata_code, icao_code, country, logo_path, active, description')
+    .select('id, name, slug, iata_code, icao_code, logo_path, active, description')
     .eq('id', id)
     .single();
   if (!data) return null;
-  return { ...data, logo_url: entityImageUrl(data.logo_path) } as AirlineDetail;
+
+  const { data: countryRows } = await supabase
+    .from('airline_countries')
+    .select('country_name')
+    .eq('airline_id', id)
+    .order('country_name');
+  const countries = (countryRows ?? []).map((r: { country_name: string }) => r.country_name);
+
+  return { ...data, countries, logo_url: entityImageUrl(data.logo_path) } as AirlineDetail;
 }
 
 export async function fetchAirlinesBrowse(): Promise<AirlineBrowse[]> {
@@ -144,6 +152,7 @@ export async function fetchAirlinesBrowse(): Promise<AirlineBrowse[]> {
   if (!data) return [];
   return (data as Array<Record<string, unknown>>).map((row) => ({
     ...row,
+    countries: (row.countries as string[] | null) ?? [],
     logo_url: entityImageUrl(row.logo_path as string | null),
   })) as AirlineBrowse[];
 }
@@ -171,17 +180,85 @@ export interface AirlineUpdate {
   name?: string;
   iata_code?: string | null;
   icao_code?: string | null;
-  country?: string | null;
+  countries?: string[];
   logo_path?: string | null;
   active?: boolean;
   description?: string | null;
 }
 
 export async function updateAirline(id: string, update: AirlineUpdate): Promise<void> {
-  const patch: Record<string, unknown> = { ...update };
-  if (update.name) patch.slug = slugify(update.name);
-  const { error } = await supabase.from('airlines').update(patch).eq('id', id);
+  const { countries, ...rest } = update;
+  const patch: Record<string, unknown> = { ...rest };
+  if (rest.name) patch.slug = slugify(rest.name);
+
+  if (Object.keys(patch).length > 0) {
+    const { error } = await supabase.from('airlines').update(patch).eq('id', id);
+    if (error) throw new Error(error.message);
+  }
+
+  if (countries !== undefined) {
+    await supabase.from('airline_countries').delete().eq('airline_id', id);
+    if (countries.length > 0) {
+      const rows = countries.map((c) => ({ airline_id: id, country_name: c }));
+      const { error } = await supabase.from('airline_countries').insert(rows);
+      if (error) throw new Error(error.message);
+    }
+  }
+}
+
+export async function deleteAirline(id: string): Promise<void> {
+  const detail = await fetchAirlineDetail(id);
+  if (detail?.logo_path) {
+    await supabase.storage.from('entity-images').remove([detail.logo_path]);
+  }
+  const { error } = await supabase.from('airlines').delete().eq('id', id);
   if (error) throw new Error(error.message);
+}
+
+export async function mergeAirlines(
+  sourceId: string,
+  targetId: string,
+  fieldsToCarry?: Partial<AirlineUpdate>
+): Promise<{ movedCards: number }> {
+  if (sourceId === targetId) {
+    throw new Error('Cannot merge an airline into itself');
+  }
+
+  if (fieldsToCarry && Object.keys(fieldsToCarry).length > 0) {
+    await updateAirline(targetId, fieldsToCarry);
+  }
+
+  // Merge countries from source into target (ON CONFLICT DO NOTHING)
+  const { data: sourceCountries } = await supabase
+    .from('airline_countries')
+    .select('country_name')
+    .eq('airline_id', sourceId);
+  if (sourceCountries && sourceCountries.length > 0) {
+    const rows = sourceCountries.map((r: { country_name: string }) => ({
+      airline_id: targetId,
+      country_name: r.country_name,
+    }));
+    await supabase.from('airline_countries').upsert(rows, { onConflict: 'airline_id,country_name' });
+  }
+
+  const { data, error: moveErr } = await supabase
+    .from('safety_cards')
+    .update({ airline_id: targetId })
+    .eq('airline_id', sourceId)
+    .select('id');
+  if (moveErr) throw new Error(`Failed to reassign cards: ${moveErr.message}`);
+  const movedCards = data?.length ?? 0;
+
+  const source = await fetchAirlineDetail(sourceId);
+  const carriedLogo = fieldsToCarry?.logo_path !== undefined;
+  if (source?.logo_path && !carriedLogo) {
+    await supabase.storage.from('entity-images').remove([source.logo_path]);
+  }
+
+  const { error: delErr } = await supabase.from('airlines').delete().eq('id', sourceId);
+  if (delErr) throw new Error(`Failed to delete source airline: ${delErr.message}`);
+
+  return { movedCards };
 }
 
 export interface CollectionStats {
@@ -191,39 +268,31 @@ export interface CollectionStats {
 }
 
 export async function fetchCollectionStats(): Promise<CollectionStats> {
-  const { data } = await supabase
+  const { data: browseData } = await supabase
     .from('airline_browse')
-    .select('country, card_count');
+    .select('card_count');
+  const browseRows = (browseData ?? []) as Array<{ card_count: number }>;
+  const withCards = browseRows.filter((r) => r.card_count > 0);
+  const totalCards = browseRows.reduce((sum, r) => sum + r.card_count, 0);
 
-  const rows = (data ?? []) as Array<{ country: string | null; card_count: number }>;
-  const withCards = rows.filter((r) => r.card_count > 0);
-  const countries = new Set(
-    withCards.map((r) => r.country).filter(Boolean)
-  );
-  const totalCards = rows.reduce((sum, r) => sum + r.card_count, 0);
+  const { data: countryData } = await supabase
+    .from('country_card_counts')
+    .select('name');
+  const totalCountries = countryData?.length ?? 0;
 
   return {
     totalCards,
     totalAirlines: withCards.length,
-    totalCountries: countries.size,
+    totalCountries,
   };
 }
 
 export async function fetchCountriesBrowse(): Promise<CountryBrowse[]> {
   const { data } = await supabase
-    .from('airline_browse')
-    .select('country, card_count');
-
-  const rows = (data ?? []) as Array<{ country: string | null; card_count: number }>;
-  const byCountry = new Map<string, number>();
-  for (const r of rows) {
-    if (r.country && r.card_count > 0) {
-      byCountry.set(r.country, (byCountry.get(r.country) ?? 0) + r.card_count);
-    }
-  }
-  return [...byCountry.entries()]
-    .map(([name, card_count]) => ({ name, card_count }))
-    .sort((a, b) => a.name.localeCompare(b.name));
+    .from('country_card_counts')
+    .select('name, card_count')
+    .order('name');
+  return (data ?? []) as CountryBrowse[];
 }
 
 // ─── Aircraft Manufacturers ──────────────────────────────────────

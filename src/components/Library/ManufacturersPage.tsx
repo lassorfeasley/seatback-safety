@@ -1,6 +1,6 @@
-import React, { useEffect, useState, useCallback, useRef } from 'react';
+import React, { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
-import { Plus, Loader2, Pencil, Upload, X } from 'lucide-react';
+import { Plus, Loader2, Pencil, Upload, X, Search } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
   fetchManufacturersBrowse,
@@ -21,6 +21,7 @@ export const ManufacturersPage: React.FC<ManufacturersPageProps> = ({ onSelectMa
   const [loading, setLoading] = useState(true);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
+  const [query, setQuery] = useState('');
 
   const refresh = useCallback(async () => {
     const data = await fetchManufacturersBrowse();
@@ -30,21 +31,46 @@ export const ManufacturersPage: React.FC<ManufacturersPageProps> = ({ onSelectMa
 
   useEffect(() => { refresh(); }, [refresh]);
 
+  const filtered = useMemo(() => {
+    const q = query.toLowerCase().trim();
+    if (!q) return manufacturers;
+    return manufacturers.filter((m) => {
+      const haystack = [m.name, m.country]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+      return haystack.includes(q);
+    });
+  }, [manufacturers, query]);
+
   return (
     <>
       <header className="flex-shrink-0">
         <div className="max-w-6xl mx-auto flex items-center justify-between px-6 pt-8 pb-4">
           <h1 className="text-sm font-medium tracking-widest uppercase text-black/60">Manufacturers</h1>
-          <Button
-            onClick={() => setShowCreate(true)}
-            size="sm"
-            variant="outline"
-            className="gap-1.5 border-black/20 text-black/60 hover:text-black hover:bg-gray-50"
-            disabled={showCreate}
-          >
-            <Plus className="h-4 w-4" />
-            Add Manufacturer
-          </Button>
+          <div className="flex items-center gap-2">
+            <div className="relative">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+              <input
+                type="text"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Search manufacturers..."
+                className="h-8 w-52 rounded-md border border-input bg-transparent pl-8 pr-3 text-sm
+                           placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              />
+            </div>
+            <Button
+              onClick={() => setShowCreate(true)}
+              size="sm"
+              variant="outline"
+              className="gap-1.5 border-black/20 text-black/60 hover:text-black hover:bg-gray-50"
+              disabled={showCreate}
+            >
+              <Plus className="h-4 w-4" />
+              Add Manufacturer
+            </Button>
+          </div>
         </div>
       </header>
 

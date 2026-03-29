@@ -1112,7 +1112,26 @@ const MetadataEditor: React.FC<MetadataEditorProps> = ({ card, onSave, onCancel,
 
   const acceptAirline = useCallback(async () => {
     if (!suggestions?.airline) return;
-    const match = airlines.find((a) => a.label.toLowerCase() === suggestions.airline!.toLowerCase());
+    const suggestion = suggestions.airline.toLowerCase();
+
+    // 1. Exact match
+    let match = airlines.find((a) => a.label.toLowerCase() === suggestion);
+
+    // 2. Substring match: AI suggestion contains an existing name or vice versa
+    if (!match) {
+      const scored = airlines
+        .map((a) => {
+          const label = a.label.toLowerCase();
+          if (suggestion.includes(label) || label.includes(suggestion)) {
+            return { option: a, score: Math.abs(label.length - suggestion.length) };
+          }
+          return null;
+        })
+        .filter(Boolean) as { option: ComboboxOption; score: number }[];
+      scored.sort((a, b) => a.score - b.score);
+      if (scored.length > 0) match = scored[0].option;
+    }
+
     if (match) {
       setAirlineId(match.value);
     } else {
