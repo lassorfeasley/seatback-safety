@@ -17,7 +17,7 @@ Return ONLY valid JSON with this exact structure (use null for any field you can
 }
 
 Guidelines:
-- For airline, always use the full official trade name, never abbreviations or initials (e.g. "KLM Royal Dutch Airlines" not "KLM", "British Airways" not "BA", "All Nippon Airways" not "ANA", "Japan Airlines" not "JAL", "Trans World Airlines" not "TWA", "Scandinavian Airlines System" not "SAS")
+- For airline, identify the airline from any branding, logos, or text visible on the card, then return its full official trade name. Use your aviation knowledge to expand abbreviations and shorthand — e.g. if the card shows "jetBlue", return "JetBlue Airways"; if it shows "BA", return "British Airways"; if it shows "KLM", return "KLM Royal Dutch Airlines"; if it shows "SAS", return "Scandinavian Airlines System"; if it shows "ANA", return "All Nippon Airways"; if it shows "JAL", return "Japan Airlines"; if it shows "TWA", return "Trans World Airlines"
 - Always include common suffixes like "Airlines", "Airways", "Air Lines" where they are part of the official brand name (e.g. "Southwest Airlines" not "Southwest", "American Airlines" not "American", "Republic Airways" not "Republic")
 - Use the English marketing/trade name, not the legal holding company name (e.g. "Lufthansa" not "Deutsche Lufthansa AG", "Air France" not "Societe Air France")
 - For defunct or historical airlines, use the name as it appeared during the era of the card's publication
@@ -44,7 +44,7 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    const { imageUrls } = await req.json() as { imageUrls: string[] };
+    const { imageUrls, existingAirlines } = await req.json() as { imageUrls: string[]; existingAirlines?: string[] };
 
     if (!imageUrls || imageUrls.length === 0) {
       return new Response(
@@ -89,6 +89,11 @@ Deno.serve(async (req: Request) => {
       text: "Analyze this airline safety card and extract the metadata as specified.",
     });
 
+    let systemPrompt = SYSTEM_PROMPT;
+    if (existingAirlines && existingAirlines.length > 0) {
+      systemPrompt += `\n\nIMPORTANT — The database already contains the following airlines. If the airline on this card matches or is clearly the same as one of these names (even if the spelling, capitalization, or abbreviation differs), you MUST return the EXACT name from this list. Only return a new name if the airline is genuinely not in this list.\n\nExisting airlines:\n${existingAirlines.map((n: string) => `- ${n}`).join('\n')}`;
+    }
+
     const anthropicResponse = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: {
@@ -99,7 +104,7 @@ Deno.serve(async (req: Request) => {
       body: JSON.stringify({
         model: "claude-sonnet-4-20250514",
         max_tokens: 1024,
-        system: SYSTEM_PROMPT,
+        system: systemPrompt,
         messages: [{ role: "user", content }],
       }),
     });

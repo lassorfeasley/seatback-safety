@@ -93,9 +93,13 @@ export const ManufacturersPage: React.FC<ManufacturersPageProps> = ({ onSelectMa
               <h2 className="text-lg font-medium">No manufacturers yet</h2>
               <p className="text-sm text-muted-foreground">Add your first manufacturer to get started.</p>
             </div>
+          ) : filtered.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-24 gap-2 text-center">
+              <p className="text-sm text-muted-foreground">No manufacturers match "{query}"</p>
+            </div>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {manufacturers.map((mfr) => (
+              {filtered.map((mfr) => (
                 <ManufacturerTile
                   key={mfr.id}
                   manufacturer={mfr}

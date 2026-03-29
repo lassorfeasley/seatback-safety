@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import { fetchAirlines } from './lookupService';
 
 export interface AircraftSuggestion {
   manufacturer: string | null;
@@ -23,8 +24,11 @@ export async function analyzeCardScans(
       return { error: 'No panel images available for analysis.' };
     }
 
+    const airlines = await fetchAirlines();
+    const existingAirlineNames = airlines.map((a) => a.name);
+
     const { data, error } = await supabase.functions.invoke('analyze-card', {
-      body: { imageUrls },
+      body: { imageUrls, existingAirlines: existingAirlineNames },
     });
 
     if (error) {

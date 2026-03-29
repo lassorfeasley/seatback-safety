@@ -869,8 +869,25 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
             const extR = (stageSize.width - stagePosition.x) / stageScale + 10000;
             const extT = -stagePosition.y / stageScale - 10000;
             const extB = (stageSize.height - stagePosition.y) / stageScale + 10000;
+            const isCorner = hasConstrainedHeight && !straightenMode && !clickCropPoint;
+            const isLine = hasConstrainedHeight && !straightenMode && !!clickCropPoint;
+
+            if (isCorner) {
+              return (
+                <>
+                  {/* Vertical: only downward from cursor */}
+                  <Line points={[crosshairPos.x, crosshairPos.y, crosshairPos.x, extB]} stroke={color} strokeWidth={sw} listening={false} />
+                  {/* Horizontal: only in the crop direction */}
+                  {isBackFace
+                    ? <Line points={[extL, crosshairPos.y, crosshairPos.x, crosshairPos.y]} stroke={color} strokeWidth={sw} listening={false} />
+                    : <Line points={[crosshairPos.x, crosshairPos.y, extR, crosshairPos.y]} stroke={color} strokeWidth={sw} listening={false} />
+                  }
+                </>
+              );
+            }
+
             const showVertical = true;
-            const showHorizontal = !(hasConstrainedHeight && clickCropPoint);
+            const showHorizontal = !isLine;
             return (
               <>
                 {showVertical && (
