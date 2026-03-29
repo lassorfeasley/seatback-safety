@@ -2,17 +2,25 @@ import React from 'react';
 import { Check } from 'lucide-react';
 import type { StepIndicatorProps } from './types';
 
-const STEPS = [
+const STRUCTURED_STEPS = [
   { step: 1 as const, label: 'Scans' },
   { step: 2 as const, label: 'Card Info' },
   { step: 3 as const, label: 'Crop Panels' },
   { step: 4 as const, label: 'Fold Structure' },
 ];
 
+const UNSTRUCTURED_STEPS = [
+  { step: 1 as const, label: 'Scans' },
+  { step: 2 as const, label: 'Card Info' },
+  { step: 3 as const, label: 'Gallery' },
+];
+
 export const StepIndicator: React.FC<StepIndicatorProps> = ({
   currentStep,
+  cardMode,
   onStepClick,
 }) => {
+  const STEPS = cardMode === 'unstructured' ? UNSTRUCTURED_STEPS : STRUCTURED_STEPS;
   return (
     <nav className="flex items-center justify-center gap-1 py-3 px-4" aria-label="Steps">
       {STEPS.map(({ step, label }, index) => {

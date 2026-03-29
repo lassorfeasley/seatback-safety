@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
-import { Plus, Minus, Check, ChevronDown, ChevronUp, Trash2, Paperclip, X, BookOpen } from 'lucide-react';
+import { Plus, Minus, Check, ChevronDown, ChevronUp, Trash2, Paperclip, X, BookOpen, Image } from 'lucide-react';
 import {
   fetchAirlines,
   createAirline,
@@ -27,9 +27,11 @@ export const CardInfoStep: React.FC<CardInfoStepProps> = ({
   panelCount,
   images: _images,
   isBooklet,
+  cardMode,
   onMetadataChange,
   onPanelCountChange,
   onBookletChange,
+  onCardModeChange,
   onBack,
   onContinue,
 }) => {
@@ -195,10 +197,16 @@ export const CardInfoStep: React.FC<CardInfoStepProps> = ({
               <label className="text-sm text-muted-foreground">Format</label>
               <button
                 type="button"
-                onClick={() => onBookletChange(!isBooklet)}
+                onClick={() => {
+                  if (cardMode === 'unstructured') {
+                    onCardModeChange('structured');
+                  } else {
+                    onBookletChange(!isBooklet);
+                  }
+                }}
                 className={cn(
                   'flex items-center gap-2 rounded-lg border-2 px-3 py-1.5 text-sm font-medium transition-all',
-                  isBooklet
+                  isBooklet && cardMode === 'structured'
                     ? 'border-primary bg-primary/10 text-primary'
                     : 'border-muted text-muted-foreground hover:border-primary/40'
                 )}
@@ -206,8 +214,26 @@ export const CardInfoStep: React.FC<CardInfoStepProps> = ({
                 <BookOpen className="h-4 w-4" />
                 Booklet
               </button>
+              <button
+                type="button"
+                onClick={() => onCardModeChange(cardMode === 'unstructured' ? 'structured' : 'unstructured')}
+                className={cn(
+                  'flex items-center gap-2 rounded-lg border-2 px-3 py-1.5 text-sm font-medium transition-all',
+                  cardMode === 'unstructured'
+                    ? 'border-primary bg-primary/10 text-primary'
+                    : 'border-muted text-muted-foreground hover:border-primary/40'
+                )}
+              >
+                <Image className="h-4 w-4" />
+                Nonstandard
+              </button>
             </div>
 
+            {cardMode === 'unstructured' ? (
+              <p className="text-xs text-muted-foreground">
+                Scans will be displayed as a gallery. No panel cropping or fold structure needed.
+              </p>
+            ) : (
             <div className="flex flex-col gap-1.5">
               <label className="text-sm text-muted-foreground">
                 {isBooklet ? 'Page Count' : 'Panel Count'}
@@ -240,6 +266,7 @@ export const CardInfoStep: React.FC<CardInfoStepProps> = ({
                 </Button>
               </div>
             </div>
+            )}
           </div>
 
           {/* Collapsible Details */}

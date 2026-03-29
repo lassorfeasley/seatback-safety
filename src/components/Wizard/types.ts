@@ -2,6 +2,7 @@ import type { CropRegion, ImageDimensions } from '@/components/PanelCropper/type
 import type { Crease, CoverDesignation, Side } from '@/components/FoldEditor/types';
 
 export type PanelSide = 'front' | 'back';
+export type CardMode = 'structured' | 'unstructured';
 
 // ─── Document / Provenance / Pricing Types ──────────────────────
 
@@ -99,6 +100,7 @@ export interface PanelSlot {
 export interface WizardState {
   currentStep: 1 | 2 | 3 | 4;
   metadata: CardMetadata;
+  cardMode: CardMode;
   panelCount: number; // 0 = not set yet (defaults to 3)
   images: LibraryImage[];
   slots: PanelSlot[];
@@ -108,6 +110,7 @@ export interface WizardState {
   cover: CoverDesignation;
   pivotIndex: number | null;
   isBooklet: boolean;
+  ogImageIndex: number | null; // index into images[] for OG source (unstructured only)
 
   // UI state for step 3 (crop session)
   activeSlot: { panelIndex: number; side: PanelSide } | null;
@@ -121,9 +124,11 @@ export interface CardInfoStepProps {
   panelCount: number;
   images: LibraryImage[];
   isBooklet: boolean;
+  cardMode: CardMode;
   onMetadataChange: (metadata: CardMetadata) => void;
   onPanelCountChange: (count: number) => void;
   onBookletChange: (isBooklet: boolean) => void;
+  onCardModeChange: (mode: CardMode) => void;
   onBack: () => void;
   onContinue: () => void;
 }
@@ -144,6 +149,7 @@ export interface CropStepProps {
   cropHeight: number | null;
   activeSlot: { panelIndex: number; side: PanelSide } | null;
   selectedImageId: string | null;
+  isBooklet?: boolean;
   onSelectSlot: (panelIndex: number, side: PanelSide) => void;
   onSelectImage: (imageId: string) => void;
   onCancelCrop: () => void;
@@ -192,5 +198,6 @@ export interface StepIndicatorProps {
   imageCount: number;
   filledSlots: number;
   totalSlots: number;
+  cardMode: CardMode;
   onStepClick: (step: 1 | 2 | 3 | 4) => void;
 }

@@ -4,4 +4,5 @@ export type {
   LibraryImage,
   PanelSlot,
   PanelSide,
+  CardMode,
 } from './types';

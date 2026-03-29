@@ -121,6 +121,12 @@ export const PublicCardDetail: React.FC = () => {
     if (card?.cover) {
       setLightboxSide(card.cover.side);
     }
+    if (card?.card_mode === 'unstructured' && card.scans.length > 0) {
+      setShowLightbox(true);
+    }
+    if (card?.is_irregular && card.panels.length > 0) {
+      setShowLightbox(true);
+    }
   }, [card]);
 
   useEffect(() => {
@@ -301,7 +307,10 @@ export const PublicCardDetail: React.FC = () => {
   const panelCount = card.panel_count ?? 0;
   const hasPanels = card.panels.filter((p) => p.side === 'front').length > 0 || card.panels.filter((p) => p.side === 'back').length > 0;
   const allCropsComplete = hasPanels && card.panels.length >= panelCount * 2;
-  const has3D = allCropsComplete;
+  const isUnstructured = card.card_mode === 'unstructured';
+  const isIrregular = card.is_irregular === true;
+  const has3D = allCropsComplete && !isUnstructured && !isIrregular;
+  const hasGalleryScans = isUnstructured && card.scans.length > 0;
 
   const manufacturers = [...new Set(card.aircraft.map((a) => a.manufacturerName).filter(Boolean))];
   const models = [...new Set(card.aircraft.map((a) => a.modelName).filter(Boolean))];
@@ -317,6 +326,7 @@ export const PublicCardDetail: React.FC = () => {
         <ArrowLeft className="h-6 w-6 sm:h-4 sm:w-4 text-foreground" />
       </button>
 
+      {!isUnstructured && !isIrregular && (
       <div
         className="fixed left-0 top-1/2 -translate-y-1/2 z-50 flex items-center justify-center py-3 pl-1 pr-2 bg-white text-foreground text-[10px] font-medium tracking-widest border border-black/20 border-l-0 pointer-events-none overflow-visible [writing-mode:vertical-lr]"
         aria-hidden
@@ -326,6 +336,7 @@ export const PublicCardDetail: React.FC = () => {
           <span className="sm:hidden">Tap to open, drag to rotate</span>
         </span>
       </div>
+      )}
 
       <div className="fixed top-0 right-0 z-50 flex">
         {!showInfo && (
@@ -374,6 +385,30 @@ export const PublicCardDetail: React.FC = () => {
           />
           )}
         </div>
+      ) : (isIrregular && allCropsComplete) ? (
+        !showLightbox && (
+        <div className="flex items-center justify-center h-full">
+          <button
+            onClick={() => setShowLightbox(true)}
+            className="flex flex-col items-center gap-3 text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+          >
+            <ZoomIn className="h-8 w-8" />
+            <span className="text-sm font-medium">View card</span>
+          </button>
+        </div>
+        )
+      ) : hasGalleryScans ? (
+        !showLightbox && (
+        <div className="flex items-center justify-center h-full">
+          <button
+            onClick={() => setShowLightbox(true)}
+            className="flex flex-col items-center gap-3 text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+          >
+            <ZoomIn className="h-8 w-8" />
+            <span className="text-sm font-medium">View scans</span>
+          </button>
+        </div>
+        )
       ) : (
         <div className="flex items-center justify-center h-full">
           <p className="text-muted-foreground text-sm">No 3D visualizer available for this card.</p>
@@ -427,7 +462,142 @@ export const PublicCardDetail: React.FC = () => {
         </div>
       </InfoSheet>
 
-      {showLightbox && card.panels.length > 0 && (() => {
+      {showLightbox && (isUnstructured ? card.scans.length > 0 : card.panels.length > 0) && (() => {
+        // ── Unstructured: show scans as gallery pages ──
+        if (isUnstructured) {
+          const scanImages = card.scans
+            .sort((a, b) => a.sort_order - b.sort_order)
+            .map((s, idx) => ({
+              id: s.id,
+              url: s.url || s.thumbnailUrl || '',
+              alt: s.original_filename || `Scan ${idx + 1}`,
+              width_px: s.width_px,
+              height_px: s.height_px,
+            }))
+            .filter((s) => s.url);
+
+          const totalNavStates = scanImages.length;
+          const currentImage = scanImages[lightboxPage] ?? scanImages[0];
+          if (!currentImage) return null;
+
+          const currentImages = [currentImage];
+          const navLabel = `${Math.min(lightboxPage + 1, totalNavStates)} / ${totalNavStates}`;
+
+          const vh = window.innerHeight;
+          const vw = window.innerWidth;
+          const availableWidth = vw - 80;
+          const availableHeight = vh - 32;
+          const uniformHeight = Math.min(currentImage.height_px, availableHeight);
+          const imgW = uniformHeight * (currentImage.width_px / currentImage.height_px);
+          const scaleX = availableWidth / imgW;
+          const scaleY = availableHeight / uniformHeight;
+          const scale = Math.min(1, scaleX, scaleY);
+
+          return (
+            <div
+              className="fixed inset-0 z-[100] bg-black/95 backdrop-blur-xl flex items-center justify-center overflow-hidden"
+              onClick={() => setShowLightbox(false)}
+            >
+              <div className="fixed top-0 left-1/2 -translate-x-1/2 z-[110] flex border border-t-0 border-white/20 rounded-b-md overflow-hidden" onClick={(e) => e.stopPropagation()}>
+                {totalNavStates > 1 && (
+                  <>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setLightboxPage((p) => Math.max(0, p - 1)); }}
+                      disabled={lightboxPage === 0}
+                      className="flex items-center justify-center w-11 h-11 sm:w-8 sm:h-8 bg-black/70 hover:bg-black/90 text-white disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                      aria-label="Previous"
+                    >
+                      <ChevronLeft className="h-6 w-6 sm:h-4 sm:w-4" />
+                    </button>
+                    <div className="flex items-center justify-center h-11 sm:h-8 px-3 bg-black/70 text-white/80 text-xs sm:text-[11px] font-medium border-l border-r border-white/20 min-w-[100px] text-center select-none">
+                      {navLabel}
+                    </div>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setLightboxPage((p) => Math.min(totalNavStates - 1, p + 1)); }}
+                      disabled={lightboxPage >= totalNavStates - 1}
+                      className="flex items-center justify-center w-11 h-11 sm:w-8 sm:h-8 bg-black/70 hover:bg-black/90 text-white disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                      aria-label="Next"
+                    >
+                      <ChevronRight className="h-6 w-6 sm:h-4 sm:w-4" />
+                    </button>
+                  </>
+                )}
+              </div>
+              <div className="fixed top-0 right-0 z-[110]">
+                <button
+                  onClick={() => setShowLightbox(false)}
+                  className="flex items-center justify-center w-11 h-11 sm:w-8 sm:h-8 bg-black/70 hover:bg-black/90 text-white transition-colors border-b border-l border-white/20"
+                  aria-label="Close lightbox"
+                >
+                  <X className="h-6 w-6 sm:h-4 sm:w-4" />
+                </button>
+              </div>
+              <div
+                ref={lbContentRef}
+                className="flex items-center justify-center w-full h-full overflow-hidden px-10 touch-none"
+                style={{ cursor: lbView.zoom >= LB_MAX_ZOOM ? 'grab' : 'zoom-in', userSelect: 'none' }}
+                onMouseDown={(e) => {
+                  if (e.button !== 0) return;
+                  e.preventDefault();
+                  const d = lbDrag.current;
+                  d.active = true;
+                  d.moved = false;
+                  d.startX = e.clientX;
+                  d.startY = e.clientY;
+                  d.panX0 = lbViewRef.current.panX;
+                  d.panY0 = lbViewRef.current.panY;
+                }}
+                onTouchStart={(e) => {
+                  if (e.touches.length === 1) {
+                    const touch = e.touches[0];
+                    const d = lbDrag.current;
+                    d.active = true;
+                    d.moved = false;
+                    d.startX = touch.clientX;
+                    d.startY = touch.clientY;
+                    d.panX0 = lbViewRef.current.panX;
+                    d.panY0 = lbViewRef.current.panY;
+                  }
+                }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (lbDrag.current.moved) return;
+                  const rect = e.currentTarget.getBoundingClientRect();
+                  const mx = e.clientX - rect.left - rect.width / 2;
+                  const my = e.clientY - rect.top - rect.height / 2;
+                  setLbView(prev => {
+                    const z = Math.min(LB_MAX_ZOOM, prev.zoom * 2);
+                    if (z === prev.zoom) return prev;
+                    const r = z / prev.zoom;
+                    return { zoom: z, panX: mx - r * (mx - prev.panX), panY: my - r * (my - prev.panY) };
+                  });
+                }}
+              >
+                <div
+                  className="flex items-stretch gap-0 shrink-0 min-h-0"
+                  style={{
+                    height: `${uniformHeight}px`,
+                    transform: `translate(${lbView.panX}px, ${lbView.panY}px) scale(${scale * lbView.zoom})`,
+                    transformOrigin: 'center center',
+                  }}
+                >
+                  {currentImages.map((img) => (
+                    <img
+                      key={img.id}
+                      src={img.url}
+                      alt={img.alt}
+                      className="min-h-0 shrink-0 w-auto object-contain object-left-top"
+                      style={{ height: `${uniformHeight}px`, maxHeight: `${uniformHeight}px` }}
+                      draggable={false}
+                    />
+                  ))}
+                </div>
+              </div>
+            </div>
+          );
+        }
+
+        // ── Structured: existing panel-based lightbox ──
         const isBooklet = card.is_booklet;
         const allFront = card.panels.filter((p) => p.side === 'front').sort((a, b) => a.panel_index - b.panel_index);
         const allBack = card.panels.filter((p) => p.side === 'back').sort((a, b) => a.panel_index - b.panel_index);

@@ -4,6 +4,7 @@ import { CardInfoStep } from './CardInfoStep';
 import { ImageLibraryStep } from './ImageLibraryStep';
 import { CropStep } from './CropStep';
 import { FoldStep } from './FoldStep';
+import { GalleryStep } from './GalleryStep';
 import { extractCropWithRotation } from '@/components/PanelCropper/utils';
 import {
   saveCardToLibrary,
@@ -12,7 +13,7 @@ import {
   updateCardFolds,
   updateCardPanels,
 } from '@/lib/safetyCardService';
-import type { WizardState, PanelSlot, PanelSide, LibraryImage, CardMetadata } from './types';
+import type { WizardState, PanelSlot, PanelSide, LibraryImage, CardMetadata, CardMode } from './types';
 import { EMPTY_METADATA } from './types';
 import type { CropRegion } from '@/components/PanelCropper/types';
 import type { Crease, Side, FoldDirection } from '@/components/FoldEditor/types';
@@ -72,6 +73,7 @@ export const SafetyCardWizard: React.FC<SafetyCardWizardProps> = ({
   const [state, setState] = useState<WizardState>({
     currentStep: initialStep ?? 1,
     metadata: { ...EMPTY_METADATA },
+    cardMode: 'structured',
     panelCount: 0,
     images: [],
     slots: [],
@@ -81,6 +83,7 @@ export const SafetyCardWizard: React.FC<SafetyCardWizardProps> = ({
     cover: { spreadIndex: 0, side: 'front' },
     pivotIndex: null,
     isBooklet: false,
+    ogImageIndex: null,
     activeSlot: null,
     selectedImageId: null,
   });
@@ -567,6 +570,33 @@ export const SafetyCardWizard: React.FC<SafetyCardWizardProps> = ({
     setState((prev) => ({ ...prev, isBooklet }));
   }, []);
 
+  const handleCardModeChange = useCallback((cardMode: CardMode) => {
+    setState((prev) => ({ ...prev, cardMode }));
+  }, []);
+
+  const handleOgSelect = useCallback((index: number) => {
+    setState((prev) => ({ ...prev, ogImageIndex: index }));
+  }, []);
+
+  const handleGalleryReorder = useCallback((fromIndex: number, toIndex: number) => {
+    setState((prev) => {
+      const images = [...prev.images];
+      const [moved] = images.splice(fromIndex, 1);
+      images.splice(toIndex, 0, moved);
+      let ogImageIndex = prev.ogImageIndex;
+      if (ogImageIndex !== null) {
+        if (ogImageIndex === fromIndex) {
+          ogImageIndex = toIndex;
+        } else if (fromIndex < ogImageIndex && toIndex >= ogImageIndex) {
+          ogImageIndex--;
+        } else if (fromIndex > ogImageIndex && toIndex <= ogImageIndex) {
+          ogImageIndex++;
+        }
+      }
+      return { ...prev, images, ogImageIndex };
+    });
+  }, []);
+
   // ─── Export ────────────────────────────────────────────────────
 
   const handleExport = useCallback(async () => {
@@ -710,6 +740,7 @@ export const SafetyCardWizard: React.FC<SafetyCardWizardProps> = ({
               imageCount={state.images.length}
               filledSlots={filledSlots}
               totalSlots={totalSlots}
+              cardMode={state.cardMode}
               onStepClick={goToStep}
             />
           )}
@@ -742,15 +773,30 @@ export const SafetyCardWizard: React.FC<SafetyCardWizardProps> = ({
             panelCount={state.panelCount}
             images={state.images}
             isBooklet={state.isBooklet}
+            cardMode={state.cardMode}
             onMetadataChange={handleMetadataChange}
             onPanelCountChange={handlePanelCountChange}
             onBookletChange={handleBookletChange}
+            onCardModeChange={handleCardModeChange}
             onBack={() => goToStep(1)}
             onContinue={() => goToStep(3)}
           />
         )}
 
-        {state.currentStep === 3 && (
+        {state.currentStep === 3 && state.cardMode === 'unstructured' && !isEditMode && (
+          <GalleryStep
+            images={state.images}
+            ogImageIndex={state.ogImageIndex}
+            onReorder={handleGalleryReorder}
+            onSelectOg={handleOgSelect}
+            onBack={() => goToStep(2)}
+            onSave={handleSave}
+            isSaving={isSaving}
+            saveProgress={saveProgress}
+          />
+        )}
+
+        {state.currentStep === 3 && state.cardMode !== 'unstructured' && (
           <CropStep
             panelCount={state.panelCount}
             slots={state.slots}
@@ -759,6 +805,7 @@ export const SafetyCardWizard: React.FC<SafetyCardWizardProps> = ({
             cropHeight={state.cropHeight}
             activeSlot={state.activeSlot}
             selectedImageId={state.selectedImageId}
+            isBooklet={state.isBooklet}
             onSelectSlot={handleSelectSlot}
             onSelectImage={handleSelectImage}
             onCancelCrop={handleCancelCrop}

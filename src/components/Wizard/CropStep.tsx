@@ -24,6 +24,7 @@ export const CropStep: React.FC<CropStepProps> = ({
   cropHeight,
   activeSlot,
   selectedImageId,
+  isBooklet,
   onSelectSlot,
   onSelectImage,
   onCancelCrop,
@@ -86,6 +87,7 @@ export const CropStep: React.FC<CropStepProps> = ({
         onResetWidthLock={onResetWidthLock}
         onSetCropDimensions={onSetCropDimensions}
         onSelectSlot={onSelectSlot}
+        isBooklet={isBooklet}
       />
     );
   }
@@ -175,7 +177,7 @@ export const CropStep: React.FC<CropStepProps> = ({
         <div className="flex items-center justify-between px-1 flex-shrink-0">
           <span className="text-xs font-medium flex items-center gap-1.5">
             <span className="w-2 h-2 rounded-full bg-blue-500" />
-            Front Side
+            {isBooklet ? 'Page Fronts' : 'Front Side'}
           </span>
           <span className="text-[10px] text-muted-foreground">
             {frontFilled}/{panelCount}
@@ -202,8 +204,8 @@ export const CropStep: React.FC<CropStepProps> = ({
         <div className="flex items-center justify-between px-1 flex-shrink-0">
           <span className="text-xs font-medium flex items-center gap-1.5">
             <span className="w-2 h-2 rounded-full bg-amber-500" />
-            Back Side
-            <span className="text-[10px] text-muted-foreground font-normal ml-1">flipped</span>
+            {isBooklet ? 'Page Backs' : 'Back Side'}
+            {!isBooklet && <span className="text-[10px] text-muted-foreground font-normal ml-1">flipped</span>}
           </span>
           <span className="text-[10px] text-muted-foreground">
             {backFilled}/{panelCount}
@@ -345,8 +347,9 @@ interface CropSessionProps {
   cropWidth: number | null;
   cropHeight: number | null;
   existingSlot: { imageId: string | null; cropRegion: CropRegion | null } | undefined;
-  oppositeSlot: { imageId: string | null; cropRegion: CropRegion | null } | undefined;
+  oppositeSlot: { imageId: string | null; cropRegion: CropRegion | null; widthPx?: number; heightPx?: number } | undefined;
   initialRotation: number;
+  isBooklet?: boolean;
   onSelectImage: (imageId: string) => void;
   onCancelCrop: () => void;
   onConfirmCrop: (
@@ -373,6 +376,7 @@ const CropSession: React.FC<CropSessionProps> = ({
   cropHeight,
   existingSlot,
   oppositeSlot,
+  isBooklet,
   onSelectImage,
   onCancelCrop,
   onConfirmCrop,
@@ -671,7 +675,7 @@ const CropSession: React.FC<CropSessionProps> = ({
           {/* Panel map */}
           <div className="flex flex-col gap-0.5">
             <div className="flex items-center gap-2 mb-0.5">
-              <span className="text-[10px] text-muted-foreground w-7">Front</span>
+              <span className="text-[10px] text-muted-foreground w-7">{isBooklet ? 'Recto' : 'Front'}</span>
               <div className="flex gap-0.5">
                 {Array.from({ length: panelCount }, (_, i) => {
                   const isActive = activeSlot.panelIndex === i && activeSlot.side === 'front';
@@ -703,7 +707,7 @@ const CropSession: React.FC<CropSessionProps> = ({
               </div>
             </div>
             <div className="flex items-center gap-2">
-              <span className="text-[10px] text-muted-foreground w-7">Back</span>
+              <span className="text-[10px] text-muted-foreground w-7">{isBooklet ? 'Verso' : 'Back'}</span>
               <div className="flex gap-0.5">
                 {Array.from({ length: panelCount }, (_, rawI) => {
                   const i = panelCount - 1 - rawI;

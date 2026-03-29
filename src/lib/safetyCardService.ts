@@ -12,6 +12,7 @@ export interface CardSummary {
   created_at: string;
   cover_side: string;
   cover_spread_index: number;
+  card_mode: string;
   thumbnail_url: string | null;
   preview_url: string | null;
   og_url: string | null;
@@ -31,6 +32,7 @@ export interface ScanInfo {
   mime_type: string | null;
   file_size_bytes: number | null;
   file_path: string | null;
+  sort_order: number;
   url: string | null;
   thumbnailUrl: string | null;
 }
@@ -81,6 +83,8 @@ export interface CardDetailData {
   cover_spread_index: number;
   cover_side: string;
   is_booklet: boolean;
+  card_mode: string;
+  is_irregular: boolean;
   created_at: string;
   airline_name: string | null;
   aircraft_label: string | null;
@@ -217,13 +221,14 @@ export async function saveCardToLibrary(
         revision: m.revision || null,
         language: m.language || null,
         notes: m.notes || null,
-        panel_count: state.panelCount,
+        panel_count: state.cardMode === 'unstructured' ? 0 : state.panelCount,
         crop_width: state.cropWidth,
         crop_height: state.cropHeight,
         cover_spread_index: state.cover.spreadIndex,
         cover_side: state.cover.side,
         pivot_index: state.pivotIndex,
         is_booklet: state.isBooklet ?? false,
+        card_mode: state.cardMode ?? 'structured',
       })
       .select('id')
       .single();
@@ -233,6 +238,151 @@ export async function saveCardToLibrary(
     }
 
     const cardId = card.id as string;
+
+    // ── Unstructured card: upload scans with sort_order, set OG, skip panels/creases ──
+    if (state.cardMode === 'unstructured') {
+      let ogScanId: string | null = null;
+
+      for (let idx = 0; idx < state.images.length; idx++) {
+        const image = state.images[idx];
+        if (!image.imageFile) continue;
+        const file = image.imageFile;
+        report('Uploading scans', idx + 1, state.images.length);
+
+        const sha256 = await computeSha256(file);
+        const ext = fileExtension(file);
+        const scanId = crypto.randomUUID();
+        const storagePath = `${cardId}/${scanId}.${ext}`;
+        const dims = await getImageDimensions(image);
+
+        const { error: uploadErr } = await supabase.storage
+          .from('scans')
+          .upload(storagePath, file, { contentType: file.type, upsert: false });
+
+        if (uploadErr) {
+          return { cardId, success: false, error: `Failed to upload scan: ${uploadErr.message}` };
+        }
+
+        const { error: scanDbErr } = await supabase.from('card_scans').insert({
+          id: scanId,
+          card_id: cardId,
+          dpi: 600,
+          width_px: dims.width,
+          height_px: dims.height,
+          file_path: storagePath,
+          original_filename: file.name,
+          mime_type: file.type,
+          file_size_bytes: file.size,
+          sha256_hash: sha256,
+          sort_order: idx,
+        });
+
+        if (scanDbErr) {
+          return { cardId, success: false, error: `Failed to save scan record: ${scanDbErr.message}` };
+        }
+
+        if (state.ogImageIndex === idx) {
+          ogScanId = scanId;
+        }
+      }
+
+      if (ogScanId) {
+        await supabase
+          .from('safety_cards')
+          .update({ og_scan_id: ogScanId })
+          .eq('id', cardId);
+      }
+
+      // Save provenance
+      const provEntries = state.metadata.provenance ?? [];
+      for (let idx = 0; idx < provEntries.length; idx++) {
+        const entry = provEntries[idx];
+        report('Saving provenance', idx + 1, provEntries.length);
+
+        const { data: provRow, error: provErr } = await supabase
+          .from('card_provenance')
+          .insert({
+            card_id: cardId,
+            source: entry.source || null,
+            acquired_date: entry.acquiredDate || null,
+            notes: entry.notes || null,
+          })
+          .select('id')
+          .single();
+
+        if (provErr || !provRow) {
+          return { cardId, success: false, error: `Failed to save provenance: ${provErr?.message}` };
+        }
+
+        for (const doc of entry.documents) {
+          if (!doc.file) continue;
+          const docId = crypto.randomUUID();
+          const ext = doc.originalFilename.split('.').pop()?.toLowerCase() || 'bin';
+          const docPath = `${cardId}/${docId}.${ext}`;
+          await supabase.storage.from('documents').upload(docPath, doc.file, {
+            contentType: doc.mimeType || 'application/octet-stream',
+          });
+          await supabase.from('card_documents').insert({
+            id: docId,
+            card_id: cardId,
+            provenance_id: provRow.id,
+            file_path: docPath,
+            original_filename: doc.originalFilename,
+            mime_type: doc.mimeType || null,
+            file_size_bytes: doc.fileSizeBytes,
+            label: doc.label || null,
+          });
+        }
+      }
+
+      // Save price observations
+      const priceObs = state.metadata.priceObservations ?? [];
+      for (let idx = 0; idx < priceObs.length; idx++) {
+        const obs = priceObs[idx];
+        report('Saving price history', idx + 1, priceObs.length);
+
+        const { data: priceRow, error: priceErr } = await supabase
+          .from('card_price_observations')
+          .insert({
+            card_id: cardId,
+            price_usd: obs.priceUsd,
+            price_type: obs.priceType || null,
+            source: obs.source || null,
+            observed_date: obs.observedDate || null,
+          })
+          .select('id')
+          .single();
+
+        if (priceErr || !priceRow) {
+          return { cardId, success: false, error: `Failed to save price: ${priceErr?.message}` };
+        }
+
+        for (const doc of obs.documents) {
+          if (!doc.file) continue;
+          const docId = crypto.randomUUID();
+          const ext = doc.originalFilename.split('.').pop()?.toLowerCase() || 'bin';
+          const docPath = `${cardId}/${docId}.${ext}`;
+          await supabase.storage.from('documents').upload(docPath, doc.file, {
+            contentType: doc.mimeType || 'application/octet-stream',
+          });
+          await supabase.from('card_documents').insert({
+            id: docId,
+            card_id: cardId,
+            price_observation_id: priceRow.id,
+            file_path: docPath,
+            original_filename: doc.originalFilename,
+            mime_type: doc.mimeType || null,
+            file_size_bytes: doc.fileSizeBytes,
+            label: doc.label || null,
+          });
+        }
+      }
+
+      report('Done', 1, 1);
+      return { cardId, success: true };
+    }
+
+    // ── Structured card: full panel/crop/fold pipeline ──────────
 
     // ── 2. Create card_sides (front + back) ─────────────────────
     report('Creating sides', 1, 1);
@@ -554,7 +704,7 @@ export async function fetchCards(opts?: { includeUnpublished?: boolean }): Promi
   const { data: cards, error } = await supabase
     .from('safety_cards')
     .select(`
-      id, title, panel_count, cover_spread_index, cover_side, is_booklet, created_at, published_year, airline_id,
+      id, title, panel_count, cover_spread_index, cover_side, is_booklet, card_mode, created_at, published_year, airline_id,
       airlines ( name ),
       aircraft_variants ( name, aircraft_models ( name, aircraft_manufacturers ( name ) ) ),
       card_aircraft ( sort_order,
@@ -636,8 +786,9 @@ export async function fetchCards(opts?: { includeUnpublished?: boolean }): Promi
     }
 
     const hasImages = thumbnailUrl != null;
+    const isUnstructured = (card.card_mode as string) === 'unstructured';
     const previewUrl = hasImages ? derivativePublicUrl(`${card.id}/preview.jpg`) : null;
-    const ogUrl = hasImages ? derivativePublicUrl(`${card.id}/og.jpg`) : null;
+    const ogUrl = (hasImages || isUnstructured) ? derivativePublicUrl(`${card.id}/og.jpg`) : null;
 
     return {
       id: card.id as string,
@@ -646,6 +797,7 @@ export async function fetchCards(opts?: { includeUnpublished?: boolean }): Promi
       created_at: card.created_at as string,
       cover_side: card.cover_side as string,
       cover_spread_index: card.cover_spread_index as number,
+      card_mode: (card.card_mode as string) ?? 'structured',
       thumbnail_url: thumbnailUrl,
       preview_url: previewUrl,
       og_url: ogUrl,
@@ -663,7 +815,7 @@ export async function fetchCardDetail(cardId: string): Promise<CardDetailData | 
       .from('safety_cards')
       .select(`
         id, title, panel_count, crop_width, crop_height,
-        cover_spread_index, cover_side, pivot_index, is_booklet, created_at,
+        cover_spread_index, cover_side, pivot_index, is_booklet, card_mode, is_irregular, created_at,
         published_year, revision, language, notes, airline_id,
         airlines ( name, logo_path ),
         aircraft_variants ( name, aircraft_models ( name, aircraft_manufacturers ( name, logo_path ) ) ),
@@ -685,8 +837,9 @@ export async function fetchCardDetail(cardId: string): Promise<CardDetailData | 
       .single(),
     supabase
       .from('card_scans')
-      .select('id, side, dpi, width_px, height_px, original_filename, mime_type, file_size_bytes, file_path')
-      .eq('card_id', cardId),
+      .select('id, side, dpi, width_px, height_px, original_filename, mime_type, file_size_bytes, file_path, sort_order')
+      .eq('card_id', cardId)
+      .order('sort_order', { ascending: true }),
     supabase
       .from('card_provenance')
       .select(`
@@ -729,6 +882,7 @@ export async function fetchCardDetail(cardId: string): Promise<CardDetailData | 
     mime_type: s.mime_type as string | null,
     file_size_bytes: s.file_size_bytes as number | null,
     file_path: s.file_path as string | null,
+    sort_order: (s.sort_order as number) ?? idx,
     url: scanUrls[idx].url,
     thumbnailUrl: scanUrls[idx].thumbnailUrl,
   }));
@@ -986,6 +1140,8 @@ export async function fetchCardDetail(cardId: string): Promise<CardDetailData | 
     cover_spread_index: card.cover_spread_index,
     cover_side: card.cover_side,
     is_booklet: card.is_booklet === true,
+    card_mode: (card.card_mode as string) ?? 'structured',
+    is_irregular: card.is_irregular === true,
     created_at: card.created_at,
     airline_name: (airline?.name as string) ?? null,
     aircraft_label: aircraftLabel,
@@ -1652,6 +1808,68 @@ export async function updateBookletFlag(
   const { error } = await supabase
     .from('safety_cards')
     .update({ is_booklet: isBooklet })
+    .eq('id', cardId);
+
+  if (error) return { success: false, error: error.message };
+  return { success: true };
+}
+
+// ─── Update OG Scan (unstructured cards) ─────────────────────────
+
+export async function updateOgScan(
+  cardId: string,
+  scanId: string | null
+): Promise<{ success: boolean; error?: string }> {
+  const { error } = await supabase
+    .from('safety_cards')
+    .update({ og_scan_id: scanId })
+    .eq('id', cardId);
+
+  if (error) return { success: false, error: error.message };
+  return { success: true };
+}
+
+// ─── Update Scan Sort Order ──────────────────────────────────────
+
+export async function updateScanSortOrder(
+  cardId: string,
+  scanIds: string[]
+): Promise<{ success: boolean; error?: string }> {
+  for (let i = 0; i < scanIds.length; i++) {
+    const { error } = await supabase
+      .from('card_scans')
+      .update({ sort_order: i })
+      .eq('id', scanIds[i])
+      .eq('card_id', cardId);
+    if (error) return { success: false, error: error.message };
+  }
+  return { success: true };
+}
+
+// ─── Update Card Mode ────────────────────────────────────────────
+
+export async function updateCardMode(
+  cardId: string,
+  cardMode: string
+): Promise<{ success: boolean; error?: string }> {
+  const { error } = await supabase
+    .from('safety_cards')
+    .update({ card_mode: cardMode })
+    .eq('id', cardId);
+
+  if (error) return { success: false, error: error.message };
+  return { success: true };
+}
+
+// ─── Update Irregular Flag ───────────────────────────────────────
+
+export async function updateIrregularFlag(
+  cardId: string,
+  isIrregular: boolean
+): Promise<{ success: boolean; error?: string }> {
+  const { error } = await supabase
+    .from('safety_cards')
+    .update({ is_irregular: isIrregular })
     .eq('id', cardId);
 
   if (error) return { success: false, error: error.message };

@@ -184,3 +184,48 @@ export async function generateAndUploadOgImage(
     return { success: false, error: err instanceof Error ? err.message : String(err) };
   }
 }
+
+/**
+ * Generate a 1200x1200 OG image from a single scan URL and upload it.
+ */
+export async function generateAndUploadOgFromScan(
+  cardId: string,
+  scanUrl: string
+): Promise<{ success: boolean; url?: string; error?: string }> {
+  try {
+    const img = await loadImage(scanUrl);
+
+    const canvas = document.createElement('canvas');
+    canvas.width = OG_SIZE;
+    canvas.height = OG_SIZE;
+    const ctx = canvas.getContext('2d')!;
+
+    ctx.fillStyle = BG_COLOR;
+    ctx.fillRect(0, 0, OG_SIZE, OG_SIZE);
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+
+    drawSinglePanel(ctx, img, 900);
+
+    const blob = await new Promise<Blob>((resolve, reject) => {
+      canvas.toBlob(
+        (b) => (b ? resolve(b) : reject(new Error('Failed to create OG blob'))),
+        'image/jpeg',
+        0.92
+      );
+    });
+
+    const path = `${cardId}/og.jpg`;
+    const { error } = await supabase.storage.from('derivatives').upload(path, blob, {
+      contentType: 'image/jpeg',
+      upsert: true,
+    });
+
+    if (error) return { success: false, error: error.message };
+
+    const { data } = supabase.storage.from('derivatives').getPublicUrl(path);
+    return { success: true, url: data.publicUrl };
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}

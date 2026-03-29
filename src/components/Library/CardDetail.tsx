@@ -25,11 +25,13 @@ import {
   Upload,
   Hash,
   BookOpen,
+  Star,
+  Image as ImageIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { CardVisualizer3D } from '@/components/FoldEditor/CardVisualizer3D';
 import { BookletVisualizer } from '@/components/FoldEditor/BookletVisualizer';
-import { generateAndUploadOgImage, type OgImageInput } from '@/lib/ogImageGenerator';
+import { generateAndUploadOgImage, generateAndUploadOgFromScan, type OgImageInput } from '@/lib/ogImageGenerator';
 import { OgBuilder } from '@/components/Library/OgBuilder';
 import { analyzeCardScans, type CardSuggestions } from '@/lib/aiService';
 import { supabase } from '@/lib/supabase';
@@ -40,6 +42,9 @@ import {
   uploadScansToCard,
   updatePanelCount,
   updateBookletFlag,
+  updateOgScan,
+  updateCardMode,
+  updateIrregularFlag,
   addProvenanceEntry,
   deleteProvenanceEntry,
   addPriceObservation,
@@ -267,15 +272,51 @@ export const CardDetail: React.FC<CardDetailProps> = ({ cardId, onBack, onEditCr
     }
   }, [cardId, refreshCard]);
 
-  const handleBookletToggle = useCallback(async () => {
+  const handleFormatChange = useCallback(async (format: 'card' | 'booklet' | 'unstructured') => {
     if (!card) return;
-    const result = await updateBookletFlag(cardId, !card.is_booklet);
+    const newIsBooklet = format === 'booklet';
+    const newCardMode = format === 'unstructured' ? 'unstructured' : 'structured';
+
+    const results = await Promise.all([
+      card.is_booklet !== newIsBooklet ? updateBookletFlag(cardId, newIsBooklet) : { success: true },
+      card.card_mode !== newCardMode ? updateCardMode(cardId, newCardMode) : { success: true },
+    ]);
+
+    const failed = results.find((r) => !r.success);
+    if (failed && 'error' in failed) {
+      alert(`Failed to update format: ${failed.error}`);
+    } else {
+      await refreshCard();
+    }
+  }, [cardId, card, refreshCard]);
+
+  const handleIrregularToggle = useCallback(async () => {
+    if (!card) return;
+    const result = await updateIrregularFlag(cardId, !card.is_irregular);
     if (result.success) {
       await refreshCard();
     } else {
-      alert(`Failed to update booklet flag: ${result.error}`);
+      alert(`Failed to update irregular flag: ${result.error}`);
     }
-  }, [cardId, card?.is_booklet, refreshCard]);
+  }, [cardId, card, refreshCard]);
+
+  const [settingOgScan, setSettingOgScan] = useState(false);
+  const handleSetOgScan = useCallback(async (scan: ScanInfo) => {
+    if (!card || !scan.url) return;
+    setSettingOgScan(true);
+    const ogResult = await updateOgScan(cardId, scan.id);
+    if (ogResult.success) {
+      const genResult = await generateAndUploadOgFromScan(cardId, scan.url);
+      if (genResult.success && genResult.url) {
+        setOgImageUrl(genResult.url + '?t=' + Date.now());
+        setOgExists(true);
+      }
+      await refreshCard();
+    } else {
+      alert(`Failed to set OG scan: ${ogResult.error}`);
+    }
+    setSettingOgScan(false);
+  }, [cardId, card, refreshCard]);
 
   const handleSaveMetadata = useCallback(async (update: CardMetadataUpdate) => {
     setSaving(true);
@@ -394,6 +435,8 @@ export const CardDetail: React.FC<CardDetailProps> = ({ cardId, onBack, onEditCr
   const panelsPerSide = card.panel_count || frontPanels.length || panelCount;
   const hasPanels = frontPanels.length > 0 || backPanels.length > 0;
   const hasScans = card.scans.length > 0;
+  const isUnstructured = card.card_mode === 'unstructured';
+  const currentFormat: 'card' | 'booklet' | 'unstructured' = isUnstructured ? 'unstructured' : card.is_booklet ? 'booklet' : 'card';
   const allCropsComplete = hasPanels && card.panels.length >= panelCount * 2;
   const createdDate = card.created_at
     ? new Date(card.created_at).toLocaleDateString(undefined, {
@@ -474,7 +517,163 @@ export const CardDetail: React.FC<CardDetailProps> = ({ cardId, onBack, onEditCr
         <div className="max-w-6xl mx-auto px-6 py-6 flex flex-col gap-8">
           <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_340px] gap-8">
             <div className="min-w-0 flex flex-col gap-5">
-              {/* ── Card Visualizer (only when all crops are complete) ── */}
+              {isUnstructured ? (
+                /* ── Unstructured card: scan gallery with OG selection ── */
+                <>
+                  <SetupStep
+                    number={1}
+                    title="Upload Scans"
+                    icon={<Upload className="h-4 w-4" />}
+                    complete={hasScans}
+                    summary={hasScans ? `${card.scans.length} scan${card.scans.length !== 1 ? 's' : ''}` : undefined}
+                  >
+                    {isEditing ? (
+                      <>
+                        <div
+                          className="flex flex-col items-center justify-center py-8 border-2 border-dashed border-muted-foreground/15 rounded-xl cursor-pointer hover:border-primary/30 hover:bg-primary/5 transition-all"
+                          onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                          onDrop={(e) => { e.preventDefault(); e.stopPropagation(); if (e.dataTransfer.files.length > 0) handleScanUpload(e.dataTransfer.files); }}
+                          onClick={() => scanFileInputRef.current?.click()}
+                        >
+                          {uploadingScans ? (
+                            <>
+                              <Loader2 className="h-6 w-6 text-muted-foreground/40 mb-1.5 animate-spin" />
+                              <p className="text-sm font-medium text-muted-foreground">Uploading...</p>
+                            </>
+                          ) : (
+                            <>
+                              <Upload className="h-6 w-6 text-muted-foreground/40 mb-1.5" />
+                              <p className="text-sm font-medium text-muted-foreground">
+                                {hasScans ? 'Add more scans' : 'Drop scans here or click to browse'}
+                              </p>
+                              <p className="text-xs text-muted-foreground/60 mt-0.5">JPG, PNG, TIFF, or WebP</p>
+                            </>
+                          )}
+                        </div>
+                        <input
+                          ref={scanFileInputRef}
+                          type="file"
+                          accept="image/*"
+                          multiple
+                          className="hidden"
+                          onChange={(e) => { if (e.target.files) handleScanUpload(e.target.files); if (scanFileInputRef.current) scanFileInputRef.current.value = ''; }}
+                        />
+                      </>
+                    ) : hasScans ? (
+                      <p className="text-sm text-muted-foreground">{card.scans.length} scan{card.scans.length !== 1 ? 's' : ''}</p>
+                    ) : (
+                      <p className="text-sm text-muted-foreground/50">No scans uploaded. Enter edit mode to add scans.</p>
+                    )}
+                  </SetupStep>
+
+                  <SetupStep
+                    number={2}
+                    title="Format"
+                    icon={<Hash className="h-4 w-4" />}
+                    complete
+                    summary="Nonstandard"
+                  >
+                    {isEditing ? (
+                      <div className="flex flex-col gap-3">
+                        <div className="flex items-center gap-1.5">
+                          {([
+                            { key: 'card' as const, label: 'Card', icon: <Layers className="h-4 w-4" /> },
+                            { key: 'booklet' as const, label: 'Booklet', icon: <BookOpen className="h-4 w-4" /> },
+                            { key: 'unstructured' as const, label: 'Nonstandard', icon: <ImageIcon className="h-4 w-4" /> },
+                          ]).map(({ key, label, icon }) => (
+                            <button
+                              key={key}
+                              type="button"
+                              onClick={() => handleFormatChange(key)}
+                              className={cn(
+                                'flex items-center gap-2 rounded-lg border-2 px-3 py-1.5 text-sm font-medium transition-all',
+                                currentFormat === key
+                                  ? 'border-primary bg-primary/10 text-primary'
+                                  : 'border-muted text-muted-foreground hover:border-primary/40'
+                              )}
+                            >
+                              {icon}
+                              {label}
+                            </button>
+                          ))}
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                          Scans will be displayed as a gallery. No panel cropping or fold structure needed.
+                        </p>
+                      </div>
+                    ) : (
+                      <p className="text-sm text-muted-foreground">Nonstandard (gallery)</p>
+                    )}
+                  </SetupStep>
+
+                  <SetupStep
+                    number={3}
+                    title="Select Cover Image"
+                    icon={<Star className="h-4 w-4" />}
+                    complete={ogExists}
+                    disabled={!hasScans}
+                    summary={ogExists ? 'OG image set' : undefined}
+                  >
+                    {hasScans ? (
+                      <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
+                        {card.scans.map((scan) => (
+                          <button
+                            key={scan.id}
+                            type="button"
+                            onClick={() => isEditing && handleSetOgScan(scan)}
+                            disabled={!isEditing || settingOgScan}
+                            className={cn(
+                              'relative group rounded-lg overflow-hidden border-2 transition-all aspect-square',
+                              isEditing ? 'cursor-pointer hover:border-primary/40' : 'cursor-default',
+                              'border-muted',
+                            )}
+                          >
+                            {(scan.thumbnailUrl || scan.url) ? (
+                              <img
+                                src={scan.thumbnailUrl ?? scan.url!}
+                                alt={scan.original_filename ?? 'Scan'}
+                                className="w-full h-full object-cover"
+                                loading="lazy"
+                              />
+                            ) : (
+                              <div className="w-full h-full flex items-center justify-center bg-muted">
+                                <ImageIcon className="h-5 w-5 text-muted-foreground/40" />
+                              </div>
+                            )}
+                            {isEditing && (
+                              <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
+                                <div className="bg-black/60 rounded-full p-2">
+                                  <Star className="h-4 w-4 text-white" />
+                                </div>
+                              </div>
+                            )}
+                          </button>
+                        ))}
+                        {settingOgScan && (
+                          <div className="absolute inset-0 bg-background/60 flex items-center justify-center z-10">
+                            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <p className="text-sm text-muted-foreground/50">Upload scans first</p>
+                    )}
+                  </SetupStep>
+
+                  {ogExists && ogImageUrl && (
+                    <OgAccordion ogImageUrl={ogImageUrl} />
+                  )}
+
+                  <div className="rounded-lg border bg-muted/30 px-4 py-3">
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <ImageIcon className="h-4 w-4 flex-shrink-0" />
+                      <span>Nonstandard format — scans displayed as gallery on the public page</span>
+                    </div>
+                  </div>
+                </>
+              ) : (
+              /* ── Structured card: full panel/crop/fold pipeline ── */
+              <>
               {allCropsComplete && (
                 card.is_booklet ? (
                 <BookletVisualizer
@@ -569,30 +768,41 @@ export const CardDetail: React.FC<CardDetailProps> = ({ cardId, onBack, onEditCr
                 )}
               </SetupStep>
 
-              {/* ── Step 2: Panel Count ─────────────────────────────── */}
+              {/* ── Step 2: Format + Panel Count ─────────────────────── */}
               <SetupStep
                 number={2}
-                title={card.is_booklet ? 'Page Count' : 'Panel Count'}
+                title="Format"
                 icon={<Hash className="h-4 w-4" />}
                 complete={hasScans}
                 disabled={!hasScans}
-                summary={hasScans ? (card.is_booklet ? `${panelCount} pages` : `${panelCount} panels per side`) : undefined}
+                summary={hasScans ? (isUnstructured ? 'Nonstandard' : card.is_booklet ? `Booklet · ${panelCount} pages${card.is_irregular ? ' · irregular' : ''}` : `Card · ${panelCount} panels${card.is_irregular ? ' · irregular' : ''}`) : undefined}
               >
                 {isEditing ? (
                   <div className="flex flex-col gap-3">
-                    <button
-                      type="button"
-                      onClick={handleBookletToggle}
-                      className={cn(
-                        'self-start flex items-center gap-2 rounded-lg border-2 px-3 py-1.5 text-sm font-medium transition-all',
-                        card.is_booklet
-                          ? 'border-primary bg-primary/10 text-primary'
-                          : 'border-muted text-muted-foreground hover:border-primary/40'
-                      )}
-                    >
-                      <BookOpen className="h-4 w-4" />
-                      Booklet
-                    </button>
+                    <div className="flex items-center gap-1.5">
+                      {([
+                        { key: 'card' as const, label: 'Card', icon: <Layers className="h-4 w-4" /> },
+                        { key: 'booklet' as const, label: 'Booklet', icon: <BookOpen className="h-4 w-4" /> },
+                        { key: 'unstructured' as const, label: 'Nonstandard', icon: <ImageIcon className="h-4 w-4" /> },
+                      ]).map(({ key, label, icon }) => (
+                        <button
+                          key={key}
+                          type="button"
+                          onClick={() => handleFormatChange(key)}
+                          className={cn(
+                            'flex items-center gap-2 rounded-lg border-2 px-3 py-1.5 text-sm font-medium transition-all',
+                            currentFormat === key
+                              ? 'border-primary bg-primary/10 text-primary'
+                              : 'border-muted text-muted-foreground hover:border-primary/40'
+                          )}
+                        >
+                          {icon}
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                    {currentFormat !== 'unstructured' && (
+                    <>
                     <div className="flex items-center gap-3">
                       <Button
                         variant="outline"
@@ -615,10 +825,31 @@ export const CardDetail: React.FC<CardDetailProps> = ({ cardId, onBack, onEditCr
                         {card.is_booklet ? `page${panelCount !== 1 ? 's' : ''} (${panelCount * 2} faces)` : 'panels per side'}
                       </span>
                     </div>
+                    <label className="flex items-center gap-2 cursor-pointer self-start">
+                      <input
+                        type="checkbox"
+                        checked={card.is_irregular}
+                        onChange={handleIrregularToggle}
+                        className="rounded border-border"
+                      />
+                      <span className="text-sm text-muted-foreground">Irregular fold</span>
+                    </label>
+                    {card.is_irregular && (
+                      <p className="text-xs text-muted-foreground -mt-1">
+                        Skips 3D visualizer — visitors go straight to lightbox view.
+                      </p>
+                    )}
+                    </>
+                    )}
+                    {currentFormat === 'unstructured' && (
+                      <p className="text-xs text-muted-foreground">
+                        Scans will be displayed as a gallery. No panel cropping or fold structure needed.
+                      </p>
+                    )}
                   </div>
                 ) : (
                   <p className="text-sm text-muted-foreground">
-                    {card.is_booklet ? `${panelCount} pages (booklet)` : `${panelCount} panels per side`}
+                    {isUnstructured ? 'Nonstandard (gallery)' : card.is_booklet ? `${panelCount} pages (booklet)${card.is_irregular ? ' · irregular' : ''}` : `${panelCount} panels per side${card.is_irregular ? ' · irregular' : ''}`}
                   </p>
                 )}
               </SetupStep>
@@ -713,6 +944,8 @@ export const CardDetail: React.FC<CardDetailProps> = ({ cardId, onBack, onEditCr
               )}
               {!isEditing && ogExists && ogImageUrl && (
                 <OgAccordion ogImageUrl={ogImageUrl} />
+              )}
+              </>
               )}
             </div>
 
@@ -1635,9 +1868,9 @@ const SpreadRow: React.FC<SpreadRowProps> = ({
                 className={cn(
                   'relative rounded-lg overflow-hidden border-2 transition-all h-full',
                   (displayUrl && !isSavingThis) ? 'border-muted' : 'border-dashed border-muted-foreground/20',
-                  isEditing && onEditCrops && !isProcessing && 'cursor-pointer hover:border-primary/40',
+                  isEditing && onEditCrops && 'cursor-pointer hover:border-primary/40',
                 )}
-                onClick={isEditing && onEditCrops && !isProcessing ? () => onEditCrops(panelIndex, side) : undefined}
+                onClick={isEditing && onEditCrops ? () => onEditCrops(panelIndex, side) : undefined}
               >
                 {displayUrl && !isSavingThis ? (
                   <>
@@ -1725,10 +1958,10 @@ const BookletSpreadLayout: React.FC<BookletSpreadLayoutProps> = ({
         className={cn(
           'relative group rounded-md overflow-hidden transition-all',
           (displayUrl && !isSavingThis) ? 'bg-muted/50' : 'bg-muted/20 border-2 border-dashed border-muted-foreground/15',
-          isEditing && onEditCrops && !isProcessing && 'cursor-pointer hover:ring-2 hover:ring-primary/40',
+          isEditing && onEditCrops && 'cursor-pointer hover:ring-2 hover:ring-primary/40',
         )}
         style={{ maxHeight: 120 }}
-        onClick={isEditing && onEditCrops && !isProcessing ? () => onEditCrops(panelIndex, side) : undefined}
+        onClick={isEditing && onEditCrops ? () => onEditCrops(panelIndex, side) : undefined}
       >
         {displayUrl && !isSavingThis ? (
           <>
