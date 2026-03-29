@@ -40,8 +40,8 @@ export const CropStep: React.FC<CropStepProps> = ({
   const totalCount = slots.length;
   const allFilled = filledCount === totalCount;
 
-  // Carry-over rotation: persists across Save & Next navigations
-  const carryRotationRef = React.useRef<number | null>(null);
+  // Carry-over rotation: persists across Save & Next navigations (only for same scan)
+  const carryRotationRef = React.useRef<{ rotation: number; imageId: string } | null>(null);
 
   // If we're in a crop session, show the crop UI
   if (activeSlot) {
@@ -54,7 +54,16 @@ export const CropStep: React.FC<CropStepProps> = ({
       (s) => s.panelIndex === activeSlot.panelIndex && s.side === activeSlot.side
     );
     const selectedImg = images.find((i) => i.id === selectedImageId);
-    const rotation = carryRotationRef.current ?? selectedImg?.rotation ?? 0;
+
+    // Priority: slot's own rotation > carry (only if same scan) > image default > 0
+    let rotation: number;
+    if (existingSlot?.cropRegion && existingSlot.rotation !== undefined) {
+      rotation = existingSlot.rotation;
+    } else if (carryRotationRef.current && carryRotationRef.current.imageId === selectedImageId) {
+      rotation = carryRotationRef.current.rotation;
+    } else {
+      rotation = selectedImg?.rotation ?? 0;
+    }
 
     return (
       <CropSession
@@ -71,7 +80,7 @@ export const CropStep: React.FC<CropStepProps> = ({
         onSelectImage={onSelectImage}
         onCancelCrop={() => { carryRotationRef.current = null; onCancelCrop(); }}
         onConfirmCrop={(pi, s, iid, r, tu, rot, adv) => {
-          carryRotationRef.current = adv ? rot : null;
+          carryRotationRef.current = adv ? { rotation: rot, imageId: iid } : null;
           onConfirmCrop(pi, s, iid, r, tu, rot, adv);
         }}
         onResetWidthLock={onResetWidthLock}
@@ -389,15 +398,22 @@ const CropSession: React.FC<CropSessionProps> = ({
   // Reset local state when navigating to a different panel
   const slotKey = `${activeSlot.panelIndex}-${activeSlot.side}`;
   const prevSlotKeyRef = React.useRef(slotKey);
+  const prevSelectedImageIdRef = React.useRef(selectedImageId);
   React.useEffect(() => {
     if (prevSlotKeyRef.current !== slotKey) {
       prevSlotKeyRef.current = slotKey;
       setRegion(existingSlot?.cropRegion || null);
-      setImageDimensions(null);
+      // Only reset image dimensions when the scan actually changes;
+      // if the same scan is reused for the next panel, CropCanvas won't
+      // re-load the image, so onImageLoad would never restore them.
+      if (prevSelectedImageIdRef.current !== selectedImageId) {
+        setImageDimensions(null);
+      }
+      prevSelectedImageIdRef.current = selectedImageId;
       setStraightenMode(false);
       setLocalRotation(initialRotation);
     }
-  }, [slotKey, existingSlot, initialRotation]);
+  }, [slotKey, existingSlot, initialRotation, selectedImageId]);
   const handleStraighten = useCallback((angleDelta: number) => {
     setLocalRotation((r) => r + angleDelta);
     setStraightenMode(false);
@@ -410,10 +426,14 @@ const CropSession: React.FC<CropSessionProps> = ({
     onSelectImage(imageId);
   }, [images, onSelectImage]);
 
-  // Reset region when image changes (unless it's the same image the slot already has)
+  // Reset region and dimensions when scan changes (unless it's the same image the slot already has)
   useEffect(() => {
     if (selectedImageId !== existingSlot?.imageId) {
       setRegion(null);
+    }
+    if (prevSelectedImageIdRef.current !== selectedImageId) {
+      setImageDimensions(null);
+      prevSelectedImageIdRef.current = selectedImageId;
     }
   }, [selectedImageId, existingSlot?.imageId]);
 

@@ -341,7 +341,7 @@ export async function saveCardToLibrary(
         y: Math.round(slot.cropRegion.y),
         width: Math.round(slot.cropRegion.width),
         height: Math.round(slot.cropRegion.height),
-        rotation_deg: image.rotation,
+        rotation_deg: slot.rotation ?? image.rotation,
         scale: 1,
       });
 
@@ -351,9 +351,10 @@ export async function saveCardToLibrary(
 
       // Generate and upload derivatives
       const imgEl = await loadImage(image.imageUrl);
+      const slotRotation = slot.rotation ?? image.rotation;
 
       // Full resolution crop (no downscaling)
-      const fullBlob = await extractCropWithRotation(imgEl, slot.cropRegion, image.rotation, {
+      const fullBlob = await extractCropWithRotation(imgEl, slot.cropRegion, slotRotation, {
         format: 'jpeg',
         quality: 0.92,
       });
@@ -364,7 +365,7 @@ export async function saveCardToLibrary(
       const fullDims = await blobDimensions(fullBlob);
 
       // Display (~800px wide)
-      const displayBlob = await extractCropWithRotation(imgEl, slot.cropRegion, image.rotation, {
+      const displayBlob = await extractCropWithRotation(imgEl, slot.cropRegion, slotRotation, {
         targetWidth: 800,
         format: 'jpeg',
         quality: 0.85,
@@ -376,7 +377,7 @@ export async function saveCardToLibrary(
       const displayDims = await blobDimensions(displayBlob);
 
       // Thumbnail (~300px wide)
-      const thumbBlob = await extractCropWithRotation(imgEl, slot.cropRegion, image.rotation, {
+      const thumbBlob = await extractCropWithRotation(imgEl, slot.cropRegion, slotRotation, {
         targetWidth: 300,
         format: 'jpeg',
         quality: 0.8,
@@ -1331,7 +1332,7 @@ export async function updateCardPanels(
         y: Math.round(slot.cropRegion.y),
         width: Math.round(slot.cropRegion.width),
         height: Math.round(slot.cropRegion.height),
-        rotation_deg: image.rotation,
+        rotation_deg: slot.rotation ?? image.rotation,
         scale: 1,
       });
 
@@ -1340,8 +1341,9 @@ export async function updateCardPanels(
       }
 
       const imgEl = await loadImage(image.imageUrl);
+      const slotRotation = slot.rotation ?? image.rotation;
 
-      const fullBlob = await extractCropWithRotation(imgEl, slot.cropRegion, image.rotation, {
+      const fullBlob = await extractCropWithRotation(imgEl, slot.cropRegion, slotRotation, {
         format: 'jpeg',
         quality: 0.92,
       });
@@ -1352,7 +1354,7 @@ export async function updateCardPanels(
       });
       const fullDims = await blobDimensions(fullBlob);
 
-      const displayBlob = await extractCropWithRotation(imgEl, slot.cropRegion, image.rotation, {
+      const displayBlob = await extractCropWithRotation(imgEl, slot.cropRegion, slotRotation, {
         targetWidth: 800,
         format: 'jpeg',
         quality: 0.85,
@@ -1364,7 +1366,7 @@ export async function updateCardPanels(
       });
       const displayDims = await blobDimensions(displayBlob);
 
-      const thumbBlob = await extractCropWithRotation(imgEl, slot.cropRegion, image.rotation, {
+      const thumbBlob = await extractCropWithRotation(imgEl, slot.cropRegion, slotRotation, {
         targetWidth: 300,
         format: 'jpeg',
         quality: 0.8,

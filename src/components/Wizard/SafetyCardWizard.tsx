@@ -46,8 +46,8 @@ function generateDefaultCreases(panelCount: number): Crease[] {
 function generateSlots(panelCount: number): PanelSlot[] {
   const slots: PanelSlot[] = [];
   for (let i = 0; i < panelCount; i++) {
-    slots.push({ panelIndex: i, side: 'front', imageId: null, cropRegion: null, thumbnailUrl: null, dirty: false });
-    slots.push({ panelIndex: i, side: 'back', imageId: null, cropRegion: null, thumbnailUrl: null, dirty: false });
+    slots.push({ panelIndex: i, side: 'front', imageId: null, cropRegion: null, thumbnailUrl: null, rotation: 0, dirty: false });
+    slots.push({ panelIndex: i, side: 'back', imageId: null, cropRegion: null, thumbnailUrl: null, rotation: 0, dirty: false });
   }
   return slots;
 }
@@ -106,8 +106,8 @@ export const SafetyCardWizard: React.FC<SafetyCardWizardProps> = ({
         for (let i = 0; i < panelCount; i++) {
           const fp = card.panels.find((p) => p.side === 'front' && p.panel_index === i);
           const bp = card.panels.find((p) => p.side === 'back' && p.panel_index === i);
-          slots.push({ panelIndex: i, side: 'front', imageId: null, cropRegion: null, thumbnailUrl: fp?.thumbnail_url ?? null, dirty: false, widthPx: fp?.width_px, heightPx: fp?.height_px });
-          slots.push({ panelIndex: i, side: 'back', imageId: null, cropRegion: null, thumbnailUrl: bp?.thumbnail_url ?? null, dirty: false, widthPx: bp?.width_px, heightPx: bp?.height_px });
+          slots.push({ panelIndex: i, side: 'front', imageId: null, cropRegion: null, thumbnailUrl: fp?.thumbnail_url ?? null, rotation: 0, dirty: false, widthPx: fp?.width_px, heightPx: fp?.height_px });
+          slots.push({ panelIndex: i, side: 'back', imageId: null, cropRegion: null, thumbnailUrl: bp?.thumbnail_url ?? null, rotation: 0, dirty: false, widthPx: bp?.width_px, heightPx: bp?.height_px });
         }
 
         setState((prev) => ({
@@ -149,10 +149,11 @@ export const SafetyCardWizard: React.FC<SafetyCardWizardProps> = ({
                 imageId: panelData.scanId,
                 cropRegion: { id: `crop-${i}-${side}`, x: panelData.cropX, y: panelData.cropY, width: panelData.cropWidth, height: panelData.cropHeight },
                 thumbnailUrl: panelData.thumbnailUrl,
+                rotation: panelData.rotationDeg,
                 dirty: false,
               });
             } else {
-              slots.push({ panelIndex: i, side, imageId: null, cropRegion: null, thumbnailUrl: null, dirty: false });
+              slots.push({ panelIndex: i, side, imageId: null, cropRegion: null, thumbnailUrl: null, rotation: 0, dirty: false });
             }
           }
         }
@@ -242,6 +243,7 @@ export const SafetyCardWizard: React.FC<SafetyCardWizardProps> = ({
           newSlot.imageId = existing.imageId;
           newSlot.cropRegion = existing.cropRegion;
           newSlot.thumbnailUrl = existing.thumbnailUrl;
+          newSlot.rotation = existing.rotation;
           newSlot.dirty = existing.dirty;
         }
       }
@@ -287,7 +289,7 @@ export const SafetyCardWizard: React.FC<SafetyCardWizardProps> = ({
       // Also clear any slots that reference this image
       const updatedSlots = prev.slots.map((slot) =>
         slot.imageId === imageId
-          ? { ...slot, imageId: null, cropRegion: null, thumbnailUrl: null, dirty: true }
+          ? { ...slot, imageId: null, cropRegion: null, thumbnailUrl: null, rotation: 0, dirty: true }
           : slot
       );
 
@@ -370,17 +372,17 @@ export const SafetyCardWizard: React.FC<SafetyCardWizardProps> = ({
       rotation: number,
       advanceTo?: { panelIndex: number; side: PanelSide }
     ) => {
-      const updatedSlots = state.slots.map((slot) =>
-        slot.panelIndex === panelIndex && slot.side === side
-          ? { ...slot, imageId, cropRegion: region, thumbnailUrl, dirty: true }
-          : slot
-      );
-
-      const updatedImages = state.images.map((img) =>
-        img.id === imageId ? { ...img, rotation } : img
-      );
-
       setState((prev) => {
+        const updatedSlots = prev.slots.map((slot) =>
+          slot.panelIndex === panelIndex && slot.side === side
+            ? { ...slot, imageId, cropRegion: region, thumbnailUrl, rotation, dirty: true }
+            : slot
+        );
+
+        const updatedImages = prev.images.map((img) =>
+          img.id === imageId ? { ...img, rotation } : img
+        );
+
         let nextActiveSlot: { panelIndex: number; side: PanelSide } | null = null;
         let nextSelectedImageId: string | null = null;
 
@@ -428,7 +430,7 @@ export const SafetyCardWizard: React.FC<SafetyCardWizardProps> = ({
         onBackToLibrary?.({ panelIndex, side });
       }
     },
-    [initialSlot, editCardId, onBackToLibrary, state]
+    [initialSlot, editCardId, onBackToLibrary]
   );
 
   // Background save: process dirty slots whenever they appear
@@ -465,7 +467,7 @@ export const SafetyCardWizard: React.FC<SafetyCardWizardProps> = ({
       ...prev,
       slots: prev.slots.map((slot) =>
         slot.panelIndex === panelIndex && slot.side === side
-          ? { ...slot, imageId: null, cropRegion: null, thumbnailUrl: null, dirty: true }
+          ? { ...slot, imageId: null, cropRegion: null, thumbnailUrl: null, rotation: 0, dirty: true }
           : slot
       ),
     }));
@@ -477,7 +479,7 @@ export const SafetyCardWizard: React.FC<SafetyCardWizardProps> = ({
       ...prev,
       slots: prev.slots.map((slot) =>
         slot.panelIndex === panelIndex && slot.side === oppositeSide
-          ? { ...slot, imageId: null, cropRegion: null, thumbnailUrl: null, dirty: true }
+          ? { ...slot, imageId: null, cropRegion: null, thumbnailUrl: null, rotation: 0, dirty: true }
           : slot
       ),
     }));
@@ -589,14 +591,15 @@ export const SafetyCardWizard: React.FC<SafetyCardWizardProps> = ({
 
       const label = `Panel_${slot.panelIndex + 1}_${slot.side}`;
       const region = { ...slot.cropRegion, label };
+      const slotRotation = slot.rotation ?? img.rotation;
 
-      const fullBlob = await extractCropWithRotation(image, region, img.rotation, {
+      const fullBlob = await extractCropWithRotation(image, region, slotRotation, {
         format: 'jpeg',
         quality: 0.9,
       });
       fullFolder.file(`${label}.jpg`, fullBlob);
 
-      const thumbBlob = await extractCropWithRotation(image, region, img.rotation, {
+      const thumbBlob = await extractCropWithRotation(image, region, slotRotation, {
         targetWidth: 400,
         format: 'jpeg',
         quality: 0.8,
