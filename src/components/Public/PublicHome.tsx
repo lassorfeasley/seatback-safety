@@ -191,7 +191,8 @@ export const PublicHome: React.FC = () => {
   const selectedModel = useMemo(() => models.find((m) => m.name === filterModel) ?? null, [models, filterModel]);
 
   const containerRef = useRef<HTMLDivElement>(null);
-  const { isPinching, pinchStart, pinchMove, pinchEnd } = useRubberBandZoom(containerRef, { enabled: mode === 'explore', minScale: 1.0 });
+  const zoomTargetRef = useRef<HTMLDivElement>(null);
+  const { isPinching, pinchStart, pinchMove, pinchEnd } = useRubberBandZoom(zoomTargetRef, { enabled: mode === 'explore' });
   const searchInputRef = useRef<HTMLInputElement>(null);
   const cameraRef = useRef({ x: 0, y: 0 });
   const velocityRef = useRef({ x: 0, y: 0 });
@@ -574,22 +575,24 @@ export const PublicHome: React.FC = () => {
           className="fixed inset-0 overflow-hidden bg-background touch-none overscroll-none"
           style={{ cursor: 'crosshair' }}
         >
-          {exploreTiles.map((tile) => {
-            return (
-              <div
-                key={`${tile.row},${tile.col}`}
-                className="absolute"
-                style={{
-                  transform: `translate(${tile.x}px, ${tile.y}px)`,
-                  width: TILE_SIZE,
-                  height: TILE_SIZE,
-                  willChange: 'transform',
-                }}
-              >
-                <InfiniteCardTile card={cards[tile.cardIdx]} />
-              </div>
-            );
-          })}
+          <div ref={zoomTargetRef} className="absolute inset-0">
+            {exploreTiles.map((tile) => {
+              return (
+                <div
+                  key={`${tile.row},${tile.col}`}
+                  className="absolute"
+                  style={{
+                    transform: `translate(${tile.x}px, ${tile.y}px)`,
+                    width: TILE_SIZE,
+                    height: TILE_SIZE,
+                    willChange: 'transform',
+                  }}
+                >
+                  <InfiniteCardTile card={cards[tile.cardIdx]} />
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
 

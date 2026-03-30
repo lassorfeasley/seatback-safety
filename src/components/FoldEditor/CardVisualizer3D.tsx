@@ -134,7 +134,7 @@ export const CardVisualizer3D: React.FC<CardVisualizer3DProps> = ({
 
   const { isPinching, pinchStart, pinchMove, pinchEnd } = useRubberBandZoom(canvasRef, {
     enabled: !!minimal && !!onZoomLightbox,
-    maxScale: 1.2,
+    maxScale: 1.6,
     minScale: 0.8,
     onExceedMax: onZoomLightbox,
   });
