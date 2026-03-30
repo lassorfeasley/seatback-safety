@@ -191,7 +191,7 @@ export const PublicHome: React.FC = () => {
   const selectedModel = useMemo(() => models.find((m) => m.name === filterModel) ?? null, [models, filterModel]);
 
   const containerRef = useRef<HTMLDivElement>(null);
-  const { isPinching, pinchStart, pinchMove, pinchEnd } = useRubberBandZoom(containerRef, { enabled: mode === 'explore' });
+  const { isPinching, pinchStart, pinchMove, pinchEnd } = useRubberBandZoom(containerRef, { enabled: mode === 'explore', minScale: 1.0 });
   const searchInputRef = useRef<HTMLInputElement>(null);
   const cameraRef = useRef({ x: 0, y: 0 });
   const velocityRef = useRef({ x: 0, y: 0 });
@@ -567,11 +567,11 @@ export const PublicHome: React.FC = () => {
   }
 
   return (
-    <div className="fixed inset-0 touch-none bg-background">
+    <div className="fixed inset-0 touch-none bg-background overscroll-none">
       {!isSearch && (
         <div
           ref={containerRef}
-          className="fixed inset-0 overflow-hidden bg-background touch-none"
+          className="fixed inset-0 overflow-hidden bg-background touch-none overscroll-none"
           style={{ cursor: 'crosshair' }}
         >
           {exploreTiles.map((tile) => {

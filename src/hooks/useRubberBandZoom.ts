@@ -38,8 +38,7 @@ export function useRubberBandZoom(
   });
 
   useEffect(() => {
-    const el = containerRef.current;
-    if (!el || !enabled) {
+    if (!enabled) {
       apiRef.current = {
         pinchStart() {},
         pinchMove() {},
@@ -47,6 +46,8 @@ export function useRubberBandZoom(
       };
       return;
     }
+
+    const getEl = () => containerRef.current;
 
     let scale = 1;
     let originX = 0;
@@ -61,14 +62,19 @@ export function useRubberBandZoom(
     const clamp = (v: number) => Math.max(minScale, Math.min(maxScale, v));
 
     const apply = () => {
+      const el = getEl();
+      if (!el) return;
       el.style.transformOrigin = `${originX}px ${originY}px`;
       el.style.transform = `scale(${scale})`;
     };
 
     const clear = () => {
       scale = 1;
-      el.style.transform = '';
-      el.style.transformOrigin = '';
+      const el = getEl();
+      if (el) {
+        el.style.transform = '';
+        el.style.transformOrigin = '';
+      }
     };
 
     const startSnap = () => {
@@ -100,8 +106,9 @@ export function useRubberBandZoom(
       }
     };
 
-    // ── Wheel (mouse wheel + trackpad scroll/pinch) ──
     const onWheel = (e: WheelEvent) => {
+      const el = getEl();
+      if (!el) return;
       const target = e.target as Node | null;
       if (!el.contains(target)) return;
       e.preventDefault();
@@ -123,7 +130,6 @@ export function useRubberBandZoom(
 
     window.addEventListener('wheel', onWheel, { passive: false });
 
-    // ── Pinch API (called by the component's touch handlers) ──
     const dist = (t: TouchList) =>
       Math.hypot(t[1].clientX - t[0].clientX, t[1].clientY - t[0].clientY);
 
