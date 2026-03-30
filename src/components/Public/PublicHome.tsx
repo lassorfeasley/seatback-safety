@@ -191,7 +191,7 @@ export const PublicHome: React.FC = () => {
   const selectedModel = useMemo(() => models.find((m) => m.name === filterModel) ?? null, [models, filterModel]);
 
   const containerRef = useRef<HTMLDivElement>(null);
-  const { isPinching } = useRubberBandZoom(containerRef, { enabled: mode === 'explore' });
+  const { isPinching, pinchStart, pinchMove, pinchEnd } = useRubberBandZoom(containerRef, { enabled: mode === 'explore' });
   const searchInputRef = useRef<HTMLInputElement>(null);
   const cameraRef = useRef({ x: 0, y: 0 });
   const velocityRef = useRef({ x: 0, y: 0 });
@@ -203,6 +203,7 @@ export const PublicHome: React.FC = () => {
   const touchDragRef = useRef<{ lastX: number; lastY: number } | null>(null);
   const transitioningRef = useRef(false);
   const autoPanRef = useRef(true);
+  const lastTouchTimeRef = useRef(0);
 
   const [exploreTiles, setExploreTiles] = useState<{ row: number; col: number; x: number; y: number; cardIdx: number }[]>([]);
 
@@ -399,31 +400,52 @@ export const PublicHome: React.FC = () => {
     if (modeRef.current !== 'explore') return;
     if (e.touches.length >= 2) {
       touchDragRef.current = null;
+      pinchStart(e.touches);
       return;
     }
     autoPanRef.current = false;
     const t = e.touches[0];
     touchDragRef.current = { lastX: t.clientX, lastY: t.clientY };
-    targetVelocityRef.current = { x: 0, y: 0 };
-    velocityRef.current = { x: 0, y: 0 };
-  }, []);
+    lastTouchTimeRef.current = performance.now();
+  }, [pinchStart]);
 
   const handleTouchMove = useCallback((e: TouchEvent) => {
-    if (isPinching.current || e.touches.length >= 2) return;
+    if (e.touches.length >= 2) {
+      e.preventDefault();
+      pinchMove(e.touches);
+      return;
+    }
+    if (isPinching.current) return;
     if (!touchDragRef.current || modeRef.current !== 'explore') return;
     e.preventDefault();
     const t = e.touches[0];
     const dx = t.clientX - touchDragRef.current.lastX;
     const dy = t.clientY - touchDragRef.current.lastY;
     touchDragRef.current = { lastX: t.clientX, lastY: t.clientY };
-    cameraRef.current.x -= dx;
-    cameraRef.current.y -= dy;
-    setExploreTiles(computeVisible(cameraRef.current.x, cameraRef.current.y, cards.length));
-  }, [cards.length, computeVisible]);
 
-  const handleTouchEnd = useCallback(() => {
+    const now = performance.now();
+    const dt = Math.max((now - lastTouchTimeRef.current) / 1000, 0.004);
+    lastTouchTimeRef.current = now;
+
+    let vx = -dx / dt;
+    let vy = -dy / dt;
+    const mag = Math.hypot(vx, vy);
+    if (mag > MAX_SPEED) {
+      const s = MAX_SPEED / mag;
+      vx *= s;
+      vy *= s;
+    }
+
+    velocityRef.current = { x: vx, y: vy };
+    targetVelocityRef.current = { x: vx, y: vy };
+  }, [pinchMove]);
+
+  const handleTouchEnd = useCallback((e: TouchEvent) => {
+    if (isPinching.current && e.touches.length < 2) {
+      pinchEnd();
+    }
     touchDragRef.current = null;
-  }, []);
+  }, [pinchEnd]);
 
   useEffect(() => {
     const el = containerRef.current;
@@ -448,20 +470,16 @@ export const PublicHome: React.FC = () => {
       lastTimeRef.current = time;
 
       if (modeRef.current === 'explore' && !transitioningRef.current) {
-        if (isTouchDevice.current && !autoPanRef.current) {
-          setExploreTiles(computeVisible(cameraRef.current.x, cameraRef.current.y, cardCount));
-        } else {
-          const vel = velocityRef.current;
-          const target = targetVelocityRef.current;
-          vel.x += (target.x - vel.x) * LERP_FACTOR;
-          vel.y += (target.y - vel.y) * LERP_FACTOR;
+        const vel = velocityRef.current;
+        const target = targetVelocityRef.current;
+        vel.x += (target.x - vel.x) * LERP_FACTOR;
+        vel.y += (target.y - vel.y) * LERP_FACTOR;
 
-          const cam = cameraRef.current;
-          cam.x += vel.x * dt;
-          cam.y += vel.y * dt;
+        const cam = cameraRef.current;
+        cam.x += vel.x * dt;
+        cam.y += vel.y * dt;
 
-          setExploreTiles(computeVisible(cam.x, cam.y, cardCount));
-        }
+        setExploreTiles(computeVisible(cam.x, cam.y, cardCount));
       }
 
       rafRef.current = requestAnimationFrame(tick);
@@ -552,7 +570,7 @@ export const PublicHome: React.FC = () => {
       {!isSearch && (
         <div
           ref={containerRef}
-          className="fixed inset-0 overflow-hidden bg-background"
+          className="fixed inset-0 overflow-hidden bg-background touch-none"
           style={{ cursor: 'crosshair' }}
         >
           {exploreTiles.map((tile) => {

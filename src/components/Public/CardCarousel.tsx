@@ -452,7 +452,7 @@ const CarouselCard: React.FC<CarouselCardProps> = ({ card, x, foldProgress, tilt
 
   // Convert single foldProgress (0-1) to per-crease fold values
   // Min fold of 15/180 keeps creases slightly visible even when fully open
-  const MIN_FOLD = 15 / 180;
+  const MIN_FOLD = 30 / 180;
   const creaseFolds = useMemo(() => {
     const n = creasesByUnfoldOrder.length;
     if (n === 0) return {};

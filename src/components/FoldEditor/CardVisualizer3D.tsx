@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { RotateCw, RotateCcw, Maximize2, Minimize2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { Panel, Crease, CoverDesignation } from './types';
+import { useRubberBandZoom } from '@/hooks/useRubberBandZoom';
 
 interface CardVisualizer3DProps {
   panels: Panel[];
@@ -12,6 +13,7 @@ interface CardVisualizer3DProps {
   pivotIndex?: number;
   minimal?: boolean;
   hintOnLoad?: boolean;
+  onZoomLightbox?: () => void;
 }
 
 interface Spread {
@@ -22,6 +24,7 @@ interface Spread {
 
 const FOLD_DURATION = 600;
 const FOLD_STAGGER = 100;
+const OPEN_STOP = 30 / 180;
 const PAPER_THICKNESS = 0.6;
 const STACK_GAP = 6;
 const MIN_COS = 0.25;
@@ -112,7 +115,7 @@ export function computeLayerOrder(
 }
 
 export const CardVisualizer3D: React.FC<CardVisualizer3DProps> = ({
-  panels, creases, cover, pivotIndex, minimal, hintOnLoad,
+  panels, creases, cover, pivotIndex, minimal, hintOnLoad, onZoomLightbox,
 }) => {
   const [targetFoldState, setTargetFoldState] = useState<0 | 1>(1);
   const [rotation, setRotation] = useState({ x: 0, y: 0 });
@@ -128,6 +131,13 @@ export const CardVisualizer3D: React.FC<CardVisualizer3DProps> = ({
   const cursorTilt = useRef({ x: 0, y: 0 });
   const cursorTiltTarget = useRef({ x: 0, y: 0 });
   const cursorTiltRaf = useRef(0);
+
+  const { isPinching, pinchStart, pinchMove, pinchEnd } = useRubberBandZoom(canvasRef, {
+    enabled: !!minimal && !!onZoomLightbox,
+    maxScale: 1.2,
+    minScale: 0.8,
+    onExceedMax: onZoomLightbox,
+  });
 
   const coverDesignation: CoverDesignation = cover || { spreadIndex: 0, side: 'front' };
 
@@ -249,7 +259,7 @@ export const CardVisualizer3D: React.FC<CardVisualizer3DProps> = ({
     creasesByUnfoldOrder.forEach((crease, i) => {
       const delay = i * (FOLD_DURATION - FOLD_STAGGER);
       const t = setTimeout(() => {
-        setCreaseFolds((prev) => ({ ...prev, [crease.between_panel]: 0 }));
+        setCreaseFolds((prev) => ({ ...prev, [crease.between_panel]: OPEN_STOP }));
       }, delay);
       animationTimeouts.current.push(t);
     });
@@ -266,8 +276,8 @@ export const CardVisualizer3D: React.FC<CardVisualizer3DProps> = ({
         const lo = (n - i - 1) / n;
         const hi = (n - i) / n;
         if (v >= hi) newFolds[crease.between_panel] = 1;
-        else if (v <= lo) newFolds[crease.between_panel] = 0;
-        else newFolds[crease.between_panel] = (v - lo) / (hi - lo);
+        else if (v <= lo) newFolds[crease.between_panel] = OPEN_STOP;
+        else newFolds[crease.between_panel] = OPEN_STOP + ((v - lo) / (hi - lo)) * (1 - OPEN_STOP);
       });
       setCreaseFolds(newFolds);
       setTargetFoldState(v > 0.5 ? 1 : 0);
@@ -313,7 +323,10 @@ export const CardVisualizer3D: React.FC<CardVisualizer3DProps> = ({
     if (!el) return;
 
     const handleTouchMove = (e: TouchEvent) => {
-      if (e.touches.length === 1) {
+      if (e.touches.length === 2) {
+        e.preventDefault();
+        pinchMove(e.touches);
+      } else if (e.touches.length === 1) {
         e.preventDefault();
         moveDrag(e.touches[0].clientX, e.touches[0].clientY);
       }
@@ -321,7 +334,7 @@ export const CardVisualizer3D: React.FC<CardVisualizer3DProps> = ({
 
     el.addEventListener('touchmove', handleTouchMove, { passive: false });
     return () => el.removeEventListener('touchmove', handleTouchMove);
-  }, [moveDrag]);
+  }, [moveDrag, pinchMove]);
 
   const isSingleSheet = creasesByUnfoldOrder.length === 0;
 
@@ -406,7 +419,7 @@ export const CardVisualizer3D: React.FC<CardVisualizer3DProps> = ({
     creasesByUnfoldOrder.forEach((crease, i) => {
       const delay = 600 + i * (FOLD_DURATION - FOLD_STAGGER);
       const t = setTimeout(() => {
-        setCreaseFolds((prev) => ({ ...prev, [crease.between_panel]: 0 }));
+        setCreaseFolds((prev) => ({ ...prev, [crease.between_panel]: OPEN_STOP }));
       }, delay);
       animationTimeouts.current.push(t);
     });
@@ -646,8 +659,16 @@ export const CardVisualizer3D: React.FC<CardVisualizer3DProps> = ({
           onMouseMove={(e) => { if (Date.now() - lastTouchEnd.current < 500) return; moveDrag(e.clientX, e.clientY); }}
           onMouseUp={() => { if (Date.now() - lastTouchEnd.current < 500) return; handleCanvasClick(); endDrag(); }}
           onMouseLeave={() => { if (isDragging) endDrag(); }}
-          onTouchStart={(e) => { if (e.touches.length === 1) startDrag(e.touches[0].clientX, e.touches[0].clientY); }}
-          onTouchEnd={() => { lastTouchEnd.current = Date.now(); handleCanvasClick(); endDrag(); }}
+          onTouchStart={(e) => {
+            if (e.touches.length === 2) { pinchStart(e.nativeEvent.touches); }
+            else if (e.touches.length === 1) startDrag(e.touches[0].clientX, e.touches[0].clientY);
+          }}
+          onTouchEnd={() => {
+            lastTouchEnd.current = Date.now();
+            if (isPinching.current) { pinchEnd(); }
+            else { handleCanvasClick(); }
+            endDrag();
+          }}
         >
           {/* Outer container: user rotation + staticFlipY */}
           <div

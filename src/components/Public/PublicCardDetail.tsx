@@ -382,6 +382,7 @@ export const PublicCardDetail: React.FC = () => {
             pivotIndex={card.pivotIndex ?? undefined}
             minimal
             hintOnLoad
+            onZoomLightbox={() => setShowLightbox(true)}
           />
           )}
         </div>

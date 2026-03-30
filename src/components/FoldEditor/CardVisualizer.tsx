@@ -19,6 +19,7 @@ interface Spread {
 // Animation timing constants
 const FOLD_DURATION_PER_CREASE = 400; // ms per crease animation
 const FOLD_STAGGER_DELAY = 100; // ms overlap between sequential folds
+const OPEN_STOP = 30 / 180;
 
 export const CardVisualizer: React.FC<CardVisualizerProps> = ({ panels, creases }) => {
   const [rotation, setRotation] = useState({ x: 0, y: 0 });
@@ -160,7 +161,7 @@ export const CardVisualizer: React.FC<CardVisualizerProps> = ({ panels, creases 
       const timeout = setTimeout(() => {
         setCreaseFolds((prev) => ({
           ...prev,
-          [crease.between_panel]: 0,
+          [crease.between_panel]: OPEN_STOP,
         }));
       }, delay);
       
@@ -429,11 +430,11 @@ export const CardVisualizer: React.FC<CardVisualizerProps> = ({ panels, creases 
                     newFolds[crease.between_panel] = 1;
                   } else if (sliderValue <= rangeStart) {
                     // Slider is below this crease's range - fully unfolded
-                    newFolds[crease.between_panel] = 0;
+                    newFolds[crease.between_panel] = OPEN_STOP;
                   } else {
                     // Slider is within this crease's range - interpolate
                     const foldAmount = (sliderValue - rangeStart) / (rangeEnd - rangeStart);
-                    newFolds[crease.between_panel] = foldAmount;
+                    newFolds[crease.between_panel] = OPEN_STOP + foldAmount * (1 - OPEN_STOP);
                   }
                 });
                 
