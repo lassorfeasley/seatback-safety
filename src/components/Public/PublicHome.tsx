@@ -9,6 +9,7 @@ import {
   type AirlineBrowse,
 } from '@/lib/lookupService';
 import { InfoSheet, InfoRow } from '@/components/Public/InfoSheet';
+import { useRubberBandZoom } from '@/hooks/useRubberBandZoom';
 
 const TILE_SIZE = 140;
 const GAP = 8;
@@ -190,6 +191,7 @@ export const PublicHome: React.FC = () => {
   const selectedModel = useMemo(() => models.find((m) => m.name === filterModel) ?? null, [models, filterModel]);
 
   const containerRef = useRef<HTMLDivElement>(null);
+  const { isPinching } = useRubberBandZoom(containerRef, { enabled: mode === 'explore' });
   const searchInputRef = useRef<HTMLInputElement>(null);
   const cameraRef = useRef({ x: 0, y: 0 });
   const velocityRef = useRef({ x: 0, y: 0 });
@@ -395,6 +397,10 @@ export const PublicHome: React.FC = () => {
 
   const handleTouchStart = useCallback((e: TouchEvent) => {
     if (modeRef.current !== 'explore') return;
+    if (e.touches.length >= 2) {
+      touchDragRef.current = null;
+      return;
+    }
     autoPanRef.current = false;
     const t = e.touches[0];
     touchDragRef.current = { lastX: t.clientX, lastY: t.clientY };
@@ -403,6 +409,7 @@ export const PublicHome: React.FC = () => {
   }, []);
 
   const handleTouchMove = useCallback((e: TouchEvent) => {
+    if (isPinching.current || e.touches.length >= 2) return;
     if (!touchDragRef.current || modeRef.current !== 'explore') return;
     e.preventDefault();
     const t = e.touches[0];
@@ -541,7 +548,7 @@ export const PublicHome: React.FC = () => {
   }
 
   return (
-    <div className="fixed inset-0 touch-none">
+    <div className="fixed inset-0 touch-none bg-background">
       {!isSearch && (
         <div
           ref={containerRef}
