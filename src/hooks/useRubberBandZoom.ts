@@ -102,6 +102,8 @@ export function useRubberBandZoom(
 
     // ── Wheel (mouse wheel + trackpad scroll/pinch) ──
     const onWheel = (e: WheelEvent) => {
+      const target = e.target as Node | null;
+      if (!el.contains(target)) return;
       e.preventDefault();
       cancelSnap();
       const unclamped = scale + -e.deltaY * wheelSensitivity;
@@ -119,7 +121,7 @@ export function useRubberBandZoom(
       snapTimer = setTimeout(startSnap, snapBackDelay);
     };
 
-    el.addEventListener('wheel', onWheel, { passive: false });
+    window.addEventListener('wheel', onWheel, { passive: false });
 
     // ── Pinch API (called by the component's touch handlers) ──
     const dist = (t: TouchList) =>
@@ -165,7 +167,7 @@ export function useRubberBandZoom(
     };
 
     return () => {
-      el.removeEventListener('wheel', onWheel);
+      window.removeEventListener('wheel', onWheel);
       cancelSnap();
       clear();
       apiRef.current = {

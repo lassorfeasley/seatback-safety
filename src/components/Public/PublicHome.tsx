@@ -384,7 +384,6 @@ export const PublicHome: React.FC = () => {
 
   const handleMouseLeave = useCallback(() => {
     if (isTouchDevice.current) return;
-    targetVelocityRef.current = { x: 0, y: 0 };
   }, []);
 
   useEffect(() => {
