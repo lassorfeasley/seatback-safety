@@ -403,6 +403,8 @@ export const PublicHome: React.FC = () => {
       return;
     }
     autoPanRef.current = false;
+    velocityRef.current = { x: 0, y: 0 };
+    targetVelocityRef.current = { x: 0, y: 0 };
     const t = e.touches[0];
     touchDragRef.current = { lastX: t.clientX, lastY: t.clientY };
     lastTouchTimeRef.current = performance.now();
@@ -457,7 +459,7 @@ export const PublicHome: React.FC = () => {
       el.removeEventListener('touchmove', handleTouchMove);
       el.removeEventListener('touchend', handleTouchEnd);
     };
-  }, [handleTouchStart, handleTouchMove, handleTouchEnd]);
+  }, [handleTouchStart, handleTouchMove, handleTouchEnd, loading]);
 
   useEffect(() => {
     if (cards.length === 0) return;
