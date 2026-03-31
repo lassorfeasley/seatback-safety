@@ -20,6 +20,8 @@ export interface CardSummary {
   airline_name: string | null;
   aircraft_label: string | null;
   published_year: number | null;
+  languages: string[];
+  airline_countries: string[];
 }
 
 export interface ScanInfo {
@@ -704,13 +706,14 @@ export async function fetchCards(opts?: { includeUnpublished?: boolean }): Promi
   const { data: cards, error } = await supabase
     .from('safety_cards')
     .select(`
-      id, title, panel_count, cover_spread_index, cover_side, is_booklet, card_mode, created_at, published_year, airline_id,
-      airlines ( name ),
+      id, title, panel_count, cover_spread_index, cover_side, is_booklet, card_mode, created_at, published_year, airline_id, language,
+      airlines ( name, airline_countries ( country_name ) ),
       aircraft_variants ( name, aircraft_models ( name, aircraft_manufacturers ( name ) ) ),
       card_aircraft ( sort_order,
         aircraft_variants ( name, aircraft_models ( name, aircraft_manufacturers ( name ) ) ),
         aircraft_models ( name, aircraft_manufacturers ( name ) )
       ),
+      card_languages ( language ),
       card_sides (
         id, side,
         card_panels (
@@ -790,6 +793,16 @@ export async function fetchCards(opts?: { includeUnpublished?: boolean }): Promi
     const previewUrl = hasImages ? derivativePublicUrl(`${card.id}/preview.jpg`) : null;
     const ogUrl = (hasImages || isUnstructured) ? derivativePublicUrl(`${card.id}/og.jpg`) : null;
 
+    const cardLangs = (card.card_languages ?? []) as Array<{ language: string }>;
+    const languages: string[] = cardLangs.length > 0
+      ? cardLangs.map((l) => l.language).filter(Boolean)
+      : (card.language as string | null)?.split(',').map((s: string) => s.trim()).filter(Boolean) ?? [];
+
+    const airlineObj = (Array.isArray(card.airlines) ? card.airlines[0] : card.airlines) as Record<string, unknown> | null;
+    const airlineCountries: string[] = airlineObj
+      ? ((airlineObj.airline_countries ?? []) as Array<{ country_name: string }>).map((c) => c.country_name).filter(Boolean)
+      : [];
+
     return {
       id: card.id as string,
       title: card.title as string | null,
@@ -805,6 +818,8 @@ export async function fetchCards(opts?: { includeUnpublished?: boolean }): Promi
       airline_name: (airline?.name as string) ?? null,
       aircraft_label: label,
       published_year: (card.published_year as number) ?? null,
+      languages,
+      airline_countries: airlineCountries,
     };
   }).filter((c) => opts?.includeUnpublished || c.thumbnail_url || c.og_url);
 }

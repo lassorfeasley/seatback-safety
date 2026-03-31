@@ -239,12 +239,37 @@ export const PublicHome: React.FC = () => {
   }, []);
 
   const applyFilters = useCallback((excludeFilter?: string) => {
+    const expandAircraftAbbrev = (term: string): string[] => {
+      const prefixMap: Record<string, string> = {
+        a: 'airbus', b: 'boeing', e: 'embraer',
+        md: 'mcdonnell douglas', dc: 'douglas',
+        crj: 'bombardier crj', erj: 'embraer erj',
+        atr: 'atr', bae: 'british aerospace',
+        l: 'lockheed', c: 'cessna',
+        dhc: 'de havilland canada',
+      };
+      const m = term.match(/^([a-z]{1,3})(\d{2,4}.*)$/);
+      if (!m) return [term];
+      const [, prefix, model] = m;
+      const mfr = prefixMap[prefix];
+      if (!mfr) return [term];
+      return [term, `${mfr} ${model}`, `${mfr} ${prefix}${model}`, `${mfr}${model}`];
+    };
+
     return cards.filter((c) => {
       if (searchQuery.trim()) {
         const terms = searchQuery.toLowerCase().trim().split(/\s+/).filter(Boolean);
-        const haystack = [c.title, c.airline_name, c.aircraft_label, c.published_year != null ? String(c.published_year) : null]
+        const haystack = [c.title, c.airline_name, c.aircraft_label, c.published_year != null ? String(c.published_year) : null, ...c.languages, ...c.airline_countries]
           .filter(Boolean).join(' ').toLowerCase();
-        if (!terms.every((term) => haystack.includes(term))) return false;
+        const normalizedHaystack = haystack.replace(/-/g, ' ');
+        const match = terms.every((term) => {
+          const variants = expandAircraftAbbrev(term);
+          return variants.some((v) => {
+            const nv = v.replace(/-/g, ' ');
+            return haystack.includes(v) || normalizedHaystack.includes(nv);
+          });
+        });
+        if (!match) return false;
       }
       if (excludeFilter !== 'airline' && filterAirline && c.airline_name !== filterAirline) return false;
 
@@ -600,15 +625,15 @@ export const PublicHome: React.FC = () => {
         <div className="fixed inset-0 overflow-y-auto bg-background touch-auto">
           <button
             onClick={exitSearchMode}
-            className="fixed top-0 right-0 z-50 flex items-center justify-center w-11 h-11 sm:w-8 sm:h-8 bg-white text-black hover:bg-gray-50 transition-colors border border-black/20 border-t-0 border-l-0 border-r-0"
+            className="fixed top-0 right-0 z-50 flex items-center justify-center w-11 h-11 sm:w-8 sm:h-8 bg-white text-black hover:bg-gray-50 transition-colors border border-black/20 border-t-0 border-r-0"
             aria-label="Close search"
           >
             <X className="h-6 w-6 sm:h-4 sm:w-4" />
           </button>
-          <div className="pt-[60px] px-10 sm:pt-6 sm:px-0 pb-6">
+          <div className="pt-16 px-10 sm:pt-16 sm:px-0 pb-6">
             <div className="mx-auto flex w-full max-w-[min(732px,calc(100vw-40px))] flex-col gap-4">
               <div
-                className="relative z-10 w-full backdrop-blur-xl outline outline-2 outline-white"
+                className="relative z-10 w-full backdrop-blur-xl"
                 style={{ backgroundColor: '#ebeaef' }}
               >
               <div className="flex items-center gap-2 pt-4 pb-3 px-5">
