@@ -162,6 +162,12 @@ export const PublicCardDetail: React.FC = () => {
   }, [lightboxSide, showLightbox, lightboxPage]);
 
   useEffect(() => {
+    if (showLightbox && lbView.zoom <= 0.5) {
+      setShowLightbox(false);
+    }
+  }, [showLightbox, lbView.zoom]);
+
+  useEffect(() => {
     const el = lbContentRef.current;
     if (!el || !showLightbox) return;
     const onWheel = (e: WheelEvent) => {
@@ -171,8 +177,8 @@ export const PublicCardDetail: React.FC = () => {
       const mx = e.clientX - rect.left - rect.width / 2;
       const my = e.clientY - rect.top - rect.height / 2;
       setLbView(prev => {
-        const z = Math.max(1, Math.min(LB_MAX_ZOOM, prev.zoom * factor));
-        if (z <= 1) return { zoom: 1, panX: 0, panY: 0 };
+        const z = Math.max(0.3, Math.min(LB_MAX_ZOOM, prev.zoom * factor));
+        if (z < 1) return { zoom: z, panX: 0, panY: 0 };
         const r = z / prev.zoom;
         return { zoom: z, panX: mx - r * (mx - prev.panX), panY: my - r * (my - prev.panY) };
       });
@@ -243,10 +249,10 @@ export const PublicCardDetail: React.FC = () => {
         const mx = m.x - rect.left - rect.width / 2;
         const my = m.y - rect.top - rect.height / 2;
         const rawZoom = t.startZoom * (d / t.startDist);
-        const z = Math.max(1, Math.min(LB_MAX_ZOOM, rawZoom));
+        const z = Math.max(0.3, Math.min(LB_MAX_ZOOM, rawZoom));
 
-        if (z <= 1) {
-          setLbView({ zoom: 1, panX: 0, panY: 0 });
+        if (z < 1) {
+          setLbView({ zoom: z, panX: 0, panY: 0 });
         } else {
           const r = z / t.startZoom;
           const panX = t.startMidX - r * (t.startMidX - t.startPanX) + (mx - t.startMidX);
@@ -677,6 +683,7 @@ export const PublicCardDetail: React.FC = () => {
             className="fixed inset-0 z-[100] bg-black/95 backdrop-blur-xl flex items-center justify-center overflow-hidden"
             onClick={() => setShowLightbox(false)}
           >
+            {(isBooklet || isIrregular) && (
             <div className="fixed top-0 left-1/2 -translate-x-1/2 z-[110] flex border border-t-0 border-white/20 rounded-b-md overflow-hidden" onClick={(e) => e.stopPropagation()}>
               {(isBooklet || totalNavStates > 1) && (
                 <>
@@ -709,20 +716,21 @@ export const PublicCardDetail: React.FC = () => {
                   </button>
                 </>
               )}
+            </div>
+            )}
+            <div className="fixed top-0 right-0 z-[110] flex">
               {!isBooklet && (
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
                     setLightboxSide((s) => s === 'front' ? 'back' : 'front');
                   }}
-                  className="flex items-center justify-center w-11 h-11 sm:w-8 sm:h-8 bg-black/70 hover:bg-black/90 text-white transition-colors border-l border-white/20"
+                  className="flex items-center justify-center w-11 h-11 sm:w-8 sm:h-8 bg-black/70 hover:bg-black/90 text-white transition-colors border-b border-l border-white/20"
                   aria-label="Flip to other side"
                 >
                   <RotateCw className="h-6 w-6 sm:h-4 sm:w-4" />
                 </button>
               )}
-            </div>
-            <div className="fixed top-0 right-0 z-[110]">
               <button
                 onClick={() => setShowLightbox(false)}
                 className="flex items-center justify-center w-11 h-11 sm:w-8 sm:h-8 bg-black/70 hover:bg-black/90 text-white transition-colors border-b border-l border-white/20"
