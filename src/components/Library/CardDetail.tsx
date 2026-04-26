@@ -33,6 +33,7 @@ import { CardVisualizer3D } from '@/components/FoldEditor/CardVisualizer3D';
 import { BookletVisualizer } from '@/components/FoldEditor/BookletVisualizer';
 import { generateAndUploadOgImage, generateAndUploadOgFromScan, type OgImageInput } from '@/lib/ogImageGenerator';
 import { OgBuilder } from '@/components/Library/OgBuilder';
+import { OgScanCropper } from '@/components/Library/OgScanCropper';
 import { analyzeCardScans, type CardSuggestions } from '@/lib/aiService';
 import { supabase } from '@/lib/supabase';
 import {
@@ -301,18 +302,29 @@ export const CardDetail: React.FC<CardDetailProps> = ({ cardId, onBack, onEditCr
   }, [cardId, card, refreshCard]);
 
   const [settingOgScan, setSettingOgScan] = useState(false);
-  const handleSetOgScan = useCallback(async (scan: ScanInfo) => {
+  const [cropScan, setCropScan] = useState<ScanInfo | null>(null);
+  const handleSetOgScan = useCallback(async (scan: ScanInfo, croppedBlobUrl?: string) => {
     if (!card || !scan.url) return;
     setSettingOgScan(true);
+    setCropScan(null);
     const ogResult = await updateOgScan(cardId, scan.id);
     if (ogResult.success) {
-      const genResult = await generateAndUploadOgFromScan(cardId, scan.url);
-      if (genResult.success && genResult.url) {
+      const genResult = await generateAndUploadOgFromScan(cardId, croppedBlobUrl ?? scan.url);
+      if (croppedBlobUrl) URL.revokeObjectURL(croppedBlobUrl);
+      if (genResult.success && genResult.localUrl) {
+        ogConfirmedRef.current = true;
+        setOgImageUrl(genResult.localUrl);
+        setOgExists(true);
+      } else if (genResult.success && genResult.url) {
+        ogConfirmedRef.current = true;
         setOgImageUrl(genResult.url + '?t=' + Date.now());
         setOgExists(true);
+      } else {
+        alert(`Failed to generate OG image: ${genResult.error}`);
       }
       await refreshCard();
     } else {
+      if (croppedBlobUrl) URL.revokeObjectURL(croppedBlobUrl);
       alert(`Failed to set OG scan: ${ogResult.error}`);
     }
     setSettingOgScan(false);
@@ -337,9 +349,11 @@ export const CardDetail: React.FC<CardDetailProps> = ({ cardId, onBack, onEditCr
     return data.publicUrl;
   });
   const [ogExists, setOgExists] = useState(false);
+  const ogConfirmedRef = useRef(false);
 
   useEffect(() => {
     if (!ogImageUrl) return;
+    if (ogConfirmedRef.current) return;
     const img = new Image();
     img.onload = () => setOgExists(true);
     img.onerror = () => setOgExists(false);
@@ -359,8 +373,9 @@ export const CardDetail: React.FC<CardDetailProps> = ({ cardId, onBack, onEditCr
     };
     const result = await generateAndUploadOgImage(cardId, input);
     setGeneratingOg(false);
-    if (result.success && result.url) {
-      setOgImageUrl(result.url + '?t=' + Date.now());
+    if (result.success) {
+      ogConfirmedRef.current = true;
+      setOgImageUrl(result.localUrl ?? (result.url + '?t=' + Date.now()));
       setOgExists(true);
     }
   }, [card, cardId]);
@@ -620,7 +635,7 @@ export const CardDetail: React.FC<CardDetailProps> = ({ cardId, onBack, onEditCr
                           <button
                             key={scan.id}
                             type="button"
-                            onClick={() => isEditing && handleSetOgScan(scan)}
+                            onClick={() => isEditing && setCropScan(scan)}
                             disabled={!isEditing || settingOgScan}
                             className={cn(
                               'relative group rounded-lg overflow-hidden border-2 transition-all aspect-square',
@@ -662,6 +677,16 @@ export const CardDetail: React.FC<CardDetailProps> = ({ cardId, onBack, onEditCr
 
                   {ogExists && ogImageUrl && (
                     <OgAccordion ogImageUrl={ogImageUrl} />
+                  )}
+
+                  {cropScan && cropScan.url && (
+                    <OgScanCropper
+                      scanUrl={cropScan.url}
+                      scanLabel={cropScan.original_filename ?? 'Scan'}
+                      generating={settingOgScan}
+                      onGenerate={(croppedBlobUrl) => handleSetOgScan(cropScan, croppedBlobUrl)}
+                      onCancel={() => setCropScan(null)}
+                    />
                   )}
 
                   <div className="rounded-lg border bg-muted/30 px-4 py-3">
@@ -956,7 +981,12 @@ export const CardDetail: React.FC<CardDetailProps> = ({ cardId, onBack, onEditCr
                   onSave={handleSaveMetadata}
                   onCancel={() => setIsEditing(false)}
                   saving={saving}
-                  scanUrls={Object.values(card.displayUrls)}
+                  scanUrls={
+                    Object.values(card.displayUrls).length > 0
+                      ? Object.values(card.displayUrls)
+                      : card.scans.map((s) => s.url).filter((u): u is string => u !== null)
+                  }
+                  resizeForAi={isUnstructured}
                 />
               ) : (
                 <>
@@ -1157,9 +1187,10 @@ interface MetadataEditorProps {
   onCancel: () => void;
   saving: boolean;
   scanUrls: string[];
+  resizeForAi?: boolean;
 }
 
-const MetadataEditor: React.FC<MetadataEditorProps> = ({ card, onSave, onCancel, saving, scanUrls }) => {
+const MetadataEditor: React.FC<MetadataEditorProps> = ({ card, onSave, onCancel, saving, scanUrls, resizeForAi }) => {
   const [title, setTitle] = useState(card.title ?? '');
   const [airlineId, setAirlineId] = useState<string | null>(card.airline_id);
   const [manufacturerId, setManufacturerId] = useState<string | null>(
@@ -1221,7 +1252,7 @@ const MetadataEditor: React.FC<MetadataEditorProps> = ({ card, onSave, onCancel,
     setAnalyzing(true);
     setSuggestions(null);
     setAcceptedFields(new Set());
-    const result = await analyzeCardScans(scanUrls);
+    const result = await analyzeCardScans(scanUrls, { resizeForAi });
     setAnalyzing(false);
     if (result.suggestions) {
       const normalized = {
@@ -1238,7 +1269,7 @@ const MetadataEditor: React.FC<MetadataEditorProps> = ({ card, onSave, onCancel,
     } else {
       alert(`AI analysis failed: ${result.error}`);
     }
-  }, [scanUrls]);
+  }, [scanUrls, resizeForAi]);
 
   const acceptField = useCallback((field: string) => {
     if (!suggestions) return;

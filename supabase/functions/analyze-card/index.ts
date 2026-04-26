@@ -44,31 +44,37 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    const { imageUrls, existingAirlines } = await req.json() as { imageUrls: string[]; existingAirlines?: string[] };
-
-    if (!imageUrls || imageUrls.length === 0) {
-      return new Response(
-        JSON.stringify({ error: "No image URLs provided" }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
+    const { imageUrls, base64Images, existingAirlines } = await req.json() as {
+      imageUrls?: string[];
+      base64Images?: Array<{ data: string; mediaType: string }>;
+      existingAirlines?: string[];
+    };
 
     const content: Array<Record<string, unknown>> = [];
     const fetchErrors: string[] = [];
 
-    for (const url of imageUrls.slice(0, 8)) {
-      try {
-        const probe = await fetch(url, { method: "HEAD" });
-        if (!probe.ok) {
-          fetchErrors.push(`${probe.status}`);
-          continue;
-        }
+    if (base64Images && base64Images.length > 0) {
+      for (const img of base64Images.slice(0, 8)) {
         content.push({
           type: "image",
-          source: { type: "url", url },
+          source: { type: "base64", media_type: img.mediaType, data: img.data },
         });
-      } catch (e) {
-        fetchErrors.push(e instanceof Error ? e.message : "fetch error");
+      }
+    } else if (imageUrls && imageUrls.length > 0) {
+      for (const url of imageUrls.slice(0, 8)) {
+        try {
+          const probe = await fetch(url, { method: "HEAD" });
+          if (!probe.ok) {
+            fetchErrors.push(`${probe.status}`);
+            continue;
+          }
+          content.push({
+            type: "image",
+            source: { type: "url", url },
+          });
+        } catch (e) {
+          fetchErrors.push(e instanceof Error ? e.message : "fetch error");
+        }
       }
     }
 
@@ -78,7 +84,7 @@ Deno.serve(async (req: Request) => {
           error: "Could not load any images",
           detail: fetchErrors.length > 0
             ? `Fetch failures: ${fetchErrors.join('; ')}`
-            : `Received ${imageUrls.length} URL(s) but none were loadable`,
+            : "No image URLs or base64 data provided",
         }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );

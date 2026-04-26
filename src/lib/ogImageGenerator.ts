@@ -10,7 +10,9 @@ const SHADOW_OFFSET_Y = 100;
 function loadImage(url: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const img = new Image();
-    img.crossOrigin = 'anonymous';
+    if (!url.startsWith('blob:')) {
+      img.crossOrigin = 'anonymous';
+    }
     img.onload = () => resolve(img);
     img.onerror = () => reject(new Error(`Failed to load image: ${url}`));
     img.src = url;
@@ -166,32 +168,39 @@ function drawSinglePanel(
 export async function generateAndUploadOgImage(
   cardId: string,
   input: OgImageInput
-): Promise<{ success: boolean; url?: string; error?: string }> {
+): Promise<{ success: boolean; url?: string; localUrl?: string; error?: string }> {
   try {
     const blob = await generateOgImage(input);
+    const localUrl = URL.createObjectURL(blob);
     const path = `${cardId}/og.jpg`;
 
     const { error } = await supabase.storage.from('derivatives').upload(path, blob, {
       contentType: 'image/jpeg',
       upsert: true,
+      cacheControl: '0',
     });
 
-    if (error) return { success: false, error: error.message };
+    if (error) {
+      URL.revokeObjectURL(localUrl);
+      return { success: false, error: error.message };
+    }
 
     const { data } = supabase.storage.from('derivatives').getPublicUrl(path);
-    return { success: true, url: data.publicUrl };
+    return { success: true, url: data.publicUrl, localUrl };
   } catch (err) {
     return { success: false, error: err instanceof Error ? err.message : String(err) };
   }
 }
 
 /**
- * Generate a 1200x1200 OG image from a single scan URL and upload it.
+ * Generate a 1200x1200 OG image from a single scan URL (or blob: URL) and upload it.
+ * Returns the generated blob as a local object URL for immediate display,
+ * avoiding CDN cache delay.
  */
 export async function generateAndUploadOgFromScan(
   cardId: string,
   scanUrl: string
-): Promise<{ success: boolean; url?: string; error?: string }> {
+): Promise<{ success: boolean; url?: string; localUrl?: string; error?: string }> {
   try {
     const img = await loadImage(scanUrl);
 
@@ -215,16 +224,22 @@ export async function generateAndUploadOgFromScan(
       );
     });
 
+    const localUrl = URL.createObjectURL(blob);
+
     const path = `${cardId}/og.jpg`;
     const { error } = await supabase.storage.from('derivatives').upload(path, blob, {
       contentType: 'image/jpeg',
       upsert: true,
+      cacheControl: '0',
     });
 
-    if (error) return { success: false, error: error.message };
+    if (error) {
+      URL.revokeObjectURL(localUrl);
+      return { success: false, error: error.message };
+    }
 
     const { data } = supabase.storage.from('derivatives').getPublicUrl(path);
-    return { success: true, url: data.publicUrl };
+    return { success: true, url: data.publicUrl, localUrl };
   } catch (err) {
     return { success: false, error: err instanceof Error ? err.message : String(err) };
   }
