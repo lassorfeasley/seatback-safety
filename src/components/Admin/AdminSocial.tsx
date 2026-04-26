@@ -14,12 +14,14 @@ import {
   Palette,
   Calendar,
   ImagePlus,
+  Send,
 } from 'lucide-react';
 import {
   fetchSocialPosts,
   generateSocialPost,
   updateSocialPost,
   deleteSocialPost,
+  publishSocialPostNow,
   renderSocialPostPreview,
   type SocialPostWithCard,
   type SocialPost,
@@ -129,20 +131,41 @@ function PostEditor({
   onClose,
   onSave,
   onDelete,
+  onPublished,
 }: {
   post: SocialPostWithCard;
   onClose: () => void;
   onSave: (id: string, updates: Partial<Pick<SocialPost, 'caption' | 'status' | 'scheduled_at'>>) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
+  onPublished: (id: string) => Promise<void>;
 }) {
   const navigate = useNavigate();
   const [caption, setCaption] = useState(post.caption ?? '');
   const [scheduledAt, setScheduledAt] = useState(
     post.scheduled_at ? post.scheduled_at.slice(0, 16) : ''
   );
-  const [status, setStatus] = useState(post.status);
+  const [status, setStatus] = useState<SocialPost['status']>(
+    post.status === 'failed' ? 'scheduled' : post.status,
+  );
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [publishing, setPublishing] = useState(false);
+
+  useEffect(() => {
+    setCaption(post.caption ?? '');
+    setScheduledAt(post.scheduled_at ? post.scheduled_at.slice(0, 16) : '');
+    if (post.status === 'failed') setStatus('scheduled');
+    else if (post.status === 'draft' || post.status === 'scheduled') setStatus(post.status);
+    else if (post.status === 'posted') setStatus('posted');
+  }, [
+    post.id,
+    post.caption,
+    post.scheduled_at,
+    post.status,
+    post.updated_at,
+    post.publish_error,
+    post.instagram_permalink,
+  ]);
 
   const handleSave = async () => {
     setSaving(true);
@@ -161,6 +184,21 @@ function PostEditor({
     setDeleting(false);
     onClose();
   };
+
+  const handlePublishInstagram = async () => {
+    if (!confirm('Publish this post to Instagram now?')) return;
+    setPublishing(true);
+    const { error: pubErr } = await publishSocialPostNow(post.id);
+    setPublishing(false);
+    if (pubErr) {
+      window.alert(pubErr);
+      return;
+    }
+    await onPublished(post.id);
+  };
+
+  const canPublishToInstagram =
+    post.status !== 'posted' && ['draft', 'scheduled', 'failed'].includes(post.status);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
@@ -206,18 +244,57 @@ function PostEditor({
             </p>
           </div>
 
+          {post.publish_error && (
+            <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+              <span className="font-medium">Last publish error: </span>
+              {post.publish_error}
+            </div>
+          )}
+
+          {post.status === 'posted' && post.instagram_permalink && (
+            <div className="rounded-md border bg-muted/40 px-3 py-2 text-sm">
+              <span className="font-medium text-muted-foreground">Instagram: </span>
+              <a
+                href={post.instagram_permalink}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-primary hover:underline inline-flex items-center gap-1"
+              >
+                Open post <ExternalLink className="h-3 w-3" />
+              </a>
+            </div>
+          )}
+
           {/* Schedule */}
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
-              <label className="text-sm font-medium">Status</label>
-              <select
-                value={status}
-                onChange={(e) => setStatus(e.target.value as SocialPost['status'])}
-                className="w-full rounded-md border bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              >
-                <option value="draft">Draft</option>
-                <option value="scheduled">Scheduled</option>
-              </select>
+              <div className="flex items-center gap-2 flex-wrap">
+                <label className="text-sm font-medium">Status</label>
+                {post.status === 'posted' && <StatusBadge status="posted" />}
+                {post.status === 'failed' && <StatusBadge status="failed" />}
+              </div>
+              {post.status === 'posted' ? (
+                <p className="text-sm text-muted-foreground rounded-md border bg-muted/30 px-3 py-2">
+                  Published to Instagram. Caption edits here do not sync to Instagram.
+                </p>
+              ) : (
+                <>
+                  {post.status === 'failed' && (
+                    <p className="text-xs text-muted-foreground">
+                      After fixing the issue, save as draft or scheduled, or use Publish to Instagram to retry while
+                      still failed.
+                    </p>
+                  )}
+                  <select
+                    value={status === 'draft' || status === 'scheduled' ? status : 'scheduled'}
+                    onChange={(e) => setStatus(e.target.value as 'draft' | 'scheduled')}
+                    className="w-full rounded-md border bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    <option value="draft">Draft</option>
+                    <option value="scheduled">Scheduled</option>
+                  </select>
+                </>
+              )}
             </div>
             <div className="space-y-1.5">
               <label className="text-sm font-medium">Scheduled Date</label>
@@ -231,7 +308,7 @@ function PostEditor({
           </div>
         </div>
 
-        <div className="flex items-center justify-between p-4 border-t">
+        <div className="flex flex-wrap items-center justify-between gap-2 p-4 border-t">
           <Button
             variant="destructive"
             size="sm"
@@ -242,11 +319,27 @@ function PostEditor({
             {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
             Delete
           </Button>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2 justify-end">
+            {canPublishToInstagram && (
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={handlePublishInstagram}
+                disabled={publishing || saving}
+                className="gap-1.5"
+              >
+                {publishing ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Send className="h-4 w-4" />
+                )}
+                Publish to Instagram
+              </Button>
+            )}
             <Button variant="outline" size="sm" onClick={onClose}>
               Cancel
             </Button>
-            <Button size="sm" onClick={handleSave} disabled={saving} className="gap-1.5">
+            <Button size="sm" onClick={handleSave} disabled={saving || publishing} className="gap-1.5">
               {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
               Save
             </Button>
@@ -276,10 +369,13 @@ export const AdminSocial: React.FC = () => {
     const { posts: data, error: err } = await fetchSocialPosts();
     if (err) {
       setError(err);
+      setLoading(false);
+      return undefined;
     } else {
       setPosts(data ?? []);
+      setLoading(false);
+      return data ?? [];
     }
-    setLoading(false);
   }, []);
 
   useEffect(() => {
@@ -318,6 +414,12 @@ export const AdminSocial: React.FC = () => {
     } else {
       await loadPosts();
     }
+  };
+
+  const handleInstagramPublished = async (id: string) => {
+    const list = await loadPosts();
+    const fresh = list?.find((p) => p.id === id);
+    if (fresh) setEditingPost(fresh);
   };
 
   // Calendar data
@@ -609,6 +711,7 @@ export const AdminSocial: React.FC = () => {
           onClose={() => setEditingPost(null)}
           onSave={handleSave}
           onDelete={handleDelete}
+          onPublished={handleInstagramPublished}
         />
       )}
     </>

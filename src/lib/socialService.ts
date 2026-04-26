@@ -14,6 +14,10 @@ export interface SocialPost {
   status: 'draft' | 'scheduled' | 'posted' | 'failed';
   scheduled_at: string | null;
   posted_at: string | null;
+  instagram_media_id: string | null;
+  instagram_permalink: string | null;
+  publish_error: string | null;
+  publish_attempted_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -277,6 +281,10 @@ export async function fetchSocialPosts(): Promise<{
           status: row.status as SocialPost['status'],
           scheduled_at: row.scheduled_at as string | null,
           posted_at: row.posted_at as string | null,
+          instagram_media_id: (row.instagram_media_id as string | null) ?? null,
+          instagram_permalink: (row.instagram_permalink as string | null) ?? null,
+          publish_error: (row.publish_error as string | null) ?? null,
+          publish_attempted_at: (row.publish_attempted_at as string | null) ?? null,
           created_at: row.created_at as string,
           updated_at: row.updated_at as string,
           card_title: (card?.title as string) ?? null,
@@ -315,4 +323,39 @@ export async function deleteSocialPost(
 
   if (error) return { error: error.message };
   return {};
+}
+
+/** Publishes a draft, scheduled, or failed post to Instagram via Edge Function. */
+export async function publishSocialPostNow(
+  postId: string
+): Promise<{ error?: string }> {
+  try {
+    const { data, error } = await supabase.functions.invoke('publish-instagram', {
+      body: { post_id: postId },
+    });
+
+    if (error) {
+      let detail = error.message;
+      try {
+        const ctx = (error as unknown as { context?: Response }).context;
+        if (ctx) {
+          const body = await ctx.json();
+          detail = (body?.error as string) ?? detail;
+          if (body?.detail) detail += ': ' + body.detail;
+        }
+      } catch {
+        /* ignore */
+      }
+      return { error: detail };
+    }
+
+    if (data && typeof data === 'object' && 'error' in data) {
+      const errMsg = (data as { error?: string }).error;
+      if (errMsg) return { error: errMsg };
+    }
+
+    return {};
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : String(err) };
+  }
 }

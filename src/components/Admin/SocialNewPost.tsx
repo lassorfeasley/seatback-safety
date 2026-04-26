@@ -328,6 +328,10 @@ export const SocialNewPost: React.FC<{
     }
     const merged: SocialPostWithCard = {
       ...result.post,
+      instagram_media_id: result.post.instagram_media_id ?? null,
+      instagram_permalink: result.post.instagram_permalink ?? null,
+      publish_error: result.post.publish_error ?? null,
+      publish_attempted_at: result.post.publish_attempted_at ?? null,
       card_title: result.card_title ?? lightboxCard.title,
       airline_name: result.airline_name ?? lightboxCard.airline_name,
       panel_image_url: result.panel_image_url ?? null,
