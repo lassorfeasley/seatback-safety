@@ -1,5 +1,12 @@
 import { corsHeaders } from "../_shared/cors.ts";
-import { Image } from "npm:imagescript@1.3.0";
+
+let ImageScript: { Image: any } | null = null;
+async function getImageScript() {
+  if (!ImageScript) {
+    ImageScript = await import("https://deno.land/x/imagescript@1.3.0/mod.ts");
+  }
+  return ImageScript;
+}
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
 const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY");
@@ -159,6 +166,7 @@ async function buildSquareJpegPublicUrl(
   const res = await fetch(panelUrl);
   if (!res.ok) throw new Error(`Failed to fetch panel image: ${res.status}`);
   const buf = new Uint8Array(await res.arrayBuffer());
+  const { Image } = await getImageScript();
   let img = await Image.decode(buf);
   const w = img.width;
   const h = img.height;
