@@ -1,13 +1,5 @@
 import { corsHeaders } from "../_shared/cors.ts";
 
-let ImageScript: { Image: any } | null = null;
-async function getImageScript() {
-  if (!ImageScript) {
-    ImageScript = await import("https://deno.land/x/imagescript@1.3.0/mod.ts");
-  }
-  return ImageScript;
-}
-
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
 const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY");
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
@@ -157,42 +149,8 @@ function panelFilePathFromCard(card: Record<string, unknown>, panelId: string): 
   return null;
 }
 
-async function buildSquareJpegPublicUrl(
-  supabase: any,
-  post: SocialPostRow,
-  panelFilePath: string,
-): Promise<string> {
-  const panelUrl = derivativePublicUrl(panelFilePath);
-  const res = await fetch(panelUrl);
-  if (!res.ok) throw new Error(`Failed to fetch panel image: ${res.status}`);
-  const buf = new Uint8Array(await res.arrayBuffer());
-  const { Image } = await getImageScript();
-  let img = await Image.decode(buf);
-  const w = img.width;
-  const h = img.height;
-  const minDim = Math.min(w, h);
-  const cropPx = Math.round(post.crop_size_pct * minDim);
-  const sx = Math.round(post.crop_x_pct * w);
-  const sy = Math.round(post.crop_y_pct * h);
-  if (cropPx < 1 || sx < 0 || sy < 0 || sx + cropPx > w || sy + cropPx > h) {
-    throw new Error("Invalid crop coordinates for panel image");
-  }
-  img.crop(sx, sy, cropPx, cropPx);
-  if (img.width !== 1080 || img.height !== 1080) {
-    img.resize(1080, 1080);
-  }
-  const jpeg = await img.encodeJPEG(88);
-  const outPath = `social-publish/${post.id}.jpg`;
-  const { error: upErr } = await supabase.storage.from("derivatives").upload(outPath, jpeg, {
-    contentType: "image/jpeg",
-    upsert: true,
-  });
-  if (upErr) throw new Error(`Storage upload failed: ${upErr.message}`);
-  return derivativePublicUrl(outPath);
-}
-
 async function resolveImageUrlForPublish(
-  supabase: any,
+  _supabase: any,
   post: SocialPostRow,
   card: Record<string, unknown> | null,
 ): Promise<string> {
@@ -202,7 +160,7 @@ async function resolveImageUrlForPublish(
   if (!card) throw new Error("Post has no crop_image_path and card data is missing");
   const panelPath = panelFilePathFromCard(card, post.panel_id);
   if (!panelPath) throw new Error("No panel image found for this post");
-  return await buildSquareJpegPublicUrl(supabase, post, panelPath);
+  return derivativePublicUrl(panelPath);
 }
 
 async function fetchPost(
