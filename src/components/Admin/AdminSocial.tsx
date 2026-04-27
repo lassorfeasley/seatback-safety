@@ -19,6 +19,7 @@ import {
 import {
   fetchSocialPosts,
   generateSocialPost,
+  batchSchedulePosts,
   updateSocialPost,
   deleteSocialPost,
   publishSocialPostNow,
@@ -140,9 +141,18 @@ function PostEditor({
   onPublished: (id: string) => Promise<void>;
 }) {
   const navigate = useNavigate();
+
+  function utcToLocalInput(iso: string | null): string {
+    if (!iso) return '';
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return '';
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  }
+
   const [caption, setCaption] = useState(post.caption ?? '');
   const [scheduledAt, setScheduledAt] = useState(
-    post.scheduled_at ? post.scheduled_at.slice(0, 16) : ''
+    utcToLocalInput(post.scheduled_at)
   );
   const [status, setStatus] = useState<SocialPost['status']>(
     post.status === 'failed' ? 'scheduled' : post.status,
@@ -153,7 +163,7 @@ function PostEditor({
 
   useEffect(() => {
     setCaption(post.caption ?? '');
-    setScheduledAt(post.scheduled_at ? post.scheduled_at.slice(0, 16) : '');
+    setScheduledAt(utcToLocalInput(post.scheduled_at));
     if (post.status === 'failed') setStatus('scheduled');
     else if (post.status === 'draft' || post.status === 'scheduled') setStatus(post.status);
     else if (post.status === 'posted') setStatus('posted');
@@ -297,7 +307,7 @@ function PostEditor({
               )}
             </div>
             <div className="space-y-1.5">
-              <label className="text-sm font-medium">Scheduled Date</label>
+              <label className="text-sm font-medium">Scheduled Date <span className="font-normal text-muted-foreground">(ET)</span></label>
               <input
                 type="datetime-local"
                 value={scheduledAt}
@@ -359,6 +369,11 @@ export const AdminSocial: React.FC = () => {
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [editingPost, setEditingPost] = useState<SocialPostWithCard | null>(null);
+  const [showFillSchedule, setShowFillSchedule] = useState(false);
+  const [fillStart, setFillStart] = useState('');
+  const [fillEnd, setFillEnd] = useState('');
+  const [fillTime, setFillTime] = useState('09:00');
+  const [filling, setFilling] = useState(false);
 
   // Calendar state
   const now = new Date();
@@ -392,6 +407,23 @@ export const AdminSocial: React.FC = () => {
       await loadPosts();
     }
     setGenerating(false);
+  };
+
+  const handleFillSchedule = async () => {
+    if (!fillStart || !fillEnd) return;
+    setFilling(true);
+    setError(null);
+    const { count, error: err } = await batchSchedulePosts(fillStart, fillEnd, fillTime);
+    if (err) {
+      setError(err);
+    } else {
+      await loadPosts();
+      setShowFillSchedule(false);
+      setFillStart('');
+      setFillEnd('');
+      alert(`Scheduled ${count} posts.`);
+    }
+    setFilling(false);
   };
 
   const handleSave = async (
@@ -464,21 +496,39 @@ export const AdminSocial: React.FC = () => {
           <div className="flex items-center justify-between">
             <h1 className="text-sm font-medium tracking-widest uppercase text-black/60">Social</h1>
             {tab === 'calendar' && (
-              <Button
-                onClick={handleGenerate}
-                size="sm"
-                variant="outline"
-                className="gap-1.5"
-                disabled={generating}
-                title="AI picks a random card, crop, and caption"
-              >
-                {generating ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Sparkles className="h-4 w-4" />
-                )}
-                {generating ? 'Generating...' : 'Random (AI)'}
-              </Button>
+              <div className="flex gap-2">
+                <Button
+                  onClick={() => {
+                    const today = new Date();
+                    const nextWeek = new Date(today);
+                    nextWeek.setDate(today.getDate() + 7);
+                    setFillStart(today.toISOString().slice(0, 10));
+                    setFillEnd(nextWeek.toISOString().slice(0, 10));
+                    setShowFillSchedule(true);
+                  }}
+                  size="sm"
+                  variant="outline"
+                  className="gap-1.5"
+                >
+                  <Calendar className="h-4 w-4" />
+                  Fill Schedule
+                </Button>
+                <Button
+                  onClick={handleGenerate}
+                  size="sm"
+                  variant="outline"
+                  className="gap-1.5"
+                  disabled={generating}
+                  title="Pick a random card and create a draft with OG image"
+                >
+                  {generating ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Sparkles className="h-4 w-4" />
+                  )}
+                  {generating ? 'Generating...' : 'Random'}
+                </Button>
+              </div>
             )}
           </div>
           <div className="flex gap-4 border-b border-black/5 -mb-5 pb-0">
@@ -713,6 +763,74 @@ export const AdminSocial: React.FC = () => {
           onDelete={handleDelete}
           onPublished={handleInstagramPublished}
         />
+      )}
+
+      {/* Fill Schedule Dialog */}
+      {showFillSchedule && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-card rounded-lg shadow-xl border w-full max-w-md m-4">
+            <div className="flex items-center justify-between p-4 border-b">
+              <h2 className="text-lg font-semibold">Fill Schedule</h2>
+              <Button variant="ghost" size="icon" onClick={() => setShowFillSchedule(false)}>
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+            <div className="p-4 space-y-4">
+              <p className="text-sm text-muted-foreground">
+                Auto-generate one post per day using random OG images. Each post gets a unique card.
+              </p>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium">Start date</label>
+                  <input
+                    type="date"
+                    value={fillStart}
+                    onChange={(e) => setFillStart(e.target.value)}
+                    className="w-full rounded-md border bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium">End date</label>
+                  <input
+                    type="date"
+                    value={fillEnd}
+                    onChange={(e) => setFillEnd(e.target.value)}
+                    className="w-full rounded-md border bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  />
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium">Post time (ET)</label>
+                <input
+                  type="time"
+                  value={fillTime}
+                  onChange={(e) => setFillTime(e.target.value)}
+                  className="w-full rounded-md border bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                />
+                <p className="text-xs text-muted-foreground">Eastern Time — converted to UTC when scheduling</p>
+              </div>
+              {fillStart && fillEnd && (
+                <p className="text-sm text-muted-foreground">
+                  {Math.max(0, Math.ceil((new Date(fillEnd).getTime() - new Date(fillStart).getTime()) / 86400000) + 1)} posts will be scheduled
+                </p>
+              )}
+            </div>
+            <div className="flex justify-end gap-2 p-4 border-t">
+              <Button variant="outline" size="sm" onClick={() => setShowFillSchedule(false)}>
+                Cancel
+              </Button>
+              <Button
+                size="sm"
+                onClick={handleFillSchedule}
+                disabled={filling || !fillStart || !fillEnd}
+                className="gap-1.5"
+              >
+                {filling ? <Loader2 className="h-4 w-4 animate-spin" /> : <Calendar className="h-4 w-4" />}
+                {filling ? 'Scheduling...' : 'Schedule Posts'}
+              </Button>
+            </div>
+          </div>
+        </div>
       )}
     </>
   );

@@ -258,13 +258,6 @@ Deno.serve(async (req: Request) => {
     return new Response("ok", { headers: corsHeaders });
   }
 
-  if (!ANTHROPIC_API_KEY) {
-    return new Response(
-      JSON.stringify({ error: "ANTHROPIC_API_KEY not configured" }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    );
-  }
-
   if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
     return new Response(
       JSON.stringify({ error: "SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY not configured" }),
@@ -276,12 +269,6 @@ Deno.serve(async (req: Request) => {
     const { createClient } = await import("https://esm.sh/@supabase/supabase-js@2");
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
-    const { data: directiveRows } = await supabase
-      .from("social_style_directives")
-      .select("label, directive, category, enforcement, sort_order")
-      .eq("is_active", true)
-      .order("sort_order", { ascending: true });
-
     let requestBody: Record<string, unknown> = {};
     if (req.method === "POST") {
       try {
@@ -291,7 +278,229 @@ Deno.serve(async (req: Request) => {
       }
     }
 
+    const { data: directiveRows } = requestBody.mode !== "simple_og"
+      ? await supabase
+          .from("social_style_directives")
+          .select("label, directive, category, enforcement, sort_order")
+          .eq("is_active", true)
+          .order("sort_order", { ascending: true })
+      : { data: null };
+
+    if (requestBody.mode === "simple_og" || requestBody.mode === "batch_schedule") {
+      const isBatch = requestBody.mode === "batch_schedule";
+      const schedDates: string[] = [];
+
+      if (isBatch) {
+        const startDate = requestBody.start_date as string | undefined;
+        const endDate = requestBody.end_date as string | undefined;
+        const postTime = (requestBody.post_time as string) ?? "13:00";
+        if (!startDate || !endDate) {
+          return new Response(
+            JSON.stringify({ error: "batch_schedule requires start_date and end_date (YYYY-MM-DD)" }),
+            { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+          );
+        }
+        const cur = new Date(startDate + "T00:00:00Z");
+        const end = new Date(endDate + "T00:00:00Z");
+        if (isNaN(cur.getTime()) || isNaN(end.getTime()) || cur > end) {
+          return new Response(
+            JSON.stringify({ error: "Invalid date range" }),
+            { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+          );
+        }
+        const maxDays = 90;
+        let count = 0;
+        while (cur <= end && count < maxDays) {
+          const dateStr = cur.toISOString().slice(0, 10);
+          schedDates.push(`${dateStr}T${postTime}:00Z`);
+          cur.setUTCDate(cur.getUTCDate() + 1);
+          count++;
+        }
+      }
+
+      const { data: allCards, error: allErr } = await supabase
+        .from("safety_cards")
+        .select(`
+          id,
+          title,
+          published_year,
+          airline:airlines(name),
+          card_aircraft(
+            aircraft_variant:aircraft_variants(
+              name,
+              aircraft_model:aircraft_models(
+                name,
+                manufacturer:aircraft_manufacturers(name)
+              )
+            )
+          ),
+          card_sides(
+            side,
+            card_panels(
+              id,
+              panel_index,
+              panel_images(variant, file_path)
+            )
+          )
+        `)
+        .limit(200);
+
+      if (allErr) {
+        return new Response(
+          JSON.stringify({ error: "Failed to query cards", detail: allErr.message }),
+          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
+      }
+
+      const hasImages = (c: Record<string, unknown>) => {
+        const sides = (c.card_sides as Array<Record<string, unknown>>) ?? [];
+        return sides.some((s) =>
+          ((s.card_panels as Array<Record<string, unknown>>) ?? []).some((p) =>
+            ((p.panel_images as Array<Record<string, unknown>>) ?? []).length > 0
+          )
+        );
+      };
+      const eligible = (allCards ?? []).filter((c: Record<string, unknown>) => hasImages(c));
+
+      if (eligible.length === 0) {
+        return new Response(
+          JSON.stringify({ error: "No cards with images found" }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
+      }
+
+      const { data: existingOg } = await supabase
+        .from("social_posts")
+        .select("card_id");
+      const usedIds = new Set(
+        (existingOg ?? []).map((p: Record<string, unknown>) => p.card_id)
+      );
+      const fresh = eligible.filter((c: Record<string, unknown>) => !usedIds.has(c.id));
+
+      function buildCaption(card: Record<string, unknown>) {
+        const an = (card.airline as Record<string, unknown>)?.name as string ?? "";
+        const acE = (card.card_aircraft as Array<Record<string, unknown>>) ?? [];
+        const acL = acE.map((entry) => {
+          const v = entry.aircraft_variant as Record<string, unknown>;
+          const m = v?.aircraft_model as Record<string, unknown>;
+          const mfr = m?.manufacturer as Record<string, unknown>;
+          return [mfr?.name as string, m?.name as string, v?.name as string].filter(Boolean).join(" ");
+        });
+        const ac = acL.length > 0 ? acL.join(", ") : "";
+        const yr = card.published_year as number | null;
+        const p = [an, ac].filter(Boolean).join(" ");
+        const ys = yr ? ` c. ${yr}` : "";
+        return { caption: `✈️ ${p} #SeatbackSafety card${ys}`, airlineName: an, aircraft: ac };
+      }
+
+      if (isBatch) {
+        const batchPool = [...fresh];
+        const usedInBatch = new Set<string>();
+        const results: Array<Record<string, unknown>> = [];
+
+        for (const schedIso of schedDates) {
+          let available = batchPool.filter((c) => !usedInBatch.has(c.id as string));
+          if (available.length === 0) {
+            available = eligible.filter((c) => !usedInBatch.has(c.id as string));
+          }
+          if (available.length === 0) break;
+
+          const card = available[Math.floor(Math.random() * available.length)] as Record<string, unknown>;
+          usedInBatch.add(card.id as string);
+
+          const panels = collectPanelInfos(card);
+          if (panels.length === 0) continue;
+
+          const { caption } = buildCaption(card);
+          const ogPath = `${card.id}/og.jpg`;
+
+          const { data: row, error: insErr } = await supabase
+            .from("social_posts")
+            .insert({
+              card_id: card.id,
+              panel_id: panels[0].id,
+              crop_x_pct: 0,
+              crop_y_pct: 0,
+              crop_size_pct: 1,
+              crop_image_path: ogPath,
+              caption,
+              status: "scheduled",
+              scheduled_at: schedIso,
+            })
+            .select()
+            .single();
+
+          if (!insErr && row) results.push(row as Record<string, unknown>);
+        }
+
+        return new Response(
+          JSON.stringify({ posts: results, count: results.length }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
+      }
+
+      const ogPool = fresh.length > 0 ? fresh : eligible;
+      const picked = ogPool[Math.floor(Math.random() * ogPool.length)] as Record<string, unknown>;
+      const { caption, airlineName, aircraft: acStr } = buildCaption(picked);
+
+      const ogImagePath = `${picked.id}/og.jpg`;
+
+      const panelInfosOg = collectPanelInfos(picked);
+      const firstPanel = panelInfosOg[0];
+      if (!firstPanel) {
+        return new Response(
+          JSON.stringify({ error: "Card has no panels" }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
+      }
+
+      const scheduledAt = requestBody.auto_publish
+        ? new Date().toISOString()
+        : null;
+
+      const { data: ogPost, error: ogInsertErr } = await supabase
+        .from("social_posts")
+        .insert({
+          card_id: picked.id,
+          panel_id: firstPanel.id,
+          crop_x_pct: 0,
+          crop_y_pct: 0,
+          crop_size_pct: 1,
+          crop_image_path: ogImagePath,
+          caption,
+          status: requestBody.auto_publish ? "scheduled" : "draft",
+          scheduled_at: scheduledAt,
+        })
+        .select()
+        .single();
+
+      if (ogInsertErr) {
+        return new Response(
+          JSON.stringify({ error: "Failed to insert post", detail: ogInsertErr.message }),
+          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
+      }
+
+      return new Response(
+        JSON.stringify({
+          post: ogPost,
+          card_title: picked.title,
+          airline_name: airlineName,
+          aircraft: acStr,
+          panel_image_url: derivativePublicUrl(ogImagePath),
+          crop_description: null,
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+
     if (requestBody.mode === "manual_crop") {
+      if (!ANTHROPIC_API_KEY) {
+        return new Response(
+          JSON.stringify({ error: "ANTHROPIC_API_KEY not configured" }),
+          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
+      }
       const cardId = requestBody.card_id as string | undefined;
       const panelId = requestBody.panel_id as string | undefined;
       const croppedImagePath = requestBody.cropped_image_path as string | undefined;
@@ -487,6 +696,13 @@ ${metaLine}`,
           crop_description: parsedManual.crop_description ?? null,
         }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+
+    if (!ANTHROPIC_API_KEY) {
+      return new Response(
+        JSON.stringify({ error: "ANTHROPIC_API_KEY not configured" }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
       );
     }
 

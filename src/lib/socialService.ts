@@ -183,13 +183,13 @@ export async function createSocialPostFromManualCrop(
   }
 }
 
-export async function generateSocialPost(): Promise<{
+export async function generateSocialPost(mode: 'ai' | 'simple_og' = 'simple_og'): Promise<{
   result?: GenerateResult;
   error?: string;
 }> {
   try {
     const { data, error } = await supabase.functions.invoke('suggest-social-post', {
-      body: {},
+      body: mode === 'simple_og' ? { mode: 'simple_og' } : {},
     });
 
     if (error) {
@@ -210,6 +210,45 @@ export async function generateSocialPost(): Promise<{
     }
 
     return { result: data as GenerateResult };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+export async function batchSchedulePosts(
+  startDate: string,
+  endDate: string,
+  postTimeET = '09:00',
+): Promise<{ count?: number; error?: string }> {
+  try {
+    const [h, m] = postTimeET.split(':').map(Number);
+    const probe = new Date(`${startDate}T${postTimeET}:00`);
+    const offsetMin = probe.getTimezoneOffset();
+    const utcH = h + Math.round(offsetMin / 60);
+    const utcTime = `${String(Math.max(0, utcH) % 24).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+
+    const { data, error } = await supabase.functions.invoke('suggest-social-post', {
+      body: { mode: 'batch_schedule', start_date: startDate, end_date: endDate, post_time: utcTime },
+    });
+
+    if (error) {
+      let detail = error.message;
+      try {
+        const ctx = (error as unknown as { context?: Response }).context;
+        if (ctx) {
+          const body = await ctx.json();
+          detail = body?.error ?? detail;
+          if (body?.detail) detail += ': ' + body.detail;
+        }
+      } catch { /* ignore */ }
+      return { error: detail };
+    }
+
+    if (data?.error) {
+      return { error: `${data.error}${data.detail ? ': ' + data.detail : ''}` };
+    }
+
+    return { count: data?.count ?? 0 };
   } catch (err) {
     return { error: err instanceof Error ? err.message : String(err) };
   }
