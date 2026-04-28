@@ -1,17 +1,22 @@
--- Invoke publish-instagram in "due" mode on a schedule (Supabase Cron + pg_net).
+-- Scheduled-post cron: fires publish-instagram in "due" mode every 5 minutes.
+-- Picks up posts with status='scheduled' and scheduled_at <= now().
 --
--- Prerequisites:
+-- SETUP (one-time, run in Supabase SQL Editor):
+--
 --   1. Enable pg_cron and pg_net extensions
 --      (Dashboard > Database > Extensions).
---   2. Store YOUR service_role key in Vault:
+--
+--   2. Store the service role key in Vault so it is never hard-coded:
 --
 --        SELECT vault.create_secret(
 --          '<paste service_role key here>',
 --          'service_role_key'
 --        );
 --
--- The wrapper function reads the key from Vault at runtime so
--- no secret is ever hard-coded in SQL.
+--      (Find the key at Dashboard > Project Settings > API > service_role.)
+--
+--   3. Apply this migration (supabase db push) or paste the SQL below into
+--      the SQL Editor.
 
 create or replace function public.invoke_publish_instagram_due()
 returns void
@@ -43,7 +48,6 @@ begin
 end;
 $$;
 
--- Run every 5 minutes:
 select cron.schedule(
   'publish-instagram-due',
   '*/5 * * * *',

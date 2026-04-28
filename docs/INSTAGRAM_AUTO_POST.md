@@ -50,26 +50,26 @@ Existing function secrets still required:
 
 ## Scheduling (Supabase Cron)
 
-Use [Supabase Cron](https://supabase.com/docs/guides/functions/schedule-functions) to `POST` the function every few minutes.
+Scheduled posts rely on a **pg_cron** job that calls `publish-instagram` with `mode=due` every 5 minutes. Without this cron job, posts with `status='scheduled'` will never fire.
 
-1. Replace placeholders: project ref, **service role** key (store in Vault; do not commit).
-2. Deploy the `publish-instagram` function first.
+### One-time setup (Supabase SQL Editor)
 
-Example SQL (run in SQL Editor after enabling `pg_cron` / `pg_net` per Supabase docs):
+1. **Enable extensions** — Dashboard → Database → Extensions → enable **pg_cron** and **pg_net**.
+2. **Store the service role key in Vault** (so it is never hard-coded in SQL):
 
 ```sql
-select
-  net.http_post(
-    url := 'https://YOUR_PROJECT_REF.supabase.co/functions/v1/publish-instagram',
-    headers := jsonb_build_object(
-      'Content-Type', 'application/json',
-      'Authorization', 'Bearer YOUR_SERVICE_ROLE_KEY'
-    ),
-    body := jsonb_build_object('mode', 'due')
-  );
+SELECT vault.create_secret(
+  '<paste your service_role key here>',
+  'service_role_key'
+);
 ```
 
-Schedule with `cron.schedule` (e.g. every 5 minutes) wrapping the above in a small SQL function. See `supabase/cron/publish-instagram-due.example.sql` in this repo for a copy-paste template.
+   Find the key at Dashboard → Project Settings → API → `service_role`.
+
+3. **Deploy the Edge Function** (`supabase functions deploy publish-instagram`).
+4. **Apply migration `022_publish_due_cron.sql`** (via `supabase db push`) or paste its contents into the SQL Editor. This creates a wrapper function that reads the key from Vault and schedules the cron job to run every 5 minutes.
+
+See `supabase/cron/publish-instagram-due.example.sql` for the standalone SQL template.
 
 ## Limits and troubleshooting
 
