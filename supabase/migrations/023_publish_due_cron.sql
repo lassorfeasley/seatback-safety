@@ -6,14 +6,16 @@
 --   1. Enable pg_cron and pg_net extensions
 --      (Dashboard > Database > Extensions).
 --
---   2. Store the service role key in Vault so it is never hard-coded:
+--   2. Store the secret API key in Vault so it is never hard-coded:
 --
 --        SELECT vault.create_secret(
---          '<paste service_role key here>',
+--          '<paste secret key here>',
 --          'service_role_key'
 --        );
 --
---      (Find the key at Dashboard > Project Settings > API > service_role.)
+--      Use the key from Dashboard > Project Settings > API Keys >
+--      "Publishable and secret API keys" tab > secret key.
+--      (NOT the legacy service_role key on the other tab.)
 --
 --   3. Apply this migration (supabase db push) or paste the SQL below into
 --      the SQL Editor.

@@ -6,12 +6,16 @@
 --   1. Enable pg_cron and pg_net extensions
 --      (Dashboard > Database > Extensions).
 --
---   2. Store the service role key in Vault (skip if already done for 022):
+--   2. Store the secret API key in Vault (skip if already done for 023):
 --
 --        SELECT vault.create_secret(
---          '<paste service_role key here>',
+--          '<paste secret key here>',
 --          'service_role_key'
 --        );
+--
+--      Use the key from Dashboard > Project Settings > API Keys >
+--      "Publishable and secret API keys" tab > secret key.
+--      (NOT the legacy service_role key on the other tab.)
 
 create or replace function public.invoke_daily_post()
 returns void
