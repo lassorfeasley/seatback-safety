@@ -27,6 +27,7 @@ import {
   BookOpen,
   Star,
   Image as ImageIcon,
+  Crop as CropIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { CardVisualizer3D } from '@/components/FoldEditor/CardVisualizer3D';
@@ -69,6 +70,8 @@ import {
   createVariant,
 } from '@/lib/lookupService';
 import type { Panel } from '@/components/FoldEditor/types';
+import { SocialCropper } from '@/components/Admin/SocialCropper';
+import { fetchCropsForCard, deleteSocialCrop, type SocialCrop } from '@/lib/socialCropService';
 
 interface CardDetailProps {
   cardId: string;
@@ -190,6 +193,11 @@ export const CardDetail: React.FC<CardDetailProps> = ({ cardId, onBack, onEditCr
   const [uploadingScans, setUploadingScans] = useState(false);
   const scanFileInputRef = useRef<HTMLInputElement>(null);
 
+  const [socialCrops, setSocialCrops] = useState<SocialCrop[]>([]);
+  const [showSocialCropper, setShowSocialCropper] = useState(false);
+  const [deletingCropId, setDeletingCropId] = useState<string | null>(null);
+  const [socialCropScan, setSocialCropScan] = useState<ScanInfo | null>(null);
+
   // Track which panel slot is being background-saved (from crop editor return)
   const [savingSlot, setSavingSlot] = useState<{ panelIndex: number; side: string } | null>(() => {
     const params = new URLSearchParams(window.location.search);
@@ -225,6 +233,20 @@ export const CardDetail: React.FC<CardDetailProps> = ({ cardId, onBack, onEditCr
         }
       });
   }, [cardId]);
+
+  const loadSocialCrops = useCallback(async () => {
+    const { crops } = await fetchCropsForCard(cardId);
+    if (crops) setSocialCrops(crops);
+  }, [cardId]);
+
+  useEffect(() => { loadSocialCrops(); }, [loadSocialCrops]);
+
+  const handleDeleteCrop = useCallback(async (cropId: string) => {
+    setDeletingCropId(cropId);
+    await deleteSocialCrop(cropId);
+    setSocialCrops((prev) => prev.filter((c) => c.id !== cropId));
+    setDeletingCropId(null);
+  }, []);
 
   // Poll for updates when panels are still processing or a background save is in flight
   useEffect(() => {
@@ -695,6 +717,21 @@ export const CardDetail: React.FC<CardDetailProps> = ({ cardId, onBack, onEditCr
                       <span>Nonstandard format — scans displayed as gallery on the public page</span>
                     </div>
                   </div>
+
+                  {/* ── Social Crops (unstructured) ────────────── */}
+                  {hasScans && (
+                    <SocialCropsScanSection
+                      crops={socialCrops}
+                      scans={card.scans}
+                      isEditing={isEditing}
+                      deletingCropId={deletingCropId}
+                      onPickScan={(scan) => {
+                        setSocialCropScan(scan);
+                        setShowSocialCropper(true);
+                      }}
+                      onDeleteCrop={handleDeleteCrop}
+                    />
+                  )}
                 </>
               ) : (
               /* ── Structured card: full panel/crop/fold pipeline ── */
@@ -970,6 +1007,17 @@ export const CardDetail: React.FC<CardDetailProps> = ({ cardId, onBack, onEditCr
               {!isEditing && ogExists && ogImageUrl && (
                 <OgAccordion ogImageUrl={ogImageUrl} />
               )}
+
+              {/* ── Social Crops ────────────────────────────────── */}
+              {hasPanels && (
+                <SocialCropsSection
+                  crops={socialCrops}
+                  isEditing={isEditing}
+                  deletingCropId={deletingCropId}
+                  onOpenCropper={() => setShowSocialCropper(true)}
+                  onDeleteCrop={handleDeleteCrop}
+                />
+              )}
               </>
               )}
             </div>
@@ -1113,7 +1161,246 @@ export const CardDetail: React.FC<CardDetailProps> = ({ cardId, onBack, onEditCr
       {lightboxUrl && (
         <Lightbox url={lightboxUrl} onClose={() => setLightboxUrl(null)} />
       )}
+
+      {showSocialCropper && card && card.card_mode !== 'unstructured' && (
+        <SocialCropper
+          mode="panels"
+          cardId={cardId}
+          cardDetail={card}
+          onCropSaved={(crop) => {
+            setSocialCrops((prev) => [crop, ...prev]);
+            setShowSocialCropper(false);
+          }}
+          onClose={() => setShowSocialCropper(false)}
+        />
+      )}
+
+      {showSocialCropper && card && card.card_mode === 'unstructured' && socialCropScan && (
+        <SocialCropper
+          mode="scan"
+          cardId={cardId}
+          scanUrl={socialCropScan.url!}
+          scanId={socialCropScan.id}
+          onCropSaved={(crop) => {
+            setSocialCrops((prev) => [crop, ...prev]);
+            setShowSocialCropper(false);
+            setSocialCropScan(null);
+          }}
+          onClose={() => { setShowSocialCropper(false); setSocialCropScan(null); }}
+        />
+      )}
     </div>
+  );
+};
+
+// ─── Social Crops Section ────────────────────────────────────────
+
+const SocialCropsSection: React.FC<{
+  crops: SocialCrop[];
+  isEditing: boolean;
+  deletingCropId: string | null;
+  onOpenCropper: () => void;
+  onDeleteCrop: (id: string) => void;
+}> = ({ crops, isEditing, deletingCropId, onOpenCropper, onDeleteCrop }) => {
+  const [open, setOpen] = useState(crops.length > 0 || isEditing);
+
+  function derivativePublicUrl(filePath: string): string {
+    const { data } = supabase.storage.from('derivatives').getPublicUrl(filePath);
+    return data.publicUrl;
+  }
+
+  return (
+    <section className="border bg-card">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex items-center gap-2.5 w-full px-4 py-3 text-left"
+      >
+        <div className={cn(
+          'flex items-center justify-center w-5 h-5 text-[10px] font-semibold flex-shrink-0 transition-colors',
+          crops.length > 0
+            ? 'bg-emerald-500/10 text-emerald-600 ring-1 ring-emerald-500/20'
+            : 'bg-muted text-muted-foreground'
+        )}>
+          {crops.length > 0 ? <Check className="h-3 w-3" /> : <CropIcon className="h-3 w-3" />}
+        </div>
+        <span className="text-muted-foreground flex-shrink-0"><CropIcon className="h-4 w-4" /></span>
+        <span className="text-sm font-medium flex-1 min-w-0 truncate">Social Crops</span>
+        {crops.length > 0 && (
+          <span className="text-[11px] text-muted-foreground/70 flex-shrink-0 tabular-nums">
+            {crops.length} saved
+          </span>
+        )}
+        {open ? (
+          <ChevronUp className="h-3.5 w-3.5 text-muted-foreground/50 flex-shrink-0" />
+        ) : (
+          <ChevronDown className="h-3.5 w-3.5 text-muted-foreground/50 flex-shrink-0" />
+        )}
+      </button>
+      {open && (
+        <div className="px-4 pb-4 pt-0">
+          {crops.length > 0 && (
+            <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 mb-3">
+              {crops.map((crop) => (
+                <div key={crop.id} className="relative group aspect-square rounded-lg overflow-hidden border bg-muted">
+                  <img
+                    src={derivativePublicUrl(crop.crop_image_path)}
+                    alt={crop.label ?? 'Social crop'}
+                    className="w-full h-full object-cover"
+                    loading="lazy"
+                  />
+                  {isEditing && (
+                    <button
+                      type="button"
+                      onClick={() => onDeleteCrop(crop.id)}
+                      disabled={deletingCropId === crop.id}
+                      className="absolute top-1 right-1 p-1 rounded-full bg-black/60 text-white opacity-0 group-hover:opacity-100 hover:bg-red-600 transition-all"
+                    >
+                      {deletingCropId === crop.id ? (
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                      ) : (
+                        <Trash2 className="h-3 w-3" />
+                      )}
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+          {isEditing ? (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onOpenCropper}
+              className="gap-1.5"
+            >
+              <CropIcon className="h-3.5 w-3.5" />
+              {crops.length > 0 ? 'Add another crop' : 'Select a crop'}
+            </Button>
+          ) : crops.length === 0 ? (
+            <p className="text-sm text-muted-foreground/50">
+              No social crops saved. Enter edit mode to select dramatic scenes for social media.
+            </p>
+          ) : null}
+        </div>
+      )}
+    </section>
+  );
+};
+
+// ─── Social Crops Scan Section (for unstructured cards) ──────────
+
+const SocialCropsScanSection: React.FC<{
+  crops: SocialCrop[];
+  scans: ScanInfo[];
+  isEditing: boolean;
+  deletingCropId: string | null;
+  onPickScan: (scan: ScanInfo) => void;
+  onDeleteCrop: (id: string) => void;
+}> = ({ crops, scans, isEditing, deletingCropId, onPickScan, onDeleteCrop }) => {
+  const [open, setOpen] = useState(crops.length > 0 || isEditing);
+
+  function derivativePublicUrl(filePath: string): string {
+    const { data } = supabase.storage.from('derivatives').getPublicUrl(filePath);
+    return data.publicUrl;
+  }
+
+  const scansWithUrls = scans.filter((s) => s.url);
+
+  return (
+    <section className="border bg-card">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex items-center gap-2.5 w-full px-4 py-3 text-left"
+      >
+        <div className={cn(
+          'flex items-center justify-center w-5 h-5 text-[10px] font-semibold flex-shrink-0 transition-colors',
+          crops.length > 0
+            ? 'bg-emerald-500/10 text-emerald-600 ring-1 ring-emerald-500/20'
+            : 'bg-muted text-muted-foreground'
+        )}>
+          {crops.length > 0 ? <Check className="h-3 w-3" /> : <CropIcon className="h-3 w-3" />}
+        </div>
+        <span className="text-muted-foreground flex-shrink-0"><CropIcon className="h-4 w-4" /></span>
+        <span className="text-sm font-medium flex-1 min-w-0 truncate">Social Crops</span>
+        {crops.length > 0 && (
+          <span className="text-[11px] text-muted-foreground/70 flex-shrink-0 tabular-nums">
+            {crops.length} saved
+          </span>
+        )}
+        {open ? (
+          <ChevronUp className="h-3.5 w-3.5 text-muted-foreground/50 flex-shrink-0" />
+        ) : (
+          <ChevronDown className="h-3.5 w-3.5 text-muted-foreground/50 flex-shrink-0" />
+        )}
+      </button>
+      {open && (
+        <div className="px-4 pb-4 pt-0">
+          {crops.length > 0 && (
+            <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 mb-3">
+              {crops.map((c) => (
+                <div key={c.id} className="relative group aspect-square rounded-lg overflow-hidden border bg-muted">
+                  <img
+                    src={derivativePublicUrl(c.crop_image_path)}
+                    alt={c.label ?? 'Social crop'}
+                    className="w-full h-full object-cover"
+                    loading="lazy"
+                  />
+                  {isEditing && (
+                    <button
+                      type="button"
+                      onClick={() => onDeleteCrop(c.id)}
+                      disabled={deletingCropId === c.id}
+                      className="absolute top-1 right-1 p-1 rounded-full bg-black/60 text-white opacity-0 group-hover:opacity-100 hover:bg-red-600 transition-all"
+                    >
+                      {deletingCropId === c.id ? (
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                      ) : (
+                        <Trash2 className="h-3 w-3" />
+                      )}
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+          {isEditing ? (
+            <div>
+              <p className="text-xs text-muted-foreground mb-2">
+                Pick a scan to crop a social media image from:
+              </p>
+              <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+                {scansWithUrls.map((scan) => (
+                  <button
+                    key={scan.id}
+                    type="button"
+                    onClick={() => onPickScan(scan)}
+                    className="group relative aspect-square rounded-lg overflow-hidden border-2 border-muted hover:border-primary/40 transition-all bg-muted"
+                  >
+                    <img
+                      src={scan.thumbnailUrl ?? scan.url!}
+                      alt={scan.original_filename ?? 'Scan'}
+                      className="w-full h-full object-cover"
+                      loading="lazy"
+                    />
+                    <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
+                      <div className="bg-black/60 rounded-full p-2">
+                        <CropIcon className="h-4 w-4 text-white" />
+                      </div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : crops.length === 0 ? (
+            <p className="text-sm text-muted-foreground/50">
+              No social crops saved. Enter edit mode to select dramatic scenes for social media.
+            </p>
+          ) : null}
+        </div>
+      )}
+    </section>
   );
 };
 
