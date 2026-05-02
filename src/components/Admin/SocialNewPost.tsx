@@ -678,7 +678,7 @@ function ReviewCropPreview({ post }: { post: SocialPostWithCard }) {
 
   useEffect(() => {
     renderSocialPostPreview(post, post.panel_image_url, 240)
-      .then((dataUrl) => {
+      .then((dataUrl: string) => {
         const c = ref.current;
         if (!c) return;
         const ctx = c.getContext('2d');

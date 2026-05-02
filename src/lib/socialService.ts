@@ -149,6 +149,119 @@ export async function deleteSocialPost(
   return {};
 }
 
+export async function createSocialPostFromManualCrop(params: {
+  card_id: string;
+  panel_id: string;
+  cropped_image_path: string;
+}): Promise<{
+  result?: {
+    post: SocialPost;
+    card_title: string | null;
+    airline_name: string | null;
+    panel_image_url: string | null;
+  };
+  error?: string;
+}> {
+  try {
+    const { data, error } = await supabase
+      .from('social_posts')
+      .insert({
+        card_id: params.card_id,
+        panel_id: params.panel_id,
+        crop_x_pct: 0,
+        crop_y_pct: 0,
+        crop_size_pct: 1,
+        crop_image_path: params.cropped_image_path,
+        status: 'draft',
+      })
+      .select(`
+        *,
+        safety_cards(
+          title,
+          airline:airlines(name)
+        )
+      `)
+      .single();
+
+    if (error) return { error: error.message };
+
+    const card = data.safety_cards as Record<string, unknown> | null;
+    const airline = card?.airline as Record<string, unknown> | null;
+    const panelImageUrl = data.crop_image_path
+      ? derivativePublicUrl(data.crop_image_path)
+      : null;
+
+    const post: SocialPost = {
+      id: data.id,
+      card_id: data.card_id,
+      panel_id: data.panel_id,
+      crop_x_pct: data.crop_x_pct,
+      crop_y_pct: data.crop_y_pct,
+      crop_size_pct: data.crop_size_pct,
+      crop_image_path: data.crop_image_path,
+      social_crop_id: data.social_crop_id ?? null,
+      caption: data.caption,
+      status: data.status,
+      scheduled_at: data.scheduled_at,
+      posted_at: data.posted_at,
+      instagram_media_id: data.instagram_media_id ?? null,
+      instagram_permalink: data.instagram_permalink ?? null,
+      publish_error: data.publish_error ?? null,
+      publish_attempted_at: data.publish_attempted_at ?? null,
+      created_at: data.created_at,
+      updated_at: data.updated_at,
+    };
+
+    return {
+      result: {
+        post,
+        card_title: (card?.title as string) ?? null,
+        airline_name: (airline?.name as string) ?? null,
+        panel_image_url: panelImageUrl,
+      },
+    };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+export async function renderSocialPostPreview(
+  post: SocialPost | SocialPostWithCard,
+  imageUrl: string | null,
+  size: number
+): Promise<string> {
+  if (!imageUrl) throw new Error('No image URL');
+
+  const img = new Image();
+  img.crossOrigin = 'anonymous';
+
+  await new Promise<void>((resolve, reject) => {
+    img.onload = () => resolve();
+    img.onerror = () => reject(new Error('Image load failed'));
+    img.src = imageUrl;
+  });
+
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('Canvas context unavailable');
+
+  if (post.crop_image_path) {
+    ctx.drawImage(img, 0, 0, size, size);
+  } else {
+    const nw = img.naturalWidth;
+    const nh = img.naturalHeight;
+    const minDim = Math.min(nw, nh);
+    const sx = post.crop_x_pct * nw;
+    const sy = post.crop_y_pct * nh;
+    const sSize = post.crop_size_pct * minDim;
+    ctx.drawImage(img, sx, sy, sSize, sSize, 0, 0, size, size);
+  }
+
+  return canvas.toDataURL('image/png');
+}
+
 /** Publishes a draft, scheduled, or failed post to Instagram via Edge Function. */
 export async function publishSocialPostNow(
   postId: string
