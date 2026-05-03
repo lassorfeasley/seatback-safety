@@ -70,10 +70,6 @@ export const SocialCropper: React.FC<SocialCropperProps> = (props) => {
       .sort((a: Panel, b: Panel) => a.panel_index - b.panel_index);
   }, [props.mode, props.mode === 'panels' ? props.cardDetail : null, side]);
 
-  const hasBothSides = props.mode === 'panels' &&
-    props.cardDetail.panels.some((p: Panel) => p.side === 'front') &&
-    props.cardDetail.panels.some((p: Panel) => p.side === 'back');
-
   // The image URL the cropper operates on
   const imageUrl = props.mode === 'scan' ? props.scanUrl : composite?.dataUrl ?? null;
   const imageReady = props.mode === 'scan' ? true : (!compositeLoading && !!composite);
@@ -238,7 +234,7 @@ export const SocialCropper: React.FC<SocialCropperProps> = (props) => {
       aria-label="Select a social media crop"
     >
       <div className="fixed top-0 right-0 z-[110] flex">
-        {hasBothSides && (
+        {props.mode === 'panels' && (
           <button
             type="button"
             onClick={() => setSide((s) => (s === 'front' ? 'back' : 'front'))}
