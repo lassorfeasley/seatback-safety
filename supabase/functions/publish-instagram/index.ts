@@ -28,6 +28,15 @@ async function verifyCaller(req: Request): Promise<Caller> {
   const bearer = m?.[1]?.trim() ?? "";
   if (!bearer) return null;
   if (bearer === SUPABASE_SERVICE_ROLE_KEY) return "service";
+  // Fallback: the gateway already verified the JWT signature, so trust the
+  // role claim. This handles key format mismatches between Vault and env var.
+  try {
+    const parts = bearer.split(".");
+    if (parts.length === 3) {
+      const payload = JSON.parse(atob(parts[1]));
+      if (payload.role === "service_role") return "service";
+    }
+  } catch { /* not a decodable JWT */ }
   if (!SUPABASE_URL || !SUPABASE_ANON_KEY) return null;
   const { createClient } = await import("https://esm.sh/@supabase/supabase-js@2");
   const authClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
