@@ -54,6 +54,17 @@ export interface DetailProvenanceEntry {
   source: string | null;
   acquired_date: string | null;
   notes: string | null;
+  seller_name: string | null;
+  platform: string | null;
+  platform_listing_url: string | null;
+  price_paid_usd: number | null;
+  shipping_cost_usd: number | null;
+  lot_size: number | null;
+  condition_at_acquisition: string | null;
+  order_number: string | null;
+  order_date: string | null;
+  currency: string | null;
+  price_original: number | null;
   documents: DetailDocumentInfo[];
 }
 
@@ -63,6 +74,7 @@ export interface DetailPriceObservation {
   price_type: string | null;
   source: string | null;
   observed_date: string | null;
+  listing_url: string | null;
   documents: DetailDocumentInfo[];
 }
 
@@ -859,6 +871,9 @@ export async function fetchCardDetail(cardId: string): Promise<CardDetailData | 
       .from('card_provenance')
       .select(`
         id, source, acquired_date, notes,
+        seller_name, platform, platform_listing_url,
+        price_paid_usd, shipping_cost_usd, lot_size, condition_at_acquisition,
+        order_number, order_date, currency, price_original,
         card_documents ( id, file_path, original_filename, mime_type, file_size_bytes, label )
       `)
       .eq('card_id', cardId)
@@ -866,7 +881,7 @@ export async function fetchCardDetail(cardId: string): Promise<CardDetailData | 
     supabase
       .from('card_price_observations')
       .select(`
-        id, price_usd, price_type, source, observed_date,
+        id, price_usd, price_type, source, observed_date, listing_url,
         card_documents ( id, file_path, original_filename, mime_type, file_size_bytes, label )
       `)
       .eq('card_id', cardId)
@@ -1078,6 +1093,17 @@ export async function fetchCardDetail(cardId: string): Promise<CardDetailData | 
     source: string | null;
     acquired_date: string | null;
     notes: string | null;
+    seller_name: string | null;
+    platform: string | null;
+    platform_listing_url: string | null;
+    price_paid_usd: number | null;
+    shipping_cost_usd: number | null;
+    lot_size: number | null;
+    condition_at_acquisition: string | null;
+    order_number: string | null;
+    order_date: string | null;
+    currency: string | null;
+    price_original: number | null;
     card_documents: Array<{
       id: string;
       file_path: string;
@@ -1094,6 +1120,17 @@ export async function fetchCardDetail(cardId: string): Promise<CardDetailData | 
       source: p.source,
       acquired_date: p.acquired_date,
       notes: p.notes,
+      seller_name: p.seller_name ?? null,
+      platform: p.platform ?? null,
+      platform_listing_url: p.platform_listing_url ?? null,
+      price_paid_usd: p.price_paid_usd ?? null,
+      shipping_cost_usd: p.shipping_cost_usd ?? null,
+      lot_size: p.lot_size ?? null,
+      condition_at_acquisition: p.condition_at_acquisition ?? null,
+      order_number: p.order_number ?? null,
+      order_date: p.order_date ?? null,
+      currency: p.currency ?? null,
+      price_original: p.price_original ?? null,
       documents: await Promise.all(
         (p.card_documents ?? []).map(async (d) => ({
           id: d.id,
@@ -1115,6 +1152,7 @@ export async function fetchCardDetail(cardId: string): Promise<CardDetailData | 
     price_type: string | null;
     source: string | null;
     observed_date: string | null;
+    listing_url: string | null;
     card_documents: Array<{
       id: string;
       file_path: string;
@@ -1132,6 +1170,7 @@ export async function fetchCardDetail(cardId: string): Promise<CardDetailData | 
       price_type: obs.price_type,
       source: obs.source,
       observed_date: obs.observed_date,
+      listing_url: obs.listing_url ?? null,
       documents: await Promise.all(
         (obs.card_documents ?? []).map(async (d) => ({
           id: d.id,
@@ -1632,6 +1671,7 @@ export interface AddDocumentInput {
   mimeType: string;
   fileSizeBytes: number;
   label?: string;
+  aiAnalysis?: Record<string, unknown> | null;
 }
 
 async function uploadDocuments(
@@ -1659,15 +1699,33 @@ async function uploadDocuments(
       mime_type: doc.mimeType || null,
       file_size_bytes: doc.fileSizeBytes,
       label: doc.label || null,
+      ai_analysis: doc.aiAnalysis || null,
     });
     if (insertErr) return { success: false, error: `Document record failed: ${insertErr.message}` };
   }
   return { success: true };
 }
 
+export interface ProvenanceInput {
+  source: string | null;
+  acquiredDate: string | null;
+  notes: string | null;
+  sellerName?: string | null;
+  platform?: string | null;
+  platformListingUrl?: string | null;
+  pricePaidUsd?: number | null;
+  shippingCostUsd?: number | null;
+  lotSize?: number | null;
+  conditionAtAcquisition?: string | null;
+  orderNumber?: string | null;
+  orderDate?: string | null;
+  currency?: string | null;
+  priceOriginal?: number | null;
+}
+
 export async function addProvenanceEntry(
   cardId: string,
-  entry: { source: string | null; acquiredDate: string | null; notes: string | null },
+  entry: ProvenanceInput,
   documents?: AddDocumentInput[]
 ): Promise<{ success: boolean; error?: string }> {
   const { data, error } = await supabase.from('card_provenance').insert({
@@ -1675,6 +1733,17 @@ export async function addProvenanceEntry(
     source: entry.source || null,
     acquired_date: entry.acquiredDate || null,
     notes: entry.notes || null,
+    seller_name: entry.sellerName || null,
+    platform: entry.platform || null,
+    platform_listing_url: entry.platformListingUrl || null,
+    price_paid_usd: entry.pricePaidUsd ?? null,
+    shipping_cost_usd: entry.shippingCostUsd ?? null,
+    lot_size: entry.lotSize ?? null,
+    condition_at_acquisition: entry.conditionAtAcquisition || null,
+    order_number: entry.orderNumber || null,
+    order_date: entry.orderDate || null,
+    currency: entry.currency || null,
+    price_original: entry.priceOriginal ?? null,
   }).select('id').single();
   if (error || !data) return { success: false, error: error?.message ?? 'Insert failed' };
 
@@ -1682,6 +1751,30 @@ export async function addProvenanceEntry(
     const docResult = await uploadDocuments(cardId, data.id, 'provenance_id', documents);
     if (!docResult.success) return docResult;
   }
+  return { success: true };
+}
+
+export async function updateProvenanceEntry(
+  id: string,
+  entry: ProvenanceInput
+): Promise<{ success: boolean; error?: string }> {
+  const { error } = await supabase.from('card_provenance').update({
+    source: entry.source || null,
+    acquired_date: entry.acquiredDate || null,
+    notes: entry.notes || null,
+    seller_name: entry.sellerName || null,
+    platform: entry.platform || null,
+    platform_listing_url: entry.platformListingUrl || null,
+    price_paid_usd: entry.pricePaidUsd ?? null,
+    shipping_cost_usd: entry.shippingCostUsd ?? null,
+    lot_size: entry.lotSize ?? null,
+    condition_at_acquisition: entry.conditionAtAcquisition || null,
+    order_number: entry.orderNumber || null,
+    order_date: entry.orderDate || null,
+    currency: entry.currency || null,
+    price_original: entry.priceOriginal ?? null,
+  }).eq('id', id);
+  if (error) return { success: false, error: error.message };
   return { success: true };
 }
 
@@ -1697,7 +1790,7 @@ export async function deleteProvenanceEntry(
 
 export async function addPriceObservation(
   cardId: string,
-  obs: { priceUsd: number | null; priceType: string | null; source: string | null; observedDate: string | null },
+  obs: { priceUsd: number | null; priceType: string | null; source: string | null; observedDate: string | null; listingUrl?: string | null },
   documents?: AddDocumentInput[]
 ): Promise<{ success: boolean; error?: string }> {
   const { data, error } = await supabase.from('card_price_observations').insert({
@@ -1706,6 +1799,7 @@ export async function addPriceObservation(
     price_type: obs.priceType || null,
     source: obs.source || null,
     observed_date: obs.observedDate || null,
+    listing_url: obs.listingUrl || null,
   }).select('id').single();
   if (error || !data) return { success: false, error: error?.message ?? 'Insert failed' };
 
@@ -1713,6 +1807,21 @@ export async function addPriceObservation(
     const docResult = await uploadDocuments(cardId, data.id, 'price_observation_id', documents);
     if (!docResult.success) return docResult;
   }
+  return { success: true };
+}
+
+export async function updatePriceObservation(
+  id: string,
+  obs: { priceUsd: number | null; priceType: string | null; source: string | null; observedDate: string | null; listingUrl?: string | null }
+): Promise<{ success: boolean; error?: string }> {
+  const { error } = await supabase.from('card_price_observations').update({
+    price_usd: obs.priceUsd,
+    price_type: obs.priceType || null,
+    source: obs.source || null,
+    observed_date: obs.observedDate || null,
+    listing_url: obs.listingUrl || null,
+  }).eq('id', id);
+  if (error) return { success: false, error: error.message };
   return { success: true };
 }
 

@@ -35,7 +35,7 @@ import { BookletVisualizer } from '@/components/FoldEditor/BookletVisualizer';
 import { generateAndUploadOgImage, generateAndUploadOgFromScan, type OgImageInput } from '@/lib/ogImageGenerator';
 import { OgBuilder } from '@/components/Library/OgBuilder';
 import { OgScanCropper } from '@/components/Library/OgScanCropper';
-import { analyzeCardScans, type CardSuggestions } from '@/lib/aiService';
+import { analyzeCardScans, analyzeDocument, type CardSuggestions, type DocumentExtraction } from '@/lib/aiService';
 import { supabase } from '@/lib/supabase';
 import {
   fetchCardDetail,
@@ -48,10 +48,10 @@ import {
   updateCardMode,
   updateIrregularFlag,
   addProvenanceEntry,
+  updateProvenanceEntry,
   deleteProvenanceEntry,
-  addPriceObservation,
-  deletePriceObservation,
   type AddDocumentInput,
+  type ProvenanceInput,
   type CardDetailData,
   type CardMetadataUpdate,
   type ScanInfo,
@@ -188,10 +188,9 @@ export const CardDetail: React.FC<CardDetailProps> = ({ cardId, onBack, onEditCr
   const [showScans, setShowScans] = useState(false);
   const [isEditing, setIsEditing] = useState(!!isNew || !!initialEditing);
   const [saving, setSaving] = useState(false);
-  const [showAddProvenance, setShowAddProvenance] = useState(false);
-  const [showAddPrice, setShowAddPrice] = useState(false);
   const [uploadingScans, setUploadingScans] = useState(false);
   const scanFileInputRef = useRef<HTMLInputElement>(null);
+  const [editingMetadata, setEditingMetadata] = useState(!!isNew || !!initialEditing);
 
   const [socialCrops, setSocialCrops] = useState<SocialCrop[]>([]);
   const [showSocialCropper, setShowSocialCropper] = useState(false);
@@ -488,14 +487,14 @@ export const CardDetail: React.FC<CardDetailProps> = ({ cardId, onBack, onEditCr
       <header className="flex-shrink-0 bg-card/80 backdrop-blur-sm border-b sticky top-0 z-10">
         <div className="max-w-6xl mx-auto px-6 py-3">
           <div className="flex items-center justify-between gap-4">
-            <div className="flex items-center gap-3 min-w-0">
+            <div className="flex items-center gap-3 min-w-0 flex-1 overflow-hidden">
               <button
                 onClick={handleBack}
                 className="text-muted-foreground hover:text-foreground transition-colors flex-shrink-0 -ml-1 p-1 rounded-md hover:bg-muted"
               >
                 <ArrowLeft className="h-4 w-4" />
               </button>
-              <div className="min-w-0">
+              <div className="min-w-0 flex-1">
                 <h1 className="text-lg font-semibold tracking-tight truncate">
                   {card.title || 'Untitled Card'}
                 </h1>
@@ -504,7 +503,7 @@ export const CardDetail: React.FC<CardDetailProps> = ({ cardId, onBack, onEditCr
                 )}
               </div>
             </div>
-            <div className="flex items-center gap-1.5 flex-shrink-0">
+            <div className="flex items-center gap-1.5 flex-shrink-0 ml-2">
               {onPrintLabel && !isEditing && (
                 <Button
                   variant="ghost"
@@ -516,20 +515,26 @@ export const CardDetail: React.FC<CardDetailProps> = ({ cardId, onBack, onEditCr
                   Print
                 </Button>
               )}
-              <Button
-                variant={isEditing ? 'secondary' : 'outline'}
-                size="sm"
-                onClick={() => {
-                  const next = !isEditing;
-                  setIsEditing(next);
-                  if (!next) { setShowAddProvenance(false); setShowAddPrice(false); }
-                }}
-                disabled={saving}
-                className="gap-1.5"
-              >
-                {isEditing ? <XIcon className="h-3.5 w-3.5" /> : <Pencil className="h-3.5 w-3.5" />}
-                {isEditing ? 'Cancel' : 'Edit'}
-              </Button>
+              {isEditing ? (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => { setIsEditing(false); setEditingMetadata(false); }}
+                  className="gap-1.5"
+                >
+                  Done
+                </Button>
+              ) : (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setIsEditing(true)}
+                  className="gap-1.5"
+                >
+                  <Pencil className="h-3.5 w-3.5" />
+                  Edit
+                </Button>
+              )}
               {!isEditing && (
                 <Button
                   variant="ghost"
@@ -1023,11 +1028,11 @@ export const CardDetail: React.FC<CardDetailProps> = ({ cardId, onBack, onEditCr
             </div>
 
             <div className="flex flex-col gap-5">
-              {isEditing ? (
+              {editingMetadata ? (
                 <MetadataEditor
                   card={card}
-                  onSave={handleSaveMetadata}
-                  onCancel={() => setIsEditing(false)}
+                  onSave={(update) => { handleSaveMetadata(update); setEditingMetadata(false); }}
+                  onCancel={() => setEditingMetadata(false)}
                   saving={saving}
                   scanUrls={
                     Object.values(card.displayUrls).length > 0
@@ -1037,7 +1042,15 @@ export const CardDetail: React.FC<CardDetailProps> = ({ cardId, onBack, onEditCr
                   resizeForAi={isUnstructured}
                 />
               ) : (
-                <>
+                <div className="rounded-xl border bg-card overflow-hidden">
+                  {isEditing && (
+                    <div className="flex items-center justify-between px-4 py-2 bg-muted/40 border-b border-border/50">
+                      <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">Card Details</span>
+                      <button onClick={() => setEditingMetadata(true)} className="text-muted-foreground hover:text-foreground p-0.5">
+                        <Pencil className="h-3 w-3" />
+                      </button>
+                    </div>
+                  )}
                   <MetadataTable items={[
                     { label: 'Airline', value: card.airline_name },
                     { label: 'Aircraft', value: card.aircraft_label },
@@ -1053,89 +1066,36 @@ export const CardDetail: React.FC<CardDetailProps> = ({ cardId, onBack, onEditCr
                     },
                     { label: 'Added', value: createdDate },
                   ]} />
-
                   {card.notes && (
-                    <div className="rounded-xl border bg-card p-4">
-                      <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide mb-2">Notes</p>
+                    <div className="px-4 py-3 border-t border-border/50">
+                      <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide mb-1">Notes</p>
                       <p className="text-sm leading-relaxed text-foreground/80">{card.notes}</p>
                     </div>
                   )}
-                </>
+                </div>
               )}
 
               <div>
-                <div className="flex items-center justify-between mb-2.5">
-                  <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">Provenance</p>
-                  {isEditing && !showAddProvenance && (
-                    <button
-                      type="button"
-                      onClick={() => setShowAddProvenance(true)}
-                      className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
-                    >
-                      <Plus className="h-3 w-3" /> Add
-                    </button>
-                  )}
-                </div>
-                {isEditing && showAddProvenance && (
-                  <AddProvenanceForm
-                    cardId={cardId}
-                    onSaved={() => { setShowAddProvenance(false); refreshCard(); }}
-                    onCancel={() => setShowAddProvenance(false)}
-                  />
-                )}
+                <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide mb-2.5">Provenance & Pricing</p>
                 {card.provenance.length > 0 ? (
-                  <div className="flex flex-col gap-2">
-                    {card.provenance.map((entry) => (
-                      <ProvenanceCard
-                        key={entry.id}
-                        entry={entry}
-                        onDelete={isEditing ? async () => {
-                          await deleteProvenanceEntry(entry.id);
-                          refreshCard();
-                        } : undefined}
-                      />
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-xs text-muted-foreground/60 italic">No provenance recorded</p>
-                )}
-              </div>
-
-              <div>
-                <div className="flex items-center justify-between mb-2.5">
-                  <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">Price History</p>
-                  {isEditing && !showAddPrice && (
-                    <button
-                      type="button"
-                      onClick={() => setShowAddPrice(true)}
-                      className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
-                    >
-                      <Plus className="h-3 w-3" /> Add
-                    </button>
-                  )}
-                </div>
-                {isEditing && showAddPrice && (
-                  <AddPriceForm
+                  <ProvenanceCard
+                    entry={card.provenance[0]}
                     cardId={cardId}
-                    onSaved={() => { setShowAddPrice(false); refreshCard(); }}
-                    onCancel={() => setShowAddPrice(false)}
+                    isEditing={isEditing}
+                    onDelete={isEditing ? async () => {
+                      await deleteProvenanceEntry(card.provenance[0].id);
+                      refreshCard();
+                    } : undefined}
+                    onUpdated={refreshCard}
                   />
-                )}
-                {card.priceObservations.length > 0 ? (
-                  <div className="flex flex-col gap-2">
-                    {card.priceObservations.map((obs) => (
-                      <PriceObservationCard
-                        key={obs.id}
-                        observation={obs}
-                        onDelete={isEditing ? async () => {
-                          await deletePriceObservation(obs.id);
-                          refreshCard();
-                        } : undefined}
-                      />
-                    ))}
-                  </div>
+                ) : isEditing ? (
+                  <ProvenanceForm
+                    cardId={cardId}
+                    onSaved={refreshCard}
+                    onCancel={() => setIsEditing(false)}
+                  />
                 ) : (
-                  <p className="text-xs text-muted-foreground/60 italic">No price history recorded</p>
+                  <p className="text-xs text-muted-foreground/60 italic">No provenance or pricing recorded</p>
                 )}
               </div>
 
@@ -1442,7 +1402,7 @@ const MetadataTable: React.FC<{
   const visible = items.filter((i) => i.value);
   if (visible.length === 0) return null;
   return (
-    <div className="rounded-xl border bg-card overflow-hidden">
+    <>
       {visible.map((item, i) => (
         <div key={item.label} className={cn(
           'flex items-baseline justify-between px-4 py-3',
@@ -1452,7 +1412,7 @@ const MetadataTable: React.FC<{
           <span className="text-sm font-medium text-right max-w-[60%] truncate">{item.value}</span>
         </div>
       ))}
-    </div>
+    </>
   );
 };
 
@@ -2076,7 +2036,7 @@ const MetadataEditor: React.FC<MetadataEditorProps> = ({ card, onSave, onCancel,
       <div className="flex gap-2 pt-2 border-t mt-1">
         <Button size="sm" onClick={handleSubmit} disabled={saving} className="flex-1 gap-1.5">
           {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-          {saving ? 'Saving...' : 'Save Changes'}
+          {saving ? 'Saving...' : 'Save'}
         </Button>
         <Button variant="ghost" size="sm" onClick={onCancel} disabled={saving} className="text-muted-foreground">
           Cancel
@@ -2412,103 +2372,129 @@ const DocumentLinks: React.FC<{ documents: DetailDocumentInfo[] }> = ({ document
 
 // ─── Provenance Display ──────────────────────────────────────────
 
-const ProvenanceCard: React.FC<{ entry: DetailProvenanceEntry; onDelete?: () => void }> = ({ entry, onDelete }) => {
-  const [confirming, setConfirming] = useState(false);
-  return (
-    <div className="p-3.5 rounded-lg border bg-card group relative">
-      {onDelete && (
-        <div className="absolute top-2.5 right-2.5">
-          {confirming ? (
-            <div className="flex items-center gap-1.5">
-              <button onClick={onDelete} className="text-[10px] text-destructive hover:underline font-medium">Remove</button>
-              <button onClick={() => setConfirming(false)} className="text-[10px] text-muted-foreground hover:underline">Cancel</button>
-            </div>
-          ) : (
-            <button
-              onClick={() => setConfirming(true)}
-              className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive p-0.5"
-            >
-              <Trash2 className="h-3 w-3" />
-            </button>
-          )}
-        </div>
-      )}
-      <p className="text-sm font-medium">{entry.source || 'Unknown source'}</p>
-      {entry.acquired_date && (
-        <p className="text-xs text-muted-foreground mt-1">
-          <span className="text-muted-foreground/60">Acquired:</span>{' '}
-          {new Date(entry.acquired_date + 'T00:00:00').toLocaleDateString(undefined, {
-            month: 'long',
-            day: 'numeric',
-            year: 'numeric',
-          })}
-        </p>
-      )}
-      {entry.notes && (
-        <p className="text-xs text-muted-foreground mt-2">{entry.notes}</p>
-      )}
-      <DocumentLinks documents={entry.documents} />
-    </div>
-  );
+const PLATFORM_LABELS: Record<string, string> = {
+  ebay: 'eBay',
+  etsy: 'Etsy',
+  dealer: 'Dealer',
+  in_person: 'In Person',
+  trade: 'Trade',
+  gift: 'Gift',
+  airline: 'Airline',
+  other: 'Other',
 };
 
-// ─── Price Observation Display ───────────────────────────────────
-
-const PRICE_TYPE_LABELS: Record<string, string> = {
-  purchase: 'Purchase',
-  asking: 'Asking',
-  auction_result: 'Auction Result',
-  estimate: 'Estimate',
+const CONDITION_LABELS: Record<string, string> = {
+  mint: 'Mint',
+  near_mint: 'Near Mint',
+  excellent: 'Excellent',
+  good: 'Good',
+  fair: 'Fair',
+  poor: 'Poor',
 };
 
-const PriceObservationCard: React.FC<{ observation: DetailPriceObservation; onDelete?: () => void }> = ({ observation, onDelete }) => {
-  const formattedPrice = observation.price_usd != null
-    ? new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(observation.price_usd)
-    : '—';
+const formatUsd = (v: number) =>
+  new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(v);
 
+const ProvenanceCard: React.FC<{
+  entry: DetailProvenanceEntry;
+  cardId: string;
+  isEditing: boolean;
+  onDelete?: () => void;
+  onUpdated: () => void;
+}> = ({ entry, cardId, isEditing, onDelete, onUpdated }) => {
   const [confirming, setConfirming] = useState(false);
+  const [editing, setEditing] = useState(false);
+
+  const hasCost = entry.price_paid_usd != null || entry.shipping_cost_usd != null;
+  const totalCost = (entry.price_paid_usd ?? 0) + (entry.shipping_cost_usd ?? 0);
+  const perCardCost = hasCost && entry.lot_size && entry.lot_size > 1 ? totalCost / entry.lot_size : null;
+
+  if (editing) {
+    return (
+      <ProvenanceForm
+        cardId={cardId}
+        existing={entry}
+        onSaved={() => { setEditing(false); onUpdated(); }}
+        onCancel={() => setEditing(false)}
+      />
+    );
+  }
+
+  const formatDate = (d: string) =>
+    new Date(d + 'T00:00:00').toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' });
+
+  const priceDisplay = entry.price_paid_usd != null
+    ? `${formatUsd(entry.price_paid_usd)}${entry.currency && entry.price_original != null ? ` (${entry.currency} ${entry.price_original.toFixed(2)})` : ''}`
+    : null;
+
+  const rows: { label: string; value: string | null | undefined }[] = [
+    { label: 'Source', value: entry.source },
+    { label: 'Platform', value: entry.platform ? (PLATFORM_LABELS[entry.platform] ?? entry.platform) : null },
+    { label: 'Seller', value: entry.seller_name },
+    { label: 'Order #', value: entry.order_number },
+    { label: 'Order Date', value: entry.order_date ? formatDate(entry.order_date) : null },
+    { label: 'Delivered', value: entry.acquired_date ? formatDate(entry.acquired_date) : null },
+    { label: 'Price Paid', value: priceDisplay },
+    { label: 'Shipping', value: entry.shipping_cost_usd != null ? formatUsd(entry.shipping_cost_usd) : null },
+    { label: 'Per Card', value: perCardCost != null ? `${formatUsd(perCardCost)} (${entry.lot_size} in lot)` : null },
+    { label: 'Lot Size', value: !perCardCost && entry.lot_size ? String(entry.lot_size) : null },
+    { label: 'Condition', value: entry.condition_at_acquisition ? (CONDITION_LABELS[entry.condition_at_acquisition] ?? entry.condition_at_acquisition) : null },
+    { label: 'Listing', value: entry.platform_listing_url ? entry.platform_listing_url : null },
+    { label: 'Notes', value: entry.notes },
+  ];
+  const visibleRows = rows.filter((r) => r.value);
+
   return (
-    <div className="p-3.5 rounded-lg border bg-card group relative">
-      {onDelete && (
-        <div className="absolute top-2.5 right-2.5">
-          {confirming ? (
-            <div className="flex items-center gap-1.5">
-              <button onClick={onDelete} className="text-[10px] text-destructive hover:underline font-medium">Remove</button>
-              <button onClick={() => setConfirming(false)} className="text-[10px] text-muted-foreground hover:underline">Cancel</button>
-            </div>
-          ) : (
-            <button
-              onClick={() => setConfirming(true)}
-              className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive p-0.5"
-            >
-              <Trash2 className="h-3 w-3" />
-            </button>
-          )}
+    <div className="rounded-xl border bg-card overflow-hidden">
+      {isEditing && (
+        <div className="flex items-center justify-between px-4 py-2 bg-muted/40 border-b border-border/50">
+          <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">Acquisition</span>
+          <div className="flex items-center gap-1.5">
+            {confirming ? (
+              <>
+                <button onClick={onDelete} className="text-[10px] text-destructive hover:underline font-medium">Remove</button>
+                <button onClick={() => setConfirming(false)} className="text-[10px] text-muted-foreground hover:underline">Cancel</button>
+              </>
+            ) : (
+              <>
+                <button onClick={() => setEditing(true)} className="text-muted-foreground hover:text-foreground p-0.5">
+                  <Pencil className="h-3 w-3" />
+                </button>
+                {onDelete && (
+                  <button onClick={() => setConfirming(true)} className="text-muted-foreground hover:text-destructive p-0.5">
+                    <Trash2 className="h-3 w-3" />
+                  </button>
+                )}
+              </>
+            )}
+          </div>
         </div>
       )}
-      <div className="flex items-baseline gap-2">
-        <p className="text-sm font-medium">{formattedPrice}</p>
-        {observation.price_type && (
-          <Badge variant="outline" className="text-[10px] px-1.5 py-0 font-normal">
-            {PRICE_TYPE_LABELS[observation.price_type] ?? observation.price_type}
-          </Badge>
-        )}
-      </div>
-      <p className="text-xs text-muted-foreground mt-1">
-        {[
-          observation.source,
-          observation.observed_date
-            ? new Date(observation.observed_date + 'T00:00:00').toLocaleDateString(undefined, {
-                month: 'long',
-                day: 'numeric',
-                year: 'numeric',
-              })
-            : null,
-        ]
-          .filter(Boolean)
-          .join(' · ')}
-      </p>
-      <DocumentLinks documents={observation.documents} />
+      {visibleRows.map((row, i) => (
+        <div key={row.label} className={cn(
+          'flex items-baseline justify-between px-4 py-3',
+          i < visibleRows.length - 1 && 'border-b border-border/50'
+        )}>
+          <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">{row.label}</span>
+          {row.label === 'Listing' ? (
+            <a href={row.value!} target="_blank" rel="noopener noreferrer" className="text-sm font-medium text-primary hover:underline truncate max-w-[60%] text-right">
+              View listing
+            </a>
+          ) : (
+            <span className="text-sm font-medium text-right max-w-[60%]">{row.value}</span>
+          )}
+        </div>
+      ))}
+      {visibleRows.length === 0 && (
+        <div className="px-4 py-3">
+          <span className="text-xs text-muted-foreground/60 italic">No details recorded</span>
+        </div>
+      )}
+      {entry.documents.length > 0 && (
+        <div className={cn('px-4 py-3', visibleRows.length > 0 && 'border-t border-border/50')}>
+          <DocumentLinks documents={entry.documents} />
+        </div>
+      )}
     </div>
   );
 };
@@ -2532,35 +2518,91 @@ const AttachmentPicker: React.FC<{
   onChange: (files: AddDocumentInput[]) => void;
 }> = ({ files, onChange }) => {
   const inputRef = useRef<HTMLInputElement>(null);
+  const [dragging, setDragging] = useState(false);
+  const dragCounter = useRef(0);
+
+  const addFiles = useCallback(
+    (incoming: FileList | File[]) => {
+      onChange([...files, ...Array.from(incoming).map(fileToDocInput)]);
+    },
+    [files, onChange]
+  );
+
+  const handleDragEnter = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounter.current += 1;
+    if (e.dataTransfer.types.includes('Files')) setDragging(true);
+  }, []);
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounter.current -= 1;
+    if (dragCounter.current <= 0) {
+      dragCounter.current = 0;
+      setDragging(false);
+    }
+  }, []);
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+  }, []);
+
+  const handleDrop = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      dragCounter.current = 0;
+      setDragging(false);
+      if (e.dataTransfer.files.length > 0) addFiles(e.dataTransfer.files);
+    },
+    [addFiles]
+  );
+
   return (
     <div>
-      <input
-        ref={inputRef}
-        type="file"
-        multiple
-        className="hidden"
-        onChange={(e) => {
-          if (!e.target.files) return;
-          onChange([...files, ...Array.from(e.target.files).map(fileToDocInput)]);
-          e.target.value = '';
-        }}
-      />
-      <button
-        type="button"
+      <div
+        onDragEnter={handleDragEnter}
+        onDragLeave={handleDragLeave}
+        onDragOver={handleDragOver}
+        onDrop={handleDrop}
         onClick={() => inputRef.current?.click()}
-        className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+        className={cn(
+          'rounded-lg border-2 border-dashed px-4 py-3 text-center cursor-pointer transition-colors',
+          dragging
+            ? 'border-primary bg-primary/5'
+            : 'border-border hover:border-muted-foreground/40 hover:bg-muted/30'
+        )}
       >
-        <Paperclip className="h-3 w-3" /> Attach files
-      </button>
+        <input
+          ref={inputRef}
+          type="file"
+          multiple
+          className="hidden"
+          onChange={(e) => {
+            if (!e.target.files) return;
+            addFiles(e.target.files);
+            e.target.value = '';
+          }}
+        />
+        <div className="flex flex-col items-center gap-1">
+          <Upload className="h-4 w-4 text-muted-foreground" />
+          <p className="text-xs text-muted-foreground">
+            {dragging ? 'Drop files here' : 'Drop files here or click to browse'}
+          </p>
+        </div>
+      </div>
       {files.length > 0 && (
-        <div className="flex flex-col gap-1 mt-1.5">
+        <div className="flex flex-col gap-1 mt-2">
           {files.map((f, i) => (
             <div key={i} className="flex items-center gap-1.5 text-xs text-muted-foreground bg-muted/40 rounded px-2 py-1">
               <Paperclip className="h-3 w-3 flex-shrink-0" />
               <span className="truncate flex-1">{f.originalFilename}</span>
               <button
                 type="button"
-                onClick={() => onChange(files.filter((_, j) => j !== i))}
+                onClick={(e) => { e.stopPropagation(); onChange(files.filter((_, j) => j !== i)); }}
                 className="text-muted-foreground hover:text-destructive flex-shrink-0"
               >
                 <XIcon className="h-3 w-3" />
@@ -2573,24 +2615,141 @@ const AttachmentPicker: React.FC<{
   );
 };
 
-const AddProvenanceForm: React.FC<{
+const PLATFORM_OPTIONS = [
+  { value: '', label: 'Select platform...' },
+  { value: 'ebay', label: 'eBay' },
+  { value: 'etsy', label: 'Etsy' },
+  { value: 'dealer', label: 'Dealer' },
+  { value: 'in_person', label: 'In Person' },
+  { value: 'trade', label: 'Trade' },
+  { value: 'gift', label: 'Gift' },
+  { value: 'airline', label: 'Airline' },
+  { value: 'other', label: 'Other' },
+];
+
+const CONDITION_OPTIONS = [
+  { value: '', label: 'Condition (optional)' },
+  { value: 'mint', label: 'Mint' },
+  { value: 'near_mint', label: 'Near Mint' },
+  { value: 'excellent', label: 'Excellent' },
+  { value: 'good', label: 'Good' },
+  { value: 'fair', label: 'Fair' },
+  { value: 'poor', label: 'Poor' },
+];
+
+const ProvenanceForm: React.FC<{
   cardId: string;
+  existing?: DetailProvenanceEntry;
   onSaved: () => void;
   onCancel: () => void;
-}> = ({ cardId, onSaved, onCancel }) => {
-  const [source, setSource] = useState('');
-  const [acquiredDate, setAcquiredDate] = useState('');
-  const [notes, setNotes] = useState('');
+}> = ({ cardId, existing, onSaved, onCancel }) => {
+  const isEdit = !!existing;
+  const [source, setSource] = useState(existing?.source || '');
+  const [acquiredDate, setAcquiredDate] = useState(existing?.acquired_date || '');
+  const [notes, setNotes] = useState(existing?.notes || '');
+  const [sellerName, setSellerName] = useState(existing?.seller_name || '');
+  const [platform, setPlatform] = useState(existing?.platform || '');
+  const [platformListingUrl, setPlatformListingUrl] = useState(existing?.platform_listing_url || '');
+  const [pricePaid, setPricePaid] = useState(existing?.price_paid_usd != null ? String(existing.price_paid_usd) : '');
+  const [shippingCost, setShippingCost] = useState(existing?.shipping_cost_usd != null ? String(existing.shipping_cost_usd) : '');
+  const [lotSize, setLotSize] = useState(existing?.lot_size != null ? String(existing.lot_size) : '');
+  const [condition, setCondition] = useState(existing?.condition_at_acquisition || '');
+  const [orderNumber, setOrderNumber] = useState(existing?.order_number || '');
+  const [orderDate, setOrderDate] = useState(existing?.order_date || '');
+  const [currency, setCurrency] = useState(existing?.currency || '');
+  const [priceOriginal, setPriceOriginal] = useState(existing?.price_original != null ? String(existing.price_original) : '');
   const [docs, setDocs] = useState<AddDocumentInput[]>([]);
   const [saving, setSaving] = useState(false);
+  const [analyzing, setAnalyzing] = useState(false);
+  const [analyzeError, setAnalyzeError] = useState<string | null>(null);
+  const [extraction, setExtraction] = useState<DocumentExtraction | null>(null);
+  const [accepted, setAccepted] = useState<Set<string>>(new Set());
+
+  const hasAnalyzableDoc = docs.length > 0 || (existing?.documents ?? []).length > 0;
+
+  const accept = useCallback((field: string) => {
+    if (!extraction) return;
+    setAccepted((prev) => new Set(prev).add(field));
+    switch (field) {
+      case 'source': if (extraction.item_description) setSource(extraction.item_description); break;
+      case 'platform': if (extraction.platform) setPlatform(extraction.platform); break;
+      case 'seller': if (extraction.seller_name) setSellerName(extraction.seller_name); break;
+      case 'listing_url': if (extraction.listing_url) setPlatformListingUrl(extraction.listing_url); break;
+      case 'order_number': if (extraction.order_number) setOrderNumber(extraction.order_number); break;
+      case 'order_date': if (extraction.transaction_date) setOrderDate(extraction.transaction_date); break;
+      case 'acquired_date': if (extraction.delivery_date) setAcquiredDate(extraction.delivery_date); break;
+      case 'price': if (extraction.price_paid_usd != null) setPricePaid(String(extraction.price_paid_usd)); break;
+      case 'shipping': if (extraction.shipping_cost_usd != null) setShippingCost(String(extraction.shipping_cost_usd)); break;
+      case 'currency': if (extraction.currency) setCurrency(extraction.currency); break;
+      case 'price_original': if (extraction.price_original != null) setPriceOriginal(String(extraction.price_original)); break;
+      case 'lot_size': if (extraction.lot_size != null) setLotSize(String(extraction.lot_size)); break;
+      case 'notes': if (extraction.condition_notes) setNotes((prev) => prev ? `${prev}\n${extraction.condition_notes}` : extraction.condition_notes!); break;
+    }
+  }, [extraction]);
+
+  const handleAnalyze = async () => {
+    setAnalyzing(true);
+    setAnalyzeError(null);
+    setExtraction(null);
+    setAccepted(new Set());
+
+    let file: File | null = null;
+    if (docs.length > 0) {
+      file = docs[0].file;
+    } else if (existing?.documents?.[0]) {
+      const doc = existing.documents[0];
+      try {
+        const resp = await fetch(doc.url);
+        if (!resp.ok) throw new Error(`Failed to fetch: ${resp.status}`);
+        const blob = await resp.blob();
+        file = new File([blob], doc.original_filename, { type: doc.mime_type || 'application/octet-stream' });
+      } catch (err) {
+        setAnalyzing(false);
+        setAnalyzeError(err instanceof Error ? err.message : 'Failed to fetch document');
+        return;
+      }
+    }
+
+    if (!file) { setAnalyzing(false); return; }
+
+    const { extraction: ext, error } = await analyzeDocument(file);
+    setAnalyzing(false);
+    if (error) { setAnalyzeError(error); return; }
+    if (ext) {
+      setExtraction(ext);
+      setDocs((prev) => prev.map((d, i) => i === 0 ? { ...d, aiAnalysis: ext as unknown as Record<string, unknown> } : d));
+    }
+  };
 
   const handleSubmit = async () => {
     setSaving(true);
-    const result = await addProvenanceEntry(cardId, {
+    const parsedPrice = parseFloat(pricePaid);
+    const parsedShipping = parseFloat(shippingCost);
+    const parsedLot = parseInt(lotSize, 10);
+    const parsedOriginal = parseFloat(priceOriginal);
+    const entry: ProvenanceInput = {
       source: source.trim() || null,
       acquiredDate: acquiredDate || null,
       notes: notes.trim() || null,
-    }, docs);
+      sellerName: sellerName.trim() || null,
+      platform: platform || null,
+      platformListingUrl: platformListingUrl.trim() || null,
+      pricePaidUsd: isNaN(parsedPrice) ? null : parsedPrice,
+      shippingCostUsd: isNaN(parsedShipping) ? null : parsedShipping,
+      lotSize: isNaN(parsedLot) || parsedLot < 1 ? null : parsedLot,
+      conditionAtAcquisition: condition || null,
+      orderNumber: orderNumber.trim() || null,
+      orderDate: orderDate || null,
+      currency: currency.trim().toUpperCase() || null,
+      priceOriginal: isNaN(parsedOriginal) ? null : parsedOriginal,
+    };
+
+    let result: { success: boolean; error?: string };
+    if (isEdit) {
+      result = await updateProvenanceEntry(existing.id, entry);
+    } else {
+      result = await addProvenanceEntry(cardId, entry, docs);
+    }
     setSaving(false);
     if (result.success) onSaved();
     else alert(`Failed: ${result.error}`);
@@ -2598,118 +2757,93 @@ const AddProvenanceForm: React.FC<{
 
   return (
     <div className="rounded-xl border bg-card p-3 mb-2 flex flex-col gap-2">
-      <input
-        className={INLINE_INPUT}
-        placeholder="Source (e.g. eBay, gift, estate sale)"
-        value={source}
-        onChange={(e) => setSource(e.target.value)}
-        autoFocus
-      />
-      <input
-        type="date"
-        className={INLINE_INPUT}
-        value={acquiredDate}
-        onChange={(e) => setAcquiredDate(e.target.value)}
-      />
-      <textarea
-        className={`${INLINE_INPUT} min-h-[60px] resize-y`}
-        placeholder="Notes (optional)"
-        value={notes}
-        onChange={(e) => setNotes(e.target.value)}
-      />
-      <AttachmentPicker files={docs} onChange={setDocs} />
-      <div className="flex gap-1.5">
-        <Button size="sm" onClick={handleSubmit} disabled={saving || !source.trim()} className="flex-1 gap-1.5">
-          {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
-          {saving ? 'Saving...' : 'Add'}
-        </Button>
-        <Button variant="outline" size="sm" onClick={onCancel} disabled={saving}>
-          Cancel
-        </Button>
-      </div>
-    </div>
-  );
-};
-
-const PRICE_TYPE_OPTIONS = [
-  { value: 'purchase', label: 'Purchase' },
-  { value: 'asking', label: 'Asking' },
-  { value: 'auction_result', label: 'Auction Result' },
-  { value: 'estimate', label: 'Estimate' },
-];
-
-const AddPriceForm: React.FC<{
-  cardId: string;
-  onSaved: () => void;
-  onCancel: () => void;
-}> = ({ cardId, onSaved, onCancel }) => {
-  const [priceUsd, setPriceUsd] = useState('');
-  const [priceType, setPriceType] = useState('purchase');
-  const [source, setSource] = useState('');
-  const [observedDate, setObservedDate] = useState('');
-  const [docs, setDocs] = useState<AddDocumentInput[]>([]);
-  const [saving, setSaving] = useState(false);
-
-  const handleSubmit = async () => {
-    setSaving(true);
-    const parsed = parseFloat(priceUsd);
-    const result = await addPriceObservation(cardId, {
-      priceUsd: isNaN(parsed) ? null : parsed,
-      priceType: priceType || null,
-      source: source.trim() || null,
-      observedDate: observedDate || null,
-    }, docs);
-    setSaving(false);
-    if (result.success) onSaved();
-    else alert(`Failed: ${result.error}`);
-  };
-
-  return (
-    <div className="rounded-xl border bg-card p-3 mb-2 flex flex-col gap-2">
-      <div className="flex gap-2">
-        <div className="relative flex-1">
-          <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">$</span>
-          <input
-            type="number"
-            step="0.01"
-            className={`${INLINE_INPUT} pl-6`}
-            placeholder="0.00"
-            value={priceUsd}
-            onChange={(e) => setPriceUsd(e.target.value)}
-            autoFocus
-          />
-        </div>
-        <select
-          className={`${INLINE_INPUT} w-auto`}
-          value={priceType}
-          onChange={(e) => setPriceType(e.target.value)}
+      {!isEdit && <AttachmentPicker files={docs} onChange={setDocs} />}
+      {isEdit && existing.documents.length > 0 && (
+        <DocumentLinks documents={existing.documents} />
+      )}
+      {hasAnalyzableDoc && (
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={handleAnalyze}
+          disabled={analyzing}
+          className="gap-1.5 self-start"
         >
-          {PRICE_TYPE_OPTIONS.map((opt) => (
-            <option key={opt.value} value={opt.value}>{opt.label}</option>
-          ))}
+          {analyzing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+          {analyzing ? 'Analyzing...' : isEdit ? 'Re-analyze document' : 'Auto-fill from document'}
+        </Button>
+      )}
+      {analyzeError && <p className="text-xs text-destructive">{analyzeError}</p>}
+      {extraction && (
+        <div className="flex items-center gap-1.5 text-xs text-primary font-medium">
+          <Sparkles className="h-3 w-3" /> AI suggestions ready — apply individually below
+        </div>
+      )}
+      <div className="flex flex-col gap-0.5">
+        <select className={INLINE_INPUT} value={platform} onChange={(e) => setPlatform(e.target.value)}>
+          {PLATFORM_OPTIONS.map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+        </select>
+        <InlineSuggestion label="Platform" value={extraction?.platform ? (PLATFORM_OPTIONS.find(o => o.value === extraction.platform)?.label ?? extraction.platform) : undefined} accepted={accepted.has('platform')} onAccept={() => accept('platform')} />
+      </div>
+      <div className="flex flex-col gap-0.5">
+        <input className={INLINE_INPUT} placeholder="Source (e.g. eBay lot, gift, estate sale)" value={source} onChange={(e) => setSource(e.target.value)} autoFocus />
+        <InlineSuggestion label="Source" value={extraction?.item_description} accepted={accepted.has('source')} onAccept={() => accept('source')} />
+      </div>
+      <div className="flex flex-col gap-0.5">
+        <input className={INLINE_INPUT} placeholder="Seller name or username" value={sellerName} onChange={(e) => setSellerName(e.target.value)} />
+        <InlineSuggestion label="Seller" value={extraction?.seller_name} accepted={accepted.has('seller')} onAccept={() => accept('seller')} />
+      </div>
+      <div className="flex flex-col gap-0.5">
+        <input className={INLINE_INPUT} placeholder="Listing URL (optional)" value={platformListingUrl} onChange={(e) => setPlatformListingUrl(e.target.value)} />
+        <InlineSuggestion label="URL" value={extraction?.listing_url} accepted={accepted.has('listing_url')} onAccept={() => accept('listing_url')} />
+      </div>
+      <div className="flex flex-col gap-0.5">
+        <input className={INLINE_INPUT} placeholder="Order number" value={orderNumber} onChange={(e) => setOrderNumber(e.target.value)} />
+        <InlineSuggestion label="Order #" value={extraction?.order_number} accepted={accepted.has('order_number')} onAccept={() => accept('order_number')} />
+      </div>
+      <div className="flex flex-col gap-0.5">
+        <input type="date" className={INLINE_INPUT} value={orderDate} onChange={(e) => setOrderDate(e.target.value)} />
+        <InlineSuggestion label="Order date" value={extraction?.transaction_date} accepted={accepted.has('order_date')} onAccept={() => accept('order_date')} />
+      </div>
+      <div className="flex flex-col gap-0.5">
+        <input type="date" className={INLINE_INPUT} value={acquiredDate} onChange={(e) => setAcquiredDate(e.target.value)} placeholder="Delivery date" />
+        <InlineSuggestion label="Delivered" value={extraction?.delivery_date} accepted={accepted.has('acquired_date')} onAccept={() => accept('acquired_date')} />
+      </div>
+      <div className="flex flex-col gap-0.5">
+        <input type="number" step="0.01" min="0" className={INLINE_INPUT} placeholder="Price paid (USD)" value={pricePaid} onChange={(e) => setPricePaid(e.target.value)} />
+        <InlineSuggestion label="Price" value={extraction?.price_paid_usd != null ? `$${extraction.price_paid_usd}` : undefined} accepted={accepted.has('price')} onAccept={() => accept('price')} />
+      </div>
+      <div className="flex flex-col gap-0.5">
+        <input type="number" step="0.01" min="0" className={INLINE_INPUT} placeholder="Shipping (USD)" value={shippingCost} onChange={(e) => setShippingCost(e.target.value)} />
+        <InlineSuggestion label="Shipping" value={extraction?.shipping_cost_usd != null ? `$${extraction.shipping_cost_usd}` : undefined} accepted={accepted.has('shipping')} onAccept={() => accept('shipping')} />
+      </div>
+      <div className="flex flex-col gap-0.5">
+        <input className={INLINE_INPUT} placeholder="Currency (e.g. GBP, EUR)" value={currency} onChange={(e) => setCurrency(e.target.value)} />
+        <InlineSuggestion label="Currency" value={extraction?.currency} accepted={accepted.has('currency')} onAccept={() => accept('currency')} />
+      </div>
+      <div className="flex flex-col gap-0.5">
+        <input type="number" step="0.01" min="0" className={INLINE_INPUT} placeholder="Original price (if non-USD)" value={priceOriginal} onChange={(e) => setPriceOriginal(e.target.value)} />
+        <InlineSuggestion label="Original price" value={extraction?.price_original != null ? String(extraction.price_original) : undefined} accepted={accepted.has('price_original')} onAccept={() => accept('price_original')} />
+      </div>
+      <div className="flex flex-col gap-0.5">
+        <input type="number" min="1" className={INLINE_INPUT} placeholder="Lot size (if multi-card)" value={lotSize} onChange={(e) => setLotSize(e.target.value)} />
+        <InlineSuggestion label="Lot size" value={extraction?.lot_size != null && extraction.lot_size > 1 ? String(extraction.lot_size) : undefined} accepted={accepted.has('lot_size')} onAccept={() => accept('lot_size')} />
+      </div>
+      <div className="flex flex-col gap-0.5">
+        <select className={INLINE_INPUT} value={condition} onChange={(e) => setCondition(e.target.value)}>
+          {CONDITION_OPTIONS.map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
         </select>
       </div>
-      <input
-        className={INLINE_INPUT}
-        placeholder="Source (e.g. eBay listing, dealer)"
-        value={source}
-        onChange={(e) => setSource(e.target.value)}
-      />
-      <input
-        type="date"
-        className={INLINE_INPUT}
-        value={observedDate}
-        onChange={(e) => setObservedDate(e.target.value)}
-      />
-      <AttachmentPicker files={docs} onChange={setDocs} />
+      <div className="flex flex-col gap-0.5">
+        <textarea className={`${INLINE_INPUT} min-h-[60px] resize-y`} placeholder="Notes (optional)" value={notes} onChange={(e) => setNotes(e.target.value)} />
+        <InlineSuggestion label="Condition" value={extraction?.condition_notes} accepted={accepted.has('notes')} onAccept={() => accept('notes')} />
+      </div>
       <div className="flex gap-1.5">
-        <Button size="sm" onClick={handleSubmit} disabled={saving || !priceUsd} className="flex-1 gap-1.5">
-          {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
-          {saving ? 'Saving...' : 'Add'}
+        <Button size="sm" onClick={handleSubmit} disabled={saving || (!source.trim() && !sellerName.trim())} className="flex-1 gap-1.5">
+          {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : isEdit ? <Save className="h-3.5 w-3.5" /> : <Plus className="h-3.5 w-3.5" />}
+          {saving ? 'Saving...' : isEdit ? 'Save' : 'Add'}
         </Button>
-        <Button variant="outline" size="sm" onClick={onCancel} disabled={saving}>
-          Cancel
-        </Button>
+        <Button variant="outline" size="sm" onClick={onCancel} disabled={saving}>Cancel</Button>
       </div>
     </div>
   );

@@ -112,3 +112,81 @@ export async function analyzeCardScans(
     return { error: err instanceof Error ? err.message : String(err) };
   }
 }
+
+// ─── Document Analysis ──────────────────────────────────────────
+
+export interface DocumentExtraction {
+  document_type: 'receipt' | 'invoice' | 'listing' | 'auction_record' | 'email' | 'shipping_label' | 'other';
+  seller_name: string | null;
+  platform: string | null;
+  listing_url: string | null;
+  price_paid_usd: number | null;
+  shipping_cost_usd: number | null;
+  transaction_date: string | null;
+  delivery_date: string | null;
+  item_description: string | null;
+  lot_size: number | null;
+  condition_notes: string | null;
+  order_number: string | null;
+  currency: string | null;
+  price_original: number | null;
+  confidence: 'high' | 'medium' | 'low';
+}
+
+async function fileToBase64(file: File): Promise<{ data: string; mediaType: string }> {
+  const buffer = await file.arrayBuffer();
+  const bytes = new Uint8Array(buffer);
+  let binary = '';
+  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+  return { data: btoa(binary), mediaType: file.type || 'application/octet-stream' };
+}
+
+export async function analyzeDocument(
+  file: File
+): Promise<{ extraction?: DocumentExtraction; error?: string }> {
+  try {
+    if (!file.type.startsWith('image/') && file.type !== 'application/pdf') {
+      return { error: `Unsupported file type: ${file.type}` };
+    }
+
+    let body: Record<string, unknown>;
+
+    if (file.type === 'application/pdf') {
+      const { data, mediaType } = await fileToBase64(file);
+      body = { pdfBase64: data, pdfMediaType: mediaType };
+    } else {
+      const blobUrl = URL.createObjectURL(file);
+      try {
+        const page = await resizeImageToBase64(blobUrl, AI_MAX_DIMENSION);
+        body = { base64Pages: [page] };
+      } finally {
+        URL.revokeObjectURL(blobUrl);
+      }
+    }
+
+    const { data, error } = await supabase.functions.invoke('analyze-document', {
+      body,
+    });
+
+    if (error) {
+      let detail = error.message;
+      try {
+        const ctx = (error as unknown as { context?: Response }).context;
+        if (ctx) {
+          const body = await ctx.json();
+          detail = body?.error ?? detail;
+          if (body?.detail) detail += ': ' + body.detail;
+        }
+      } catch { /* ignore parse failure */ }
+      return { error: detail };
+    }
+
+    if (data?.error) {
+      return { error: `${data.error}${data.detail ? ': ' + data.detail : ''}` };
+    }
+
+    return { extraction: data.extraction as DocumentExtraction };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : String(err) };
+  }
+}
