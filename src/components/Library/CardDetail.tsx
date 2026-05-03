@@ -1,6 +1,5 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
 import {
   ArrowLeft,
@@ -56,7 +55,6 @@ import {
   type CardMetadataUpdate,
   type ScanInfo,
   type DetailProvenanceEntry,
-  type DetailPriceObservation,
   type DetailDocumentInfo,
 } from '@/lib/safetyCardService';
 import {
