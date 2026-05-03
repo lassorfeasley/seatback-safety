@@ -50,10 +50,9 @@ export const SocialCropper: React.FC<SocialCropperProps> = (props) => {
   const [composite, setComposite] = useState<CompositeStripResult | null>(null);
   const [compositeLoading, setCompositeLoading] = useState(false);
 
-  const [viewport, setViewport] = useState(() => ({
-    w: typeof window !== 'undefined' ? window.innerWidth : 1200,
-    h: typeof window !== 'undefined' ? window.innerHeight : 800,
-  }));
+  const [viewportH, setViewportH] = useState(() =>
+    typeof window !== 'undefined' ? window.innerHeight : 800
+  );
   const [crop, setCrop] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
   const croppedPixelsRef = useRef<{ x: number; y: number; width: number; height: number } | null>(null);
@@ -62,7 +61,6 @@ export const SocialCropper: React.FC<SocialCropperProps> = (props) => {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Panel mode state
   const currentSidePanels = useMemo(() => {
     if (props.mode !== 'panels') return [];
     return props.cardDetail.panels
@@ -70,12 +68,10 @@ export const SocialCropper: React.FC<SocialCropperProps> = (props) => {
       .sort((a: Panel, b: Panel) => a.panel_index - b.panel_index);
   }, [props.mode, props.mode === 'panels' ? props.cardDetail : null, side]);
 
-  // The image URL the cropper operates on
   const imageUrl = props.mode === 'scan' ? props.scanUrl : composite?.dataUrl ?? null;
   const imageReady = props.mode === 'scan' ? true : (!compositeLoading && !!composite);
   const isLoading = props.mode === 'panels' && compositeLoading;
 
-  // Scan mode: track natural dimensions for size feedback
   const [scanNaturalSize, setScanNaturalSize] = useState<{ w: number; h: number } | null>(null);
 
   const maxSquareCropPx = useMemo(() => {
@@ -86,18 +82,6 @@ export const SocialCropper: React.FC<SocialCropperProps> = (props) => {
     return 0;
   }, [props.mode, composite, scanNaturalSize]);
 
-  const displayScale = useMemo(() => {
-    if (props.mode === 'scan') return 1;
-    if (!composite) return 1;
-    const stripZone = 0.54;
-    const availableWidth = viewport.w - 80;
-    const availableHeight = Math.min(Math.floor(viewport.h * stripZone), viewport.h - 40);
-    const scaleX = composite.width > 0 ? availableWidth / composite.width : 1;
-    const scaleY = composite.height > 0 ? availableHeight / composite.height : 1;
-    return Math.min(1, scaleX, scaleY);
-  }, [props.mode, composite, viewport]);
-
-  // Build composite strip for panel mode
   useEffect(() => {
     if (props.mode !== 'panels') return;
     if (currentSidePanels.length === 0) { setComposite(null); return; }
@@ -109,7 +93,6 @@ export const SocialCropper: React.FC<SocialCropperProps> = (props) => {
     return () => { cancelled = true; };
   }, [props.mode, props.mode === 'panels' ? props.cardDetail : null, side, currentSidePanels]);
 
-  // Load scan natural size for scan mode
   useEffect(() => {
     if (props.mode !== 'scan') return;
     const img = new Image();
@@ -118,9 +101,8 @@ export const SocialCropper: React.FC<SocialCropperProps> = (props) => {
   }, [props.mode, props.mode === 'scan' ? props.scanUrl : null]);
 
   useEffect(() => {
-    const onResize = () => setViewport({ w: window.innerWidth, h: window.innerHeight });
+    const onResize = () => setViewportH(window.innerHeight);
     window.addEventListener('resize', onResize);
-    onResize();
     return () => window.removeEventListener('resize', onResize);
   }, []);
 
@@ -226,153 +208,192 @@ export const SocialCropper: React.FC<SocialCropperProps> = (props) => {
 
   const noContent = props.mode === 'panels' && currentSidePanels.length === 0;
 
+  const cropSizePx = Math.max(200, Math.floor(viewportH / 2));
+
+  const mainRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = mainRef.current;
+    if (!el) return;
+    const preventScroll = (e: WheelEvent) => e.preventDefault();
+    el.addEventListener('wheel', preventScroll, { passive: false });
+    return () => el.removeEventListener('wheel', preventScroll);
+  }, []);
+
   return (
     <div
-      className="fixed inset-0 z-[100] flex flex-col bg-black/95 backdrop-blur-xl overflow-hidden"
+      className="fixed inset-0 z-[100] flex bg-neutral-900 overflow-hidden"
       role="dialog"
       aria-modal="true"
       aria-label="Select a social media crop"
     >
-      <div className="fixed top-0 right-0 z-[110] flex">
-        {props.mode === 'panels' && (
-          <button
-            type="button"
-            onClick={() => setSide((s) => (s === 'front' ? 'back' : 'front'))}
-            className="flex items-center justify-center w-11 h-11 sm:w-8 sm:h-8 bg-black/70 hover:bg-black/90 text-white transition-colors border-b border-l border-white/20"
-            aria-label="Flip to other side"
-          >
-            <RotateCw className="h-6 w-6 sm:h-4 sm:w-4" />
-          </button>
+      {/* ── Main area: cropper fills entire space ── */}
+      <div ref={mainRef} className="flex-1 min-w-0 min-h-0 relative overflow-hidden">
+        {isLoading && (
+          <div className="absolute inset-0 flex items-center justify-center">
+            <Loader2 className="h-10 w-10 animate-spin text-white/60" />
+          </div>
         )}
-        <button
-          type="button"
-          onClick={onClose}
-          className="flex items-center justify-center w-11 h-11 sm:w-8 sm:h-8 bg-black/70 hover:bg-black/90 text-white transition-colors border-b border-l border-white/20"
-          aria-label="Close"
-        >
-          <X className="h-6 w-6 sm:h-4 sm:w-4" />
-        </button>
+
+        {noContent && (
+          <div className="absolute inset-0 flex items-center justify-center">
+            <p className="text-sm text-white/50">No panels on the {side} side.</p>
+          </div>
+        )}
+
+        {!isLoading && !noContent && imageReady && imageUrl && (
+          <Cropper
+            key={imageUrl}
+            image={imageUrl}
+            crop={crop}
+            zoom={zoom}
+            aspect={1}
+            cropSize={{ width: cropSizePx, height: cropSizePx }}
+            onCropChange={setCrop}
+            onZoomChange={setZoom}
+            onCropComplete={onCropComplete}
+            minZoom={CROPPER_MIN_ZOOM}
+            maxZoom={CROPPER_MAX_ZOOM}
+            style={{
+              containerStyle: { width: '100%', height: '100%', background: '#171717' },
+            }}
+            onMediaLoaded={(mediaSize) => {
+              if (props.mode === 'scan') {
+                setScanNaturalSize({ w: mediaSize.naturalWidth, h: mediaSize.naturalHeight });
+              }
+            }}
+          />
+        )}
+
+        {!isLoading && !noContent && !imageUrl && (
+          <div className="absolute inset-0 flex items-center justify-center text-sm text-white/50">
+            Could not load image for cropping.
+          </div>
+        )}
       </div>
 
-      <div className="flex flex-1 min-h-0 flex-col pt-11 sm:pt-8">
+      {/* ── Right sidebar ── */}
+      <div className="w-64 flex-shrink-0 border-l bg-card flex flex-col overflow-y-auto">
+        {/* Side toggle (panel mode) */}
+        {props.mode === 'panels' && (
+          <div className="p-4 border-b flex flex-col gap-2">
+            <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Side</span>
+            <div className="flex gap-1.5">
+              <button
+                type="button"
+                onClick={() => setSide('front')}
+                className={cn(
+                  'flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-md text-xs font-medium transition-colors border',
+                  side === 'front'
+                    ? 'bg-primary text-primary-foreground border-primary'
+                    : 'bg-background hover:bg-accent border-border'
+                )}
+              >
+                Front
+              </button>
+              <button
+                type="button"
+                onClick={() => setSide('back')}
+                className={cn(
+                  'flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-md text-xs font-medium transition-colors border',
+                  side === 'back'
+                    ? 'bg-primary text-primary-foreground border-primary'
+                    : 'bg-background hover:bg-accent border-border'
+                )}
+              >
+                <RotateCw className="h-3 w-3" />
+                Back
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Zoom */}
+        {imageReady && imageUrl && !noContent && (
+          <div className="p-4 border-b flex flex-col gap-2">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Zoom</span>
+              <span className="text-xs tabular-nums text-muted-foreground">{zoom.toFixed(2)}×</span>
+            </div>
+            <input
+              type="range"
+              min={CROPPER_MIN_ZOOM}
+              max={CROPPER_MAX_ZOOM}
+              step={0.05}
+              value={zoom}
+              onChange={(e) => setZoom(Number(e.target.value))}
+              className="w-full accent-primary"
+            />
+          </div>
+        )}
+
+        {/* Export info */}
+        {imageReady && imageUrl && !noContent && exportCropPx && (
+          <div className="p-4 border-b flex flex-col gap-1.5">
+            <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Export Size</span>
+            <p
+              className={cn(
+                'text-sm tabular-nums font-medium',
+                maxSquareCropPx >= INSTAGRAM_SQUARE_MIN_PX && exportCropPx.w >= INSTAGRAM_SQUARE_MIN_PX
+                  ? 'text-emerald-600'
+                  : maxSquareCropPx >= INSTAGRAM_SQUARE_MIN_PX
+                    ? 'text-amber-600'
+                    : 'text-foreground'
+              )}
+            >
+              {exportCropPx.w} × {exportCropPx.h} px
+            </p>
+            {maxSquareCropPx >= INSTAGRAM_SQUARE_MIN_PX && (
+              <p className="text-[11px] text-muted-foreground">
+                Aim ≥ {INSTAGRAM_SQUARE_MIN_PX}px for a sharp IG square
+              </p>
+            )}
+            {maxSquareCropPx > 0 && maxSquareCropPx < INSTAGRAM_SQUARE_MIN_PX && (
+              <p className="text-[11px] text-amber-600">
+                Source is smaller than {INSTAGRAM_SQUARE_MIN_PX}px
+              </p>
+            )}
+          </div>
+        )}
+
+        {/* Error */}
         {error && (
-          <div className="mx-4 mt-2 shrink-0 text-sm text-red-300 bg-red-950/50 rounded-md px-3 py-2 border border-red-500/30">
+          <div className="mx-4 mt-4 text-xs text-destructive bg-destructive/10 rounded-md px-3 py-2 border border-destructive/30">
             {error}
           </div>
         )}
 
-        {noContent ? (
-          <div className="flex flex-1 flex-col items-center justify-center gap-4 px-6 text-center">
-            <p className="text-sm text-white/70">No panels on the {side} side.</p>
-          </div>
-        ) : (
-          <div
-            className="flex min-h-0 flex-1 flex-col items-stretch overflow-hidden px-4 sm:px-10"
-            onClick={(e) => e.stopPropagation()}
+        {/* Actions */}
+        <div className="p-4 flex flex-col gap-3 mt-auto">
+          <p className="text-[11px] text-muted-foreground leading-relaxed">
+            {props.mode === 'scan'
+              ? 'Frame a dramatic scene from the scan, then save.'
+              : 'Drag and zoom to frame a dramatic scene, then save.'}
+          </p>
+          <Button
+            type="button"
+            size="sm"
+            onClick={handleSaveCrop}
+            disabled={saving || isLoading || noContent || !imageReady || !imageUrl}
+            className="w-full gap-1.5"
           >
-            {isLoading && (
-              <div className="flex flex-1 items-center justify-center">
-                <Loader2 className="h-10 w-10 animate-spin text-white/60" />
-              </div>
+            {saving ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <CropIcon className="h-3.5 w-3.5" />
             )}
-            {imageReady && imageUrl && (
-              <>
-                <div className="flex min-h-0 flex-1 items-center justify-center py-2">
-                  <div
-                    className="relative overflow-hidden rounded-md bg-black"
-                    style={
-                      props.mode === 'panels' && composite
-                        ? { width: composite.width * displayScale, height: composite.height * displayScale }
-                        : { width: '100%', maxWidth: 900, height: '100%', maxHeight: '60vh' }
-                    }
-                  >
-                    <Cropper
-                      key={imageUrl}
-                      image={imageUrl}
-                      crop={crop}
-                      zoom={zoom}
-                      aspect={1}
-                      onCropChange={setCrop}
-                      onZoomChange={setZoom}
-                      onCropComplete={onCropComplete}
-                      minZoom={CROPPER_MIN_ZOOM}
-                      maxZoom={CROPPER_MAX_ZOOM}
-                      onMediaLoaded={(mediaSize) => {
-                        if (props.mode === 'scan') {
-                          setScanNaturalSize({ w: mediaSize.naturalWidth, h: mediaSize.naturalHeight });
-                        }
-                      }}
-                    />
-                  </div>
-                </div>
-                <p className="shrink-0 pb-1 text-center text-[11px] text-white/50">
-                  {props.mode === 'scan'
-                    ? 'Frame a dramatic scene from the scan, then save'
-                    : `${side === 'front' ? 'Front' : 'Back'} · Frame a dramatic scene, then save`}
-                </p>
-                {maxSquareCropPx > 0 && maxSquareCropPx < INSTAGRAM_SQUARE_MIN_PX && (
-                  <p className="shrink-0 px-2 pb-2 text-center text-[11px] text-amber-200/90">
-                    This image is smaller than {INSTAGRAM_SQUARE_MIN_PX}px; export will be below Instagram's recommended size.
-                  </p>
-                )}
-                <div className="shrink-0 space-y-3 pb-4 pt-1 max-w-lg w-full mx-auto">
-                  {exportCropPx && (
-                    <p
-                      className={cn(
-                        'text-center text-xs tabular-nums',
-                        maxSquareCropPx >= INSTAGRAM_SQUARE_MIN_PX && exportCropPx.w >= INSTAGRAM_SQUARE_MIN_PX
-                          ? 'text-emerald-300/95'
-                          : maxSquareCropPx >= INSTAGRAM_SQUARE_MIN_PX
-                            ? 'text-amber-200/90'
-                            : 'text-white/70'
-                      )}
-                    >
-                      Export: {exportCropPx.w} × {exportCropPx.h} px
-                      {maxSquareCropPx >= INSTAGRAM_SQUARE_MIN_PX && (
-                        <span className="text-white/50 font-normal">
-                          {' '}(aim ≥ {INSTAGRAM_SQUARE_MIN_PX} for a sharp IG square)
-                        </span>
-                      )}
-                    </p>
-                  )}
-                  <div className="flex items-center gap-3">
-                    <label className="text-xs text-white/60 w-14 shrink-0">Zoom</label>
-                    <input
-                      type="range"
-                      min={CROPPER_MIN_ZOOM}
-                      max={CROPPER_MAX_ZOOM}
-                      step={0.05}
-                      value={zoom}
-                      onChange={(e) => setZoom(Number(e.target.value))}
-                      className="flex-1 accent-white"
-                    />
-                    <span className="text-xs tabular-nums w-12 text-right text-white/80">
-                      {zoom.toFixed(2)}×
-                    </span>
-                  </div>
-                  <Button
-                    type="button"
-                    className="w-full gap-2 bg-white text-black hover:bg-white/90"
-                    onClick={handleSaveCrop}
-                    disabled={saving || isLoading}
-                  >
-                    {saving ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <CropIcon className="h-4 w-4" />
-                    )}
-                    Save crop
-                  </Button>
-                </div>
-              </>
-            )}
-            {!isLoading && !imageUrl && (
-              <div className="flex flex-1 items-center justify-center px-4 text-center text-sm text-white/60">
-                Could not load image for cropping.
-              </div>
-            )}
-          </div>
-        )}
+            Save crop
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={onClose}
+            className="w-full gap-1.5"
+          >
+            <X className="h-3.5 w-3.5" />
+            Cancel
+          </Button>
+        </div>
       </div>
     </div>
   );
