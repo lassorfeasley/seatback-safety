@@ -32,6 +32,53 @@ import { supabase } from '@/lib/supabase';
 import { useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 
+// ─── Schedule Spreading ─────────────────────────────────────────
+// Shuffle crops, then greedily reorder so the same airline or decade
+// aren't placed back-to-back.
+
+function spreadCrops(pool: SocialCropWithCard[], count: number): SocialCropWithCard[] {
+  // Expand pool to cover the full count (wrapping), then shuffle
+  const expanded: SocialCropWithCard[] = [];
+  for (let i = 0; i < count; i++) expanded.push(pool[i % pool.length]);
+  for (let i = expanded.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [expanded[i], expanded[j]] = [expanded[j], expanded[i]];
+  }
+
+  const result: SocialCropWithCard[] = [];
+  const remaining = [...expanded];
+
+  while (remaining.length > 0) {
+    let bestIdx = 0;
+    let bestScore = -Infinity;
+
+    for (let i = 0; i < remaining.length; i++) {
+      const item = remaining[i];
+      const airline = item.airline_name?.toLowerCase() ?? '';
+      const decade = item.published_year ? Math.floor(item.published_year / 10) : null;
+
+      let score = 0;
+      const lookback = Math.min(5, result.length);
+      for (let back = 1; back <= lookback; back++) {
+        const prev = result[result.length - back];
+        const prevAirline = prev.airline_name?.toLowerCase() ?? '';
+        const prevDecade = prev.published_year ? Math.floor(prev.published_year / 10) : null;
+        if (airline && airline === prevAirline) score -= 6 - back;
+        if (decade !== null && decade === prevDecade) score -= (6 - back) * 0.5;
+      }
+
+      if (score > bestScore) {
+        bestScore = score;
+        bestIdx = i;
+      }
+    }
+
+    result.push(remaining.splice(bestIdx, 1)[0]);
+  }
+
+  return result;
+}
+
 // ─── Calendar Helpers ───────────────────────────────────────────
 
 function getDaysInMonth(year: number, month: number) {
@@ -580,11 +627,14 @@ export const AdminSocial: React.FC = () => {
       return;
     }
 
+    // Build the sequence: shuffle, then spread to avoid same airline/decade clustering
+    const sequence = spreadCrops(pool, dayCount);
+
     const [h, m] = fillTime.split(':').map(Number);
     let scheduled = 0;
 
     for (let i = 0; i < dayCount; i++) {
-      const crop = pool[i % pool.length];
+      const crop = sequence[i];
       const day = new Date(start);
       day.setDate(day.getDate() + i);
       day.setHours(h, m, 0, 0);
