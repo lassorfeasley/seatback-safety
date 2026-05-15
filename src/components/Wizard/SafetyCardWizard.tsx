@@ -170,6 +170,7 @@ export const SafetyCardWizard: React.FC<SafetyCardWizardProps> = ({
             slots,
             cropWidth: editData.cropWidth,
             cropHeight: editData.cropHeight,
+            isBooklet: editData.isBooklet,
           };
 
           if (initialSlot) {

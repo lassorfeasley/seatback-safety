@@ -149,6 +149,26 @@ export async function deleteSocialPost(
   return {};
 }
 
+export async function deleteSocialPostsInRange(
+  startDate: string,
+  endDate: string,
+  statusFilter: SocialPost['status'][] = ['scheduled', 'draft'],
+): Promise<{ deleted: number; error?: string }> {
+  const start = new Date(startDate + 'T00:00:00');
+  const end = new Date(endDate + 'T23:59:59.999');
+
+  const { data, error } = await supabase
+    .from('social_posts')
+    .delete()
+    .gte('scheduled_at', start.toISOString())
+    .lte('scheduled_at', end.toISOString())
+    .in('status', statusFilter)
+    .select('id');
+
+  if (error) return { deleted: 0, error: error.message };
+  return { deleted: data?.length ?? 0 };
+}
+
 export async function createSocialPostFromManualCrop(params: {
   card_id: string;
   panel_id: string;

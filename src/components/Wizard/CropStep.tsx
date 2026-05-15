@@ -199,7 +199,7 @@ export const CropStep: React.FC<CropStepProps> = ({
         </div>
       </div>
 
-      {/* Back side — fills other half (reversed order) */}
+      {/* Back side — reversed for fold-outs, sequential for booklets */}
       <div className="flex-1 min-h-0 flex flex-col gap-1">
         <div className="flex items-center justify-between px-1 flex-shrink-0">
           <span className="text-xs font-medium flex items-center gap-1.5">
@@ -213,7 +213,7 @@ export const CropStep: React.FC<CropStepProps> = ({
         </div>
         <div className="flex-1 min-h-0 flex items-stretch justify-center">
           {Array.from({ length: panelCount }, (_, rawI) => {
-            const panelIdx = panelCount - 1 - rawI;
+            const panelIdx = isBooklet ? rawI : panelCount - 1 - rawI;
             return (
               <PanelPlaceholder
                 key={panelIdx}
@@ -525,11 +525,20 @@ const CropSession: React.FC<CropSessionProps> = ({
 
   const nextUnfilledSlot = useMemo(() => {
     const order: { panelIndex: number; side: 'front' | 'back' }[] = [];
-    for (let i = 0; i < panelCount; i++) {
-      order.push({ panelIndex: i, side: 'front' });
-    }
-    for (let i = panelCount - 1; i >= 0; i--) {
-      order.push({ panelIndex: i, side: 'back' });
+    if (isBooklet) {
+      // Booklet: follow spread reading order
+      // Cover → inside front cover → page 2 front → page 2 back → ... → back cover
+      for (let i = 0; i < panelCount; i++) {
+        order.push({ panelIndex: i, side: 'front' });
+        order.push({ panelIndex: i, side: 'back' });
+      }
+    } else {
+      for (let i = 0; i < panelCount; i++) {
+        order.push({ panelIndex: i, side: 'front' });
+      }
+      for (let i = panelCount - 1; i >= 0; i--) {
+        order.push({ panelIndex: i, side: 'back' });
+      }
     }
     const currentIdx = order.findIndex(
       (o) => o.panelIndex === activeSlot.panelIndex && o.side === activeSlot.side
@@ -542,7 +551,7 @@ const CropSession: React.FC<CropSessionProps> = ({
       if (!slot || slot.cropRegion === null) return candidate;
     }
     return null;
-  }, [panelCount, activeSlot, allSlots]);
+  }, [panelCount, activeSlot, allSlots, isBooklet]);
 
   const handleConfirmAndNext = useCallback(async () => {
     if (nextUnfilledSlot) {
@@ -673,73 +682,90 @@ const CropSession: React.FC<CropSessionProps> = ({
         {/* Actions */}
         <div className="p-4 flex flex-col gap-3 mt-auto">
           {/* Panel map */}
-          <div className="flex flex-col gap-0.5">
-            <div className="flex items-center gap-2 mb-0.5">
-              <span className="text-[10px] text-muted-foreground w-7">{isBooklet ? 'Recto' : 'Front'}</span>
-              <div className="flex gap-0.5">
-                {Array.from({ length: panelCount }, (_, i) => {
-                  const isActive = activeSlot.panelIndex === i && activeSlot.side === 'front';
-                  const slot = allSlots.find((s) => s.panelIndex === i && s.side === 'front');
-                  const isFilled = !isActive && slot?.cropRegion !== null;
-                  return (
-                    <button
-                      key={`front-${i}`}
-                      type="button"
-                      onClick={() => {
-                        if (isActive) return;
-                        if (region && selectedImageId) {
-                          handleConfirm({ panelIndex: i, side: 'front' });
-                        } else {
-                          onSelectSlot(i, 'front');
-                        }
-                      }}
-                      style={{
-                        width: 14,
-                        height: 22,
-                        flexShrink: 0,
-                        border: `1px solid ${isActive ? '#ef4444' : isFilled ? '#999' : '#000'}`,
-                        background: isActive ? '#ef4444' : isFilled ? '#d4d4d4' : '#fff',
-                        cursor: isActive ? 'default' : 'pointer',
-                      }}
-                    />
-                  );
-                })}
+          {isBooklet ? (
+            <BookletPanelMap
+              panelCount={panelCount}
+              activeSlot={activeSlot}
+              allSlots={allSlots}
+              region={region}
+              selectedImageId={selectedImageId}
+              onNavigate={(panelIndex, side) => {
+                if (region && selectedImageId) {
+                  handleConfirm({ panelIndex, side });
+                } else {
+                  onSelectSlot(panelIndex, side);
+                }
+              }}
+            />
+          ) : (
+            <div className="flex flex-col gap-0.5">
+              <div className="flex items-center gap-2 mb-0.5">
+                <span className="text-[10px] text-muted-foreground w-7">Front</span>
+                <div className="flex gap-0.5">
+                  {Array.from({ length: panelCount }, (_, i) => {
+                    const isActive = activeSlot.panelIndex === i && activeSlot.side === 'front';
+                    const slot = allSlots.find((s) => s.panelIndex === i && s.side === 'front');
+                    const isFilled = !isActive && slot?.cropRegion !== null;
+                    return (
+                      <button
+                        key={`front-${i}`}
+                        type="button"
+                        onClick={() => {
+                          if (isActive) return;
+                          if (region && selectedImageId) {
+                            handleConfirm({ panelIndex: i, side: 'front' });
+                          } else {
+                            onSelectSlot(i, 'front');
+                          }
+                        }}
+                        style={{
+                          width: 14,
+                          height: 22,
+                          flexShrink: 0,
+                          border: `1px solid ${isActive ? '#ef4444' : isFilled ? '#999' : '#000'}`,
+                          background: isActive ? '#ef4444' : isFilled ? '#d4d4d4' : '#fff',
+                          cursor: isActive ? 'default' : 'pointer',
+                        }}
+                      />
+                    );
+                  })}
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] text-muted-foreground w-7">Back</span>
+                <div className="flex gap-0.5">
+                  {Array.from({ length: panelCount }, (_, rawI) => {
+                    const i = panelCount - 1 - rawI;
+                    const isActive = activeSlot.panelIndex === i && activeSlot.side === 'back';
+                    const slot = allSlots.find((s) => s.panelIndex === i && s.side === 'back');
+                    const isFilled = !isActive && slot?.cropRegion !== null;
+                    return (
+                      <button
+                        key={`back-${i}`}
+                        type="button"
+                        onClick={() => {
+                          if (isActive) return;
+                          if (region && selectedImageId) {
+                            handleConfirm({ panelIndex: i, side: 'back' });
+                          } else {
+                            onSelectSlot(i, 'back');
+                          }
+                        }}
+                        style={{
+                          width: 14,
+                          height: 22,
+                          flexShrink: 0,
+                          border: `1px solid ${isActive ? '#ef4444' : isFilled ? '#999' : '#000'}`,
+                          background: isActive ? '#ef4444' : isFilled ? '#d4d4d4' : '#fff',
+                          cursor: isActive ? 'default' : 'pointer',
+                        }}
+                      />
+                    );
+                  })}
+                </div>
               </div>
             </div>
-            <div className="flex items-center gap-2">
-              <span className="text-[10px] text-muted-foreground w-7">{isBooklet ? 'Verso' : 'Back'}</span>
-              <div className="flex gap-0.5">
-                {Array.from({ length: panelCount }, (_, rawI) => {
-                  const i = panelCount - 1 - rawI;
-                  const isActive = activeSlot.panelIndex === i && activeSlot.side === 'back';
-                  const slot = allSlots.find((s) => s.panelIndex === i && s.side === 'back');
-                  const isFilled = !isActive && slot?.cropRegion !== null;
-                  return (
-                    <button
-                      key={`back-${i}`}
-                      type="button"
-                      onClick={() => {
-                        if (isActive) return;
-                        if (region && selectedImageId) {
-                          handleConfirm({ panelIndex: i, side: 'back' });
-                        } else {
-                          onSelectSlot(i, 'back');
-                        }
-                      }}
-                      style={{
-                        width: 14,
-                        height: 22,
-                        flexShrink: 0,
-                        border: `1px solid ${isActive ? '#ef4444' : isFilled ? '#999' : '#000'}`,
-                        background: isActive ? '#ef4444' : isFilled ? '#d4d4d4' : '#fff',
-                        cursor: isActive ? 'default' : 'pointer',
-                      }}
-                    />
-                  );
-                })}
-              </div>
-            </div>
-          </div>
+          )}
           {(region || dimensionsLocked) && (
             <div className="flex gap-1.5">
               {region && (
@@ -787,3 +813,96 @@ const CropSession: React.FC<CropSessionProps> = ({
   );
 };
 
+// ─── BookletPanelMap ──────────────────────────────────────────────
+
+interface BookletPanelMapProps {
+  panelCount: number;
+  activeSlot: { panelIndex: number; side: 'front' | 'back' };
+  allSlots: { panelIndex: number; side: 'front' | 'back'; cropRegion: CropRegion | null }[];
+  region: CropRegion | null;
+  selectedImageId: string | null;
+  onNavigate: (panelIndex: number, side: 'front' | 'back') => void;
+}
+
+const BookletPanelMap: React.FC<BookletPanelMapProps> = ({
+  panelCount,
+  activeSlot,
+  allSlots,
+  onNavigate,
+}) => {
+  const getButtonStyle = (panelIndex: number, side: 'front' | 'back') => {
+    const isActive = activeSlot.panelIndex === panelIndex && activeSlot.side === side;
+    const slot = allSlots.find((s) => s.panelIndex === panelIndex && s.side === side);
+    const isFilled = !isActive && slot?.cropRegion !== null;
+    return {
+      border: `1px solid ${isActive ? '#ef4444' : isFilled ? '#999' : '#000'}`,
+      background: isActive ? '#ef4444' : isFilled ? '#d4d4d4' : '#fff',
+      cursor: isActive ? 'default' as const : 'pointer' as const,
+    };
+  };
+
+  const isActiveSlot = (panelIndex: number, side: 'front' | 'back') =>
+    activeSlot.panelIndex === panelIndex && activeSlot.side === side;
+
+  // Spread layout for a booklet with N panels (leaves):
+  //   Front cover = panel 0 front (single)
+  //   Spread 1 = panel 0 back (left) | panel 1 front (right)
+  //   ...
+  //   Spread N-1 = panel (N-2) back (left) | panel (N-1) front (right)
+  //   Back cover = panel (N-1) back (single)
+  const spreads: { left?: { pi: number; side: 'front' | 'back' }; right?: { pi: number; side: 'front' | 'back' } }[] = [];
+
+  spreads.push({ left: { pi: 0, side: 'front' }, right: undefined });
+
+  for (let i = 0; i < panelCount - 1; i++) {
+    spreads.push({
+      left: { pi: i, side: 'back' },
+      right: { pi: i + 1, side: 'front' },
+    });
+  }
+
+  spreads.push({ left: undefined, right: { pi: panelCount - 1, side: 'back' } });
+
+  return (
+    <div className="flex flex-col gap-0.5">
+      {spreads.map((spread, idx) => (
+        <div key={idx} className="flex items-center gap-0.5">
+          {spread.left ? (
+            <button
+              type="button"
+              onClick={() => {
+                if (!isActiveSlot(spread.left!.pi, spread.left!.side))
+                  onNavigate(spread.left!.pi, spread.left!.side);
+              }}
+              style={{
+                width: 14,
+                height: 22,
+                flexShrink: 0,
+                ...getButtonStyle(spread.left.pi, spread.left.side),
+              }}
+            />
+          ) : (
+            <div style={{ width: 14, height: 22, flexShrink: 0 }} />
+          )}
+          {spread.right ? (
+            <button
+              type="button"
+              onClick={() => {
+                if (!isActiveSlot(spread.right!.pi, spread.right!.side))
+                  onNavigate(spread.right!.pi, spread.right!.side);
+              }}
+              style={{
+                width: 14,
+                height: 22,
+                flexShrink: 0,
+                ...getButtonStyle(spread.right.pi, spread.right.side),
+              }}
+            />
+          ) : (
+            <div style={{ width: 14, height: 22, flexShrink: 0 }} />
+          )}
+        </div>
+      ))}
+    </div>
+  );
+};

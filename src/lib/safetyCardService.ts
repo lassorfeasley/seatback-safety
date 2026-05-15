@@ -1370,6 +1370,7 @@ export interface CropEditData {
   panelCount: number;
   cropWidth: number | null;
   cropHeight: number | null;
+  isBooklet: boolean;
   scans: CropEditScan[];
   panels: CropEditPanel[];
   sideIds: Record<string, string>;
@@ -1379,7 +1380,7 @@ export async function fetchCardForCropEditing(cardId: string): Promise<CropEditD
   const { data: card, error } = await supabase
     .from('safety_cards')
     .select(`
-      panel_count, crop_width, crop_height,
+      panel_count, crop_width, crop_height, is_booklet,
       card_sides (
         id, side,
         card_panels (
@@ -1448,6 +1449,7 @@ export async function fetchCardForCropEditing(cardId: string): Promise<CropEditD
     panelCount: card.panel_count as number ?? 0,
     cropWidth: card.crop_width as number | null,
     cropHeight: card.crop_height as number | null,
+    isBooklet: (card as any).is_booklet === true,
     scans: scanEntries,
     panels,
     sideIds,

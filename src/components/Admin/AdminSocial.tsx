@@ -19,6 +19,7 @@ import {
   fetchSocialPosts,
   updateSocialPost,
   deleteSocialPost,
+  deleteSocialPostsInRange,
   publishSocialPostNow,
   type SocialPostWithCard,
   type SocialPost,
@@ -360,7 +361,7 @@ function NewPostPicker({
 
   const handleSelectCrop = (crop: SocialCropWithCard) => {
     setSelectedCrop(crop);
-    setCaption(buildCaption(crop.airline_name, crop.published_year));
+    setCaption(buildCaption(crop.airline_name, crop.published_year, crop.aircraft_label));
     setScheduledAt(defaultScheduleIso());
     setError(null);
   };
@@ -561,6 +562,11 @@ export const AdminSocial: React.FC = () => {
   const [fillTime, setFillTime] = useState('09:00');
   const [filling, setFilling] = useState(false);
 
+  const [showClearSchedule, setShowClearSchedule] = useState(false);
+  const [clearStart, setClearStart] = useState('');
+  const [clearEnd, setClearEnd] = useState('');
+  const [clearing, setClearing] = useState(false);
+
   const now = new Date();
   const [calYear, setCalYear] = useState(now.getFullYear());
   const [calMonth, setCalMonth] = useState(now.getMonth());
@@ -639,7 +645,7 @@ export const AdminSocial: React.FC = () => {
       day.setDate(day.getDate() + i);
       day.setHours(h, m, 0, 0);
 
-      const caption = buildCaption(crop.airline_name, crop.published_year);
+      const caption = buildCaption(crop.airline_name, crop.published_year, crop.aircraft_label);
 
       const { error: insertErr } = await supabase
         .from('social_posts')
@@ -665,6 +671,42 @@ export const AdminSocial: React.FC = () => {
     setFillStart('');
     setFillEnd('');
     alert(`Scheduled ${scheduled} posts from your banked crops.`);
+  };
+
+  const handleClearSchedule = async () => {
+    if (!clearStart || !clearEnd) return;
+
+    const start = new Date(clearStart + 'T00:00:00');
+    const end = new Date(clearEnd + 'T23:59:59.999');
+    const postsInRange = posts.filter((p) => {
+      if (!p.scheduled_at || p.status === 'posted') return false;
+      const d = new Date(p.scheduled_at);
+      return d >= start && d <= end;
+    });
+
+    if (postsInRange.length === 0) {
+      alert('No scheduled/draft posts in that date range.');
+      return;
+    }
+
+    if (!confirm(`Delete ${postsInRange.length} scheduled/draft post${postsInRange.length !== 1 ? 's' : ''} from ${clearStart} to ${clearEnd}?`)) return;
+
+    setClearing(true);
+    setError(null);
+
+    const { deleted, error: clearErr } = await deleteSocialPostsInRange(clearStart, clearEnd);
+
+    await loadPosts();
+    setClearing(false);
+    setShowClearSchedule(false);
+    setClearStart('');
+    setClearEnd('');
+
+    if (clearErr) {
+      setError(clearErr);
+    } else {
+      alert(`Deleted ${deleted} post${deleted !== 1 ? 's' : ''}.`);
+    }
   };
 
   const daysInMonth = getDaysInMonth(calYear, calMonth);
@@ -700,22 +742,40 @@ export const AdminSocial: React.FC = () => {
           <div className="flex items-center justify-between">
             <h1 className="text-sm font-medium tracking-widest uppercase text-black/60">Social</h1>
             {tab === 'calendar' && (
-              <Button
-                onClick={() => {
-                  const today = new Date();
-                  const nextWeek = new Date(today);
-                  nextWeek.setDate(today.getDate() + 7);
-                  setFillStart(today.toISOString().slice(0, 10));
-                  setFillEnd(nextWeek.toISOString().slice(0, 10));
-                  setShowFillSchedule(true);
-                }}
-                size="sm"
-                variant="outline"
-                className="gap-1.5"
-              >
-                <Calendar className="h-4 w-4" />
-                Fill Schedule
-              </Button>
+              <div className="flex gap-2">
+                <Button
+                  onClick={() => {
+                    const today = new Date();
+                    const nextWeek = new Date(today);
+                    nextWeek.setDate(today.getDate() + 7);
+                    setClearStart(today.toISOString().slice(0, 10));
+                    setClearEnd(nextWeek.toISOString().slice(0, 10));
+                    setShowClearSchedule(true);
+                  }}
+                  size="sm"
+                  variant="outline"
+                  className="gap-1.5"
+                >
+                  <Trash2 className="h-4 w-4" />
+                  Clear Schedule
+                </Button>
+                <Button
+                  onClick={() => {
+                    const today = new Date();
+                    const nextWeek = new Date(today);
+                    nextWeek.setDate(today.getDate() + 7);
+                    setFillStart(today.toISOString().slice(0, 10));
+                    setFillEnd(nextWeek.toISOString().slice(0, 10));
+                    setShowFillSchedule(true);
+                  }}
+                  size="sm"
+                  variant="outline"
+                  className="gap-1.5"
+                >
+                  <Calendar className="h-4 w-4" />
+                  Fill Schedule
+                </Button>
+              </div>
             )}
           </div>
           <div className="flex gap-4 border-b border-black/5 -mb-5 pb-0">
@@ -983,6 +1043,73 @@ export const AdminSocial: React.FC = () => {
               >
                 {filling ? <Loader2 className="h-4 w-4 animate-spin" /> : <Calendar className="h-4 w-4" />}
                 {filling ? 'Scheduling...' : 'Schedule Posts'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showClearSchedule && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-card rounded-lg shadow-xl border w-full max-w-md m-4">
+            <div className="flex items-center justify-between p-4 border-b">
+              <h2 className="text-lg font-semibold">Clear Schedule</h2>
+              <Button variant="ghost" size="icon" onClick={() => setShowClearSchedule(false)}>
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+            <div className="p-4 space-y-4">
+              <p className="text-sm text-muted-foreground">
+                Delete all <strong>scheduled</strong> and <strong>draft</strong> posts in a date range. Already-posted items are preserved.
+              </p>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium">Start date</label>
+                  <input
+                    type="date"
+                    value={clearStart}
+                    onChange={(e) => setClearStart(e.target.value)}
+                    className="w-full rounded-md border bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium">End date</label>
+                  <input
+                    type="date"
+                    value={clearEnd}
+                    onChange={(e) => setClearEnd(e.target.value)}
+                    className="w-full rounded-md border bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  />
+                </div>
+              </div>
+              {clearStart && clearEnd && (() => {
+                const start = new Date(clearStart + 'T00:00:00');
+                const end = new Date(clearEnd + 'T23:59:59.999');
+                const count = posts.filter((p) => {
+                  if (!p.scheduled_at || p.status === 'posted') return false;
+                  const d = new Date(p.scheduled_at);
+                  return d >= start && d <= end;
+                }).length;
+                return (
+                  <p className="text-sm text-muted-foreground">
+                    <span className="font-medium text-foreground">{count}</span> scheduled/draft post{count !== 1 ? 's' : ''} will be deleted
+                  </p>
+                );
+              })()}
+            </div>
+            <div className="flex justify-end gap-2 p-4 border-t">
+              <Button variant="outline" size="sm" onClick={() => setShowClearSchedule(false)}>
+                Cancel
+              </Button>
+              <Button
+                size="sm"
+                variant="destructive"
+                onClick={handleClearSchedule}
+                disabled={clearing || !clearStart || !clearEnd}
+                className="gap-1.5"
+              >
+                {clearing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                {clearing ? 'Clearing...' : 'Clear Posts'}
               </Button>
             </div>
           </div>

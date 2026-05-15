@@ -12,6 +12,7 @@ export interface SocialCrop {
 export interface SocialCropWithCard extends SocialCrop {
   card_title: string | null;
   airline_name: string | null;
+  aircraft_label: string | null;
   published_year: number | null;
   crop_image_url: string;
 }
@@ -19,6 +20,12 @@ export interface SocialCropWithCard extends SocialCrop {
 function derivativePublicUrl(filePath: string): string {
   const { data } = supabase.storage.from('derivatives').getPublicUrl(filePath);
   return data.publicUrl;
+}
+
+function unwrapRel(val: unknown): Record<string, unknown> | null {
+  if (!val) return null;
+  if (Array.isArray(val)) return val[0] ?? null;
+  return val as Record<string, unknown>;
 }
 
 export async function createSocialCrop(payload: {
@@ -67,7 +74,12 @@ export async function fetchAllCrops(): Promise<{
       safety_cards(
         title,
         published_year,
-        airline:airlines(name)
+        airline:airlines(name),
+        card_aircraft(
+          sort_order,
+          aircraft_variants(name, aircraft_models(name, aircraft_manufacturers(name))),
+          aircraft_models(name, aircraft_manufacturers(name))
+        )
       )
     `)
     .order('created_at', { ascending: false });
@@ -78,6 +90,30 @@ export async function fetchAllCrops(): Promise<{
     (row: Record<string, unknown>) => {
       const card = row.safety_cards as Record<string, unknown> | null;
       const airline = card?.airline as Record<string, unknown> | null;
+
+      let aircraftLabel: string | null = null;
+      const cardAircraft = (card?.card_aircraft ?? []) as Array<Record<string, unknown>>;
+      if (cardAircraft.length > 0) {
+        const labels = [...cardAircraft]
+          .sort((a, b) => ((a.sort_order as number) ?? 0) - ((b.sort_order as number) ?? 0))
+          .map((ca) => {
+            const v = unwrapRel(ca.aircraft_variants);
+            if (v) {
+              const m = unwrapRel(v.aircraft_models);
+              const mfr = m ? unwrapRel(m.aircraft_manufacturers) : null;
+              return [mfr?.name, m?.name, v.name].filter(Boolean).join(' ') || null;
+            }
+            const m = unwrapRel(ca.aircraft_models);
+            if (m) {
+              const mfr = unwrapRel(m.aircraft_manufacturers);
+              return [mfr?.name, m.name].filter(Boolean).join(' ') || null;
+            }
+            return null;
+          })
+          .filter(Boolean);
+        aircraftLabel = labels.join(', ') || null;
+      }
+
       return {
         id: row.id as string,
         card_id: row.card_id as string,
@@ -87,6 +123,7 @@ export async function fetchAllCrops(): Promise<{
         created_at: row.created_at as string,
         card_title: (card?.title as string) ?? null,
         airline_name: (airline?.name as string) ?? null,
+        aircraft_label: aircraftLabel,
         published_year: (card?.published_year as number) ?? null,
         crop_image_url: derivativePublicUrl(row.crop_image_path as string),
       };
@@ -109,9 +146,11 @@ export async function deleteSocialCrop(id: string): Promise<{ error?: string }> 
 export function buildCaption(
   airlineName?: string | null,
   year?: number | null,
+  aircraftLabel?: string | null,
 ): string {
   let caption = 'Artwork selected from';
   if (airlineName) caption += ` ✈️ ${airlineName}`;
+  if (aircraftLabel) caption += ` ${aircraftLabel}`;
   caption += ' #SeatbackSafety card';
   if (year) caption += ` c. ${year}`;
   return caption;
