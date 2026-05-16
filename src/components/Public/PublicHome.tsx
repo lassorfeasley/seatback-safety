@@ -8,6 +8,7 @@ import {
   type ManufacturerBrowse, type ModelBrowse, type VariantBrowse,
   type AirlineBrowse,
 } from '@/lib/lookupService';
+import { fetchAllCrops, type SocialCropWithCard } from '@/lib/socialCropService';
 import { InfoSheet, InfoRow } from '@/components/Public/InfoSheet';
 import { useRubberBandZoom } from '@/hooks/useRubberBandZoom';
 
@@ -57,6 +58,26 @@ function InfiniteCardTile({ card }: { card: CardSummary }) {
             No image
           </div>
         )}
+      </div>
+    </Link>
+  );
+}
+
+const ARTWORK_FREQUENCY = 7;
+
+function ArtworkTile({ crop }: { crop: SocialCropWithCard }) {
+  return (
+    <Link
+      to={`/cards/${crop.card_id}`}
+      className="block w-full h-full cursor-[inherit]"
+    >
+      <div className="w-full h-full relative overflow-hidden ring-1 ring-white/30">
+        <img
+          src={crop.crop_image_url}
+          alt={crop.label || crop.card_title || 'Artwork'}
+          className="absolute inset-0 w-full h-full object-cover"
+          loading="lazy"
+        />
       </div>
     </Link>
   );
@@ -172,6 +193,8 @@ function FilterDropdown({
 
 export const PublicHome: React.FC = () => {
   const [cards, setCards] = useState<CardSummary[]>([]);
+  const [artworkCrops, setArtworkCrops] = useState<SocialCropWithCard[]>([]);
+  const artworkSeedRef = useRef((Math.random() * 0xFFFFFFFF) >>> 0);
   const [loading, setLoading] = useState(true);
   const [mode, setMode] = useState<'explore' | 'search'>('explore');
   const [showInfo, setShowInfo] = useState(false);
@@ -206,16 +229,17 @@ export const PublicHome: React.FC = () => {
   const autoPanRef = useRef(true);
   const lastTouchTimeRef = useRef(0);
 
-  const [exploreTiles, setExploreTiles] = useState<{ row: number; col: number; x: number; y: number; cardIdx: number }[]>([]);
+  const [exploreTiles, setExploreTiles] = useState<{ row: number; col: number; x: number; y: number; cardIdx: number; artworkIdx: number }[]>([]);
 
   useEffect(() => { modeRef.current = mode; }, [mode]);
 
   useEffect(() => {
-    Promise.all([fetchCards(), fetchManufacturersBrowse(), fetchAirlinesBrowse(), fetchDistinctLanguageCount()]).then(([c, m, a, lc]) => {
+    Promise.all([fetchCards(), fetchManufacturersBrowse(), fetchAirlinesBrowse(), fetchDistinctLanguageCount(), fetchAllCrops()]).then(([c, m, a, lc, cropResult]) => {
       setCards(c);
       setManufacturers(m.filter((x) => x.card_count > 0));
       setAllAirlines(a.filter((x) => x.card_count > 0));
       setLanguageCount(lc);
+      if (cropResult.crops) setArtworkCrops(cropResult.crops);
       setLoading(false);
     });
   }, []);
@@ -324,7 +348,7 @@ export const PublicHome: React.FC = () => {
 
   const hasActiveFilters = filterAirline || filterMfr || filterModel || filterVariant || filterDecade;
 
-  const computeVisible = useCallback((cx: number, cy: number, cardCount: number) => {
+  const computeVisible = useCallback((cx: number, cy: number, cardCount: number, artworkCount: number) => {
     if (cardCount === 0) return [];
     const vw = window.innerWidth;
     const vh = window.innerHeight;
@@ -345,11 +369,61 @@ export const PublicHome: React.FC = () => {
       return assigned[lr * numCols + lc];
     };
 
-    const tiles: { row: number; col: number; x: number; y: number; cardIdx: number }[] = [];
+    // Purely coordinate-based: is this cell a raw artwork candidate?
+    const isRawArtwork = (r: number, c: number) =>
+      artworkCount > 0 && hashCoord(r, c) % ARTWORK_FREQUENCY === 0;
+
+    // Raw crop index for an artwork cell — mixes in a per-session seed
+    // so each page load gives a fresh distribution
+    const seed = artworkSeedRef.current;
+    const rawCropIdx = (r: number, c: number) => {
+      const hh = hashCoord(r, c);
+      const mixed = ((hh ^ seed) * 2654435761) >>> 0;
+      return mixed % artworkCount;
+    };
+
+    // Deterministic artwork check: artwork only if no adjacent neighbor is also
+    // a raw artwork candidate with a lower hash (stable tiebreaker)
+    const isArtworkAt = (r: number, c: number) => {
+      if (!isRawArtwork(r, c)) return false;
+      const h = hashCoord(r, c);
+      for (let dr = -1; dr <= 1; dr++) {
+        for (let dc = -1; dc <= 1; dc++) {
+          if (dr === 0 && dc === 0) continue;
+          if (isRawArtwork(r + dr, c + dc) && hashCoord(r + dr, c + dc) < h) return false;
+        }
+      }
+      return true;
+    };
+
+    // Deterministic crop index with dedup against nearby artwork tiles
+    const artworkCropAt = (r: number, c: number) => {
+      let idx = rawCropIdx(r, c);
+      const nearbyArt = new Set<number>();
+      for (let dr = -4; dr <= 4; dr++) {
+        for (let dc = -4; dc <= 4; dc++) {
+          if (dr === 0 && dc === 0) continue;
+          if (isArtworkAt(r + dr, c + dc)) nearbyArt.add(rawCropIdx(r + dr, c + dc));
+        }
+      }
+      if (nearbyArt.has(idx)) {
+        for (let offset = 1; offset < artworkCount; offset++) {
+          const candidate = (idx + offset) % artworkCount;
+          if (!nearbyArt.has(candidate)) { idx = candidate; break; }
+        }
+      }
+      return idx;
+    };
+
+    const tiles: { row: number; col: number; x: number; y: number; cardIdx: number; artworkIdx: number }[] = [];
 
     for (let r = startRow; r <= endRow; r++) {
       for (let c = startCol; c <= endCol; c++) {
-        let cardIdx = hashCoord(r, c) % cardCount;
+        const h = hashCoord(r, c);
+        const artwork = isArtworkAt(r, c);
+
+        let cardIdx = h % cardCount;
+        const artworkIdx = artwork ? artworkCropAt(r, c) : -1;
 
         const nearby = new Set<number>();
         for (let dr = -2; dr <= 0; dr++) {
@@ -360,7 +434,7 @@ export const PublicHome: React.FC = () => {
           }
         }
 
-        if (nearby.has(cardIdx)) {
+        if (!artwork && nearby.has(cardIdx)) {
           for (let offset = 1; offset < cardCount; offset++) {
             const candidate = (cardIdx + offset) % cardCount;
             if (!nearby.has(candidate)) {
@@ -370,7 +444,9 @@ export const PublicHome: React.FC = () => {
           }
         }
 
-        assigned[(r - startRow) * numCols + (c - startCol)] = cardIdx;
+        if (!artwork) {
+          assigned[(r - startRow) * numCols + (c - startCol)] = cardIdx;
+        }
 
         tiles.push({
           row: r,
@@ -378,6 +454,7 @@ export const PublicHome: React.FC = () => {
           x: c * CELL - cx,
           y: r * CELL - cy,
           cardIdx,
+          artworkIdx,
         });
       }
     }
@@ -389,8 +466,8 @@ export const PublicHome: React.FC = () => {
     const cam = cameraRef.current;
     cam.x = -(window.innerWidth / 2) / CELL * CELL;
     cam.y = -(window.innerHeight / 2) / CELL * CELL;
-    setExploreTiles(computeVisible(cam.x, cam.y, cards.length));
-  }, [cards, computeVisible]);
+    setExploreTiles(computeVisible(cam.x, cam.y, cards.length, artworkCrops.length));
+  }, [cards, artworkCrops, computeVisible]);
 
   const handleMouseMove = useCallback((e: MouseEvent) => {
     if (isTouchDevice.current) return;
@@ -490,6 +567,7 @@ export const PublicHome: React.FC = () => {
   useEffect(() => {
     if (cards.length === 0) return;
     const cardCount = cards.length;
+    const cropCount = artworkCrops.length;
 
     const tick = (time: number) => {
       if (lastTimeRef.current === 0) lastTimeRef.current = time;
@@ -506,7 +584,7 @@ export const PublicHome: React.FC = () => {
         cam.x += vel.x * dt;
         cam.y += vel.y * dt;
 
-        setExploreTiles(computeVisible(cam.x, cam.y, cardCount));
+        setExploreTiles(computeVisible(cam.x, cam.y, cardCount, cropCount));
       }
 
       rafRef.current = requestAnimationFrame(tick);
@@ -514,7 +592,7 @@ export const PublicHome: React.FC = () => {
 
     rafRef.current = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(rafRef.current);
-  }, [cards, computeVisible]);
+  }, [cards, artworkCrops, computeVisible]);
 
   const clearAllFilters = useCallback(() => {
     setSearchQuery('');
@@ -602,6 +680,7 @@ export const PublicHome: React.FC = () => {
         >
           <div ref={zoomTargetRef} className="absolute inset-0">
             {exploreTiles.map((tile) => {
+              const isArtwork = tile.artworkIdx >= 0 && tile.artworkIdx < artworkCrops.length;
               return (
                 <div
                   key={`${tile.row},${tile.col}`}
@@ -613,7 +692,9 @@ export const PublicHome: React.FC = () => {
                     willChange: 'transform',
                   }}
                 >
-                  <InfiniteCardTile card={cards[tile.cardIdx]} />
+                  {isArtwork
+                    ? <ArtworkTile crop={artworkCrops[tile.artworkIdx]} />
+                    : <InfiniteCardTile card={cards[tile.cardIdx]} />}
                 </div>
               );
             })}
