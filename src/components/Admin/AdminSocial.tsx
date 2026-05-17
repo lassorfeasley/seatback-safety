@@ -152,7 +152,7 @@ function PostEditor({
   post: SocialPostWithCard;
   onClose: () => void;
   onSave: (id: string, updates: Partial<Pick<SocialPost, 'caption' | 'status' | 'scheduled_at'>>) => Promise<void>;
-  onDelete: (id: string) => Promise<void>;
+  onDelete: (id: string) => Promise<boolean>;
   onPublished: (id: string) => Promise<void>;
 }) {
   const navigate = useNavigate();
@@ -195,9 +195,10 @@ function PostEditor({
   const handleDelete = async () => {
     if (!confirm('Delete this social post?')) return;
     setDeleting(true);
-    await onDelete(post.id);
+    const ok = await onDelete(post.id);
     setDeleting(false);
-    onClose();
+    if (ok) onClose();
+    else window.alert('Failed to delete post. Please try again.');
   };
 
   const handlePublishInstagram = async () => {
@@ -595,10 +596,11 @@ export const AdminSocial: React.FC = () => {
     else { await loadPosts(); setEditingPost(null); }
   };
 
-  const handleDelete = async (id: string) => {
+  const handleDelete = async (id: string): Promise<boolean> => {
     const { error: err } = await deleteSocialPost(id);
-    if (err) setError(err);
-    else await loadPosts();
+    if (err) { setError(err); return false; }
+    await loadPosts();
+    return true;
   };
 
   const handleInstagramPublished = async (id: string) => {

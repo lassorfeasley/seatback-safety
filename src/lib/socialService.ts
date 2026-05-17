@@ -140,12 +140,14 @@ export async function updateSocialPost(
 export async function deleteSocialPost(
   id: string
 ): Promise<{ error?: string }> {
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from('social_posts')
     .delete()
-    .eq('id', id);
+    .eq('id', id)
+    .select('id');
 
   if (error) return { error: error.message };
+  if (!data || data.length === 0) return { error: 'Post not found or already deleted' };
   return {};
 }
 
