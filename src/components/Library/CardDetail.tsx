@@ -356,11 +356,29 @@ export const CardDetail: React.FC<CardDetailProps> = ({ cardId, onBack, onEditCr
       const refreshed = await fetchCardDetail(cardId);
       if (refreshed) setCard(refreshed);
       setIsEditing(false);
+      setEditingMetadata(false);
     } else {
       alert(`Save failed: ${result.error}`);
     }
     setSaving(false);
   }, [cardId]);
+
+  // Set by MetadataEditor so the header Save button can submit the form
+  const metadataSubmitRef = useRef<(() => void) | null>(null);
+
+  const handleHeaderSave = useCallback(() => {
+    if (editingMetadata && metadataSubmitRef.current) {
+      metadataSubmitRef.current();
+    } else {
+      setIsEditing(false);
+      setEditingMetadata(false);
+    }
+  }, [editingMetadata]);
+
+  const handleCancelEditing = useCallback(() => {
+    setIsEditing(false);
+    setEditingMetadata(false);
+  }, []);
 
   const [generatingOg, setGeneratingOg] = useState(false);
   const [ogImageUrl, setOgImageUrl] = useState<string | null>(() => {
@@ -514,14 +532,30 @@ export const CardDetail: React.FC<CardDetailProps> = ({ cardId, onBack, onEditCr
                 </Button>
               )}
               {isEditing ? (
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => { setIsEditing(false); setEditingMetadata(false); }}
-                  className="gap-1.5"
-                >
-                  Done
-                </Button>
+                <>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={handleCancelEditing}
+                    disabled={saving}
+                    className="text-muted-foreground"
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={handleHeaderSave}
+                    disabled={saving}
+                    className="gap-1.5"
+                  >
+                    {saving ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <Save className="h-3.5 w-3.5" />
+                    )}
+                    {saving ? 'Saving...' : 'Save'}
+                  </Button>
+                </>
               ) : (
                 <Button
                   variant="outline"
@@ -1029,9 +1063,8 @@ export const CardDetail: React.FC<CardDetailProps> = ({ cardId, onBack, onEditCr
               {editingMetadata ? (
                 <MetadataEditor
                   card={card}
-                  onSave={(update) => { handleSaveMetadata(update); setEditingMetadata(false); }}
-                  onCancel={() => setEditingMetadata(false)}
-                  saving={saving}
+                  onSave={handleSaveMetadata}
+                  submitRef={metadataSubmitRef}
                   scanUrls={
                     Object.values(card.displayUrls).length > 0
                       ? Object.values(card.displayUrls)
@@ -1429,13 +1462,13 @@ interface AircraftRow {
 interface MetadataEditorProps {
   card: CardDetailData;
   onSave: (update: CardMetadataUpdate) => void;
-  onCancel: () => void;
-  saving: boolean;
+  /** Exposes the form's submit so the page header Save button can trigger it */
+  submitRef: React.MutableRefObject<(() => void) | null>;
   scanUrls: string[];
   resizeForAi?: boolean;
 }
 
-const MetadataEditor: React.FC<MetadataEditorProps> = ({ card, onSave, onCancel, saving, scanUrls, resizeForAi }) => {
+const MetadataEditor: React.FC<MetadataEditorProps> = ({ card, onSave, submitRef, scanUrls, resizeForAi }) => {
   const [title, setTitle] = useState(card.title ?? '');
   const [airlineId, setAirlineId] = useState<string | null>(card.airline_id);
   const [manufacturerId, setManufacturerId] = useState<string | null>(
@@ -1618,6 +1651,15 @@ const MetadataEditor: React.FC<MetadataEditorProps> = ({ card, onSave, onCancel,
       notes: notes.trim() || null,
     });
   };
+
+  // Keep the ref pointing at the latest submit closure so the header
+  // Save button always submits current form values.
+  useEffect(() => {
+    submitRef.current = handleSubmit;
+    return () => {
+      submitRef.current = null;
+    };
+  });
 
   const acceptAirline = useCallback(async () => {
     if (!suggestions?.airline) return;
@@ -2031,15 +2073,6 @@ const MetadataEditor: React.FC<MetadataEditorProps> = ({ card, onSave, onCancel,
         </EditorField>
       </div>
 
-      <div className="flex gap-2 pt-2 border-t mt-1">
-        <Button size="sm" onClick={handleSubmit} disabled={saving} className="flex-1 gap-1.5">
-          {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-          {saving ? 'Saving...' : 'Save'}
-        </Button>
-        <Button variant="ghost" size="sm" onClick={onCancel} disabled={saving} className="text-muted-foreground">
-          Cancel
-        </Button>
-      </div>
     </div>
   );
 };
