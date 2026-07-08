@@ -1,4 +1,5 @@
 import { corsHeaders } from "../_shared/cors.ts";
+import { extractJson } from "../_shared/extractJson.ts";
 
 const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY");
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
@@ -245,12 +246,7 @@ async function callClaude(systemPrompt: string, userContent: unknown[]): Promise
   const textBlock = result.content?.find((b: Record<string, unknown>) => b.type === "text");
   const raw = textBlock?.text ?? "";
 
-  const jsonMatch = raw.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) {
-    throw new Error(`Could not parse AI response: ${raw}`);
-  }
-
-  return JSON.parse(jsonMatch[0]) as Record<string, unknown>;
+  return extractJson(raw);
 }
 
 Deno.serve(async (req: Request) => {

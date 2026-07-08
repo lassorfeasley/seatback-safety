@@ -1,4 +1,5 @@
 import { corsHeaders } from "../_shared/cors.ts";
+import { extractJson } from "../_shared/extractJson.ts";
 
 const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY");
 
@@ -127,15 +128,19 @@ Deno.serve(async (req: Request) => {
     const textBlock = result.content?.find((b: Record<string, unknown>) => b.type === "text");
     const raw = textBlock?.text ?? "";
 
-    const jsonMatch = raw.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
+    let parsed: Record<string, unknown>;
+    try {
+      parsed = extractJson(raw);
+    } catch (parseErr) {
       return new Response(
-        JSON.stringify({ error: "Could not parse AI response", raw }),
+        JSON.stringify({
+          error: "Could not parse AI response",
+          detail: parseErr instanceof Error ? parseErr.message : String(parseErr),
+          raw,
+        }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
-
-    const parsed = JSON.parse(jsonMatch[0]);
 
     return new Response(
       JSON.stringify({ suggestions: parsed }),
