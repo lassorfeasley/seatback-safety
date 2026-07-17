@@ -352,3 +352,7 @@ s3_secret_key = "env(S3_SECRET_KEY)"
 # verification and enforce auth inside the function (service role or user session).
 [functions.publish-instagram]
 verify_jwt = false
+
+# Same pattern: cron calls this weekly to extend the Meta access token.
+[functions.refresh-meta-token]
+verify_jwt = false

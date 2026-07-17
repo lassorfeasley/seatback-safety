@@ -3,9 +3,40 @@ import { corsHeaders } from "../_shared/cors.ts";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
 const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY");
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-const META_ACCESS_TOKEN = Deno.env.get("META_ACCESS_TOKEN");
+const META_ACCESS_TOKEN_ENV = Deno.env.get("META_ACCESS_TOKEN");
 const INSTAGRAM_BUSINESS_ACCOUNT_ID = Deno.env.get("INSTAGRAM_BUSINESS_ACCOUNT_ID");
 const META_GRAPH_API_VERSION = Deno.env.get("META_GRAPH_API_VERSION") ?? "v21.0";
+
+// Resolved per request: Vault (kept fresh by refresh-meta-token) wins over
+// the static env secret.
+let metaAccessToken: string | null = null;
+
+// Instagram Login tokens (IGAA…/IGQ…) use graph.instagram.com; Facebook Login
+// tokens (EAA…) use graph.facebook.com. Both share the same publishing endpoints.
+function graphBase(): string {
+  return metaAccessToken?.startsWith("IG")
+    ? "https://graph.instagram.com"
+    : "https://graph.facebook.com";
+}
+
+async function resolveMetaToken(supabase: any): Promise<string | null> {
+  try {
+    const { data } = await supabase.rpc("get_meta_access_token");
+    if (typeof data === "string" && data.length > 0) return data;
+  } catch { /* vault accessor missing or unreadable — fall back to env */ }
+  return META_ACCESS_TOKEN_ENV ?? null;
+}
+
+async function resolveIgAccountId(): Promise<string> {
+  if (metaAccessToken?.startsWith("IG")) {
+    // Instagram Login tokens are scoped to one account; ask Meta for its id.
+    const json = await graphGet("me", { fields: "user_id,id" });
+    const igId = (json.user_id as string) ?? (json.id as string);
+    if (igId) return String(igId);
+  }
+  if (INSTAGRAM_BUSINESS_ACCOUNT_ID) return INSTAGRAM_BUSINESS_ACCOUNT_ID;
+  throw new Error("Could not resolve Instagram account id");
+}
 
 const IG_CAPTION_MAX = 2200;
 const DUE_BATCH_LIMIT = 5;
@@ -75,7 +106,7 @@ async function graphFormPost(
   params: Record<string, string>,
 ): Promise<Record<string, unknown>> {
   const body = new URLSearchParams(params);
-  const url = `https://graph.facebook.com/${META_GRAPH_API_VERSION}/${path}`;
+  const url = `${graphBase()}/${META_GRAPH_API_VERSION}/${path}`;
   const res = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -90,8 +121,8 @@ async function graphFormPost(
 }
 
 async function graphGet(path: string, query: Record<string, string>): Promise<Record<string, unknown>> {
-  const qs = new URLSearchParams({ ...query, access_token: META_ACCESS_TOKEN! });
-  const url = `https://graph.facebook.com/${META_GRAPH_API_VERSION}/${path}?${qs.toString()}`;
+  const qs = new URLSearchParams({ ...query, access_token: metaAccessToken! });
+  const url = `${graphBase()}/${META_GRAPH_API_VERSION}/${path}?${qs.toString()}`;
   const res = await fetch(url);
   const json = (await res.json()) as Record<string, unknown> & GraphErrorBody;
   if (!res.ok || json.error) {
@@ -115,8 +146,8 @@ async function waitForMediaContainer(creationId: string): Promise<void> {
 }
 
 async function publishToInstagram(imageUrl: string, caption: string): Promise<{ mediaId: string; permalink: string | null }> {
-  const igId = INSTAGRAM_BUSINESS_ACCOUNT_ID!;
-  const token = META_ACCESS_TOKEN!;
+  const igId = await resolveIgAccountId();
+  const token = metaAccessToken!;
 
   const createJson = await graphFormPost(`${igId}/media`, {
     image_url: imageUrl,
@@ -255,8 +286,8 @@ async function publishOne(
   }).eq("id", postId);
 
   try {
-    if (!META_ACCESS_TOKEN || !INSTAGRAM_BUSINESS_ACCOUNT_ID) {
-      throw new Error("META_ACCESS_TOKEN or INSTAGRAM_BUSINESS_ACCOUNT_ID not configured");
+    if (!metaAccessToken) {
+      throw new Error("Meta access token not configured (Vault 'meta_access_token' or META_ACCESS_TOKEN secret)");
     }
     const imageUrl = await resolveImageUrlForPublish(supabase, post, card);
     const { mediaId, permalink } = await publishToInstagram(imageUrl, caption);
@@ -319,6 +350,7 @@ Deno.serve(async (req: Request) => {
   try {
     const { createClient } = await import("https://esm.sh/@supabase/supabase-js@2");
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+    metaAccessToken = await resolveMetaToken(supabase);
 
     if (mode === "due") {
       if (caller !== "service") {

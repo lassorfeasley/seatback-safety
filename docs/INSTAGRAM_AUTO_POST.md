@@ -31,9 +31,11 @@ Set these on your hosted project (**Project Settings → Edge Functions → Secr
 
 | Secret | Description |
 |--------|-------------|
-| `META_ACCESS_TOKEN` | Long-lived Page access token with permission to publish to the connected IG account |
+| `META_ACCESS_TOKEN` | Fallback long-lived token. The live token is kept in Vault (`meta_access_token`) and refreshed automatically — see below |
 | `INSTAGRAM_BUSINESS_ACCOUNT_ID` | Instagram user ID for Graph API calls (e.g. `17841400...`) |
 | `META_GRAPH_API_VERSION` | Optional. Default: `v21.0` |
+| `META_APP_ID` | Meta app ID, used by `refresh-meta-token` to extend the token |
+| `META_APP_SECRET` | Meta app secret, used by `refresh-meta-token` to extend the token |
 
 Existing function secrets still required:
 
@@ -67,9 +69,52 @@ SELECT vault.create_secret(
    Find the key at Dashboard → Project Settings → API Keys → **"Publishable and secret API keys"** tab → **secret** key. Do **not** use the legacy service_role key from the other tab.
 
 3. **Deploy the Edge Function** (`supabase functions deploy publish-instagram`).
-4. **Apply migration `022_publish_due_cron.sql`** (via `supabase db push`) or paste its contents into the SQL Editor. This creates a wrapper function that reads the key from Vault and schedules the cron job to run every 5 minutes.
+4. **Apply migration `023_publish_due_cron.sql`** (via `supabase db push`) or paste its contents into the SQL Editor. This creates a wrapper function that reads the key from Vault and schedules the cron job to run every 5 minutes.
 
 See `supabase/cron/publish-instagram-due.example.sql` for the standalone SQL template.
+
+## Automatic token refresh
+
+Meta long-lived tokens expire after ~60 days. The `refresh-meta-token` Edge Function
+exchanges the current token for a fresh one and stores it in Vault under
+`meta_access_token`. `publish-instagram` reads the Vault token first and falls back
+to the `META_ACCESS_TOKEN` secret.
+
+Both token flavors are supported and detected automatically by prefix:
+
+| Token type | Prefix | Graph host | Refresh | Needs app secret? |
+|------------|--------|------------|---------|-------------------|
+| Instagram Login (preferred) | `IGAA…` | `graph.instagram.com` | `ig_refresh_token` | No |
+| Facebook Login | `EAA…` | `graph.facebook.com` | `fb_exchange_token` | Yes (`META_APP_ID` + `META_APP_SECRET`) |
+
+To get an Instagram Login token: Meta app with the **Instagram** use case →
+**Instagram → API setup with Instagram business login** → add the IG account →
+**Generate token**. Note: these tokens must be ≥24 hours old before they can be
+refreshed; the function reports this cleanly and the weekly cron picks it up.
+
+A pg_cron job (`refresh-meta-token`, Mondays 03:00 UTC, created by migration
+`028_meta_token_refresh.sql`) triggers the refresh weekly, so the token never gets
+close to its 60-day expiry.
+
+### One-time setup
+
+1. Deploy: `supabase functions deploy refresh-meta-token` (and redeploy `publish-instagram`).
+2. Set app credentials: `supabase secrets set META_APP_ID="..." META_APP_SECRET="..."`
+3. Seed a **valid** long-lived token (an expired one cannot be refreshed) in the SQL Editor:
+
+```sql
+select public.set_meta_access_token('<fresh long-lived token>');
+```
+
+4. Optionally trigger a first refresh to verify: `select public.invoke_refresh_meta_token();`
+   then check `meta_token_status`:
+
+```sql
+select refreshed_at, expires_at, last_error from meta_token_status;
+```
+
+`meta_token_status` always holds one row: `refreshed_at` / `expires_at` update on
+success, `last_error` is set when a refresh fails (and cleared on the next success).
 
 ## Limits and troubleshooting
 
