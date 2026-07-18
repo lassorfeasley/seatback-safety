@@ -1,0 +1,50 @@
+{
+  "version": "5",
+  "redirects": {
+    "https://esm.sh/@supabase/supabase-js@2": "https://esm.sh/@supabase/supabase-js@2.110.7"
+  },
+  "remote": {
+    "https://esm.sh/@supabase/supabase-js@2.110.7": "271bd1acce2a284be1c9539bc960a705314a71a322a88705f0ffce88f9e7b97c"
+  },
+  "workspace": {
+    "packageJson": {
+      "dependencies": [
+        "npm:@dnd-kit/core@^6.1.0",
+        "npm:@dnd-kit/sortable@8",
+        "npm:@dnd-kit/utilities@^3.2.2",
+        "npm:@heroicons/react@^2.2.0",
+        "npm:@radix-ui/react-popover@^1.1.15",
+        "npm:@supabase/supabase-js@^2.96.0",
+        "npm:@types/file-saver@^2.0.7",
+        "npm:@types/node@^20.10.6",
+        "npm:@types/react-dom@^18.2.17",
+        "npm:@types/react@^18.2.43",
+        "npm:@typescript-eslint/eslint-plugin@^6.14.0",
+        "npm:@typescript-eslint/parser@^6.14.0",
+        "npm:@vitejs/plugin-react@^4.2.1",
+        "npm:autoprefixer@^10.4.16",
+        "npm:class-variance-authority@0.7",
+        "npm:clsx@2",
+        "npm:cmdk@^1.1.1",
+        "npm:eslint-plugin-react-hooks@^4.6.0",
+        "npm:eslint-plugin-react-refresh@~0.4.5",
+        "npm:eslint@^8.55.0",
+        "npm:file-saver@^2.0.5",
+        "npm:jszip@^3.10.1",
+        "npm:konva@^10.0.12",
+        "npm:lucide-react@0.303",
+        "npm:postcss@^8.4.32",
+        "npm:react-dom@^18.2.0",
+        "npm:react-easy-crop@^5.5.6",
+        "npm:react-konva@^18.2.14",
+        "npm:react-router-dom@^7.13.0",
+        "npm:react@^18.2.0",
+        "npm:tailwind-merge@^2.2.0",
+        "npm:tailwindcss-animate@^1.0.7",
+        "npm:tailwindcss@^3.4.0",
+        "npm:typescript@^5.2.2",
+        "npm:vite@^5.0.8"
+      ]
+    }
+  }
+}
