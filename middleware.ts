@@ -28,6 +28,7 @@ export default async function middleware(request: Request) {
           headers: {
             apikey: SUPABASE_ANON_KEY,
             Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+            'Accept-Profile': 'seatback',
           },
         },
       );

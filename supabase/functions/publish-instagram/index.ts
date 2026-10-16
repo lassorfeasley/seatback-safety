@@ -1,7 +1,7 @@
 import { corsHeaders } from "../_shared/cors.ts";
+import { unauthorized, verifyCaller } from "../_shared/auth.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
-const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY");
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 const META_ACCESS_TOKEN_ENV = Deno.env.get("META_ACCESS_TOKEN");
 const INSTAGRAM_BUSINESS_ACCOUNT_ID = Deno.env.get("INSTAGRAM_BUSINESS_ACCOUNT_ID");
@@ -49,32 +49,6 @@ function sanitizeError(err: unknown, maxLen = 900): string {
   let s = err instanceof Error ? err.message : typeof err === "string" ? err : JSON.stringify(err);
   if (s.length > maxLen) s = s.slice(0, maxLen) + "…";
   return s;
-}
-
-type Caller = "service" | "user" | null;
-
-async function verifyCaller(req: Request): Promise<Caller> {
-  const raw = req.headers.get("Authorization") ?? "";
-  const m = raw.match(/^Bearer\s+(.+)$/i);
-  const bearer = m?.[1]?.trim() ?? "";
-  if (!bearer) return null;
-  if (bearer === SUPABASE_SERVICE_ROLE_KEY) return "service";
-  // Fallback: the gateway already verified the JWT signature, so trust the
-  // role claim. This handles key format mismatches between Vault and env var.
-  try {
-    const parts = bearer.split(".");
-    if (parts.length === 3) {
-      const payload = JSON.parse(atob(parts[1]));
-      if (payload.role === "service_role") return "service";
-    }
-  } catch { /* not a decodable JWT */ }
-  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) return null;
-  const { createClient } = await import("https://esm.sh/@supabase/supabase-js@2");
-  const authClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-    global: { headers: { Authorization: `Bearer ${bearer}` } },
-  });
-  const { data: { user } } = await authClient.auth.getUser();
-  return user ? "user" : null;
 }
 
 interface SocialPostRow {
@@ -328,12 +302,7 @@ Deno.serve(async (req: Request) => {
   }
 
   const caller = await verifyCaller(req);
-  if (!caller) {
-    return new Response(
-      JSON.stringify({ error: "Unauthorized" }),
-      { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } },
-    );
-  }
+  if (!caller) return unauthorized();
 
   let body: Record<string, unknown> = {};
   if (req.method === "POST") {
@@ -349,7 +318,9 @@ Deno.serve(async (req: Request) => {
 
   try {
     const { createClient } = await import("https://esm.sh/@supabase/supabase-js@2");
-    const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+    const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+      db: { schema: "seatback" },
+    });
     metaAccessToken = await resolveMetaToken(supabase);
 
     if (mode === "due") {

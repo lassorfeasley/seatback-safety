@@ -1,4 +1,5 @@
 import { corsHeaders } from "../_shared/cors.ts";
+import { unauthorized, verifyCaller } from "../_shared/auth.ts";
 import { extractJson } from "../_shared/extractJson.ts";
 
 const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY");
@@ -36,6 +37,8 @@ Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
   }
+
+  if (!(await verifyCaller(req))) return unauthorized();
 
   if (!ANTHROPIC_API_KEY) {
     return new Response(

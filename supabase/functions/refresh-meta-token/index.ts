@@ -1,4 +1,5 @@
 import { corsHeaders } from "../_shared/cors.ts";
+import { isServiceCaller } from "../_shared/auth.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
@@ -19,23 +20,6 @@ function sanitizeError(err: unknown, maxLen = 900): string {
   s = s.replace(/access_token=[^&\s"]+/gi, "access_token=REDACTED");
   if (s.length > maxLen) s = s.slice(0, maxLen) + "…";
   return s;
-}
-
-function isServiceCaller(req: Request): boolean {
-  const raw = req.headers.get("Authorization") ?? "";
-  const bearer = raw.match(/^Bearer\s+(.+)$/i)?.[1]?.trim() ?? "";
-  if (!bearer) return false;
-  if (bearer === SUPABASE_SERVICE_ROLE_KEY) return true;
-  // Gateway already verified JWT signatures; trust the role claim to handle
-  // key format mismatches between Vault and env var (same as publish-instagram).
-  try {
-    const parts = bearer.split(".");
-    if (parts.length === 3) {
-      const payload = JSON.parse(atob(parts[1]));
-      if (payload.role === "service_role") return true;
-    }
-  } catch { /* not a decodable JWT */ }
-  return false;
 }
 
 interface GraphErrorBody {
@@ -104,7 +88,9 @@ Deno.serve(async (req: Request) => {
   }
 
   const { createClient } = await import("https://esm.sh/@supabase/supabase-js@2");
-  const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+  const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+    db: { schema: "seatback" },
+  });
 
   const recordStatus = async (fields: Record<string, unknown>) => {
     await supabase.from("meta_token_status").update({

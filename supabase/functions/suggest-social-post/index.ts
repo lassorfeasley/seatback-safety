@@ -1,4 +1,5 @@
 import { corsHeaders } from "../_shared/cors.ts";
+import { unauthorized, verifyCaller } from "../_shared/auth.ts";
 import { extractJson } from "../_shared/extractJson.ts";
 
 const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY");
@@ -254,6 +255,8 @@ Deno.serve(async (req: Request) => {
     return new Response("ok", { headers: corsHeaders });
   }
 
+  if (!(await verifyCaller(req))) return unauthorized();
+
   if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
     return new Response(
       JSON.stringify({ error: "SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY not configured" }),
@@ -263,7 +266,9 @@ Deno.serve(async (req: Request) => {
 
   try {
     const { createClient } = await import("https://esm.sh/@supabase/supabase-js@2");
-    const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+    const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+      db: { schema: "seatback" },
+    });
 
     let requestBody: Record<string, unknown> = {};
     if (req.method === "POST") {
