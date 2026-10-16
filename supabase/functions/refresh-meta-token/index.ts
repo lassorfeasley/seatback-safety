@@ -1,5 +1,5 @@
 import { corsHeaders } from "../_shared/cors.ts";
-import { isServiceCaller } from "../_shared/auth.ts";
+import { verifyCaller } from "../_shared/auth.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
@@ -80,7 +80,7 @@ Deno.serve(async (req: Request) => {
     );
   }
 
-  if (!isServiceCaller(req)) {
+  if ((await verifyCaller(req)) !== "service") {
     return new Response(
       JSON.stringify({ error: "Unauthorized" }),
       { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } },
