@@ -133,7 +133,7 @@ grant execute on function seatback.top_up_social_queue(integer) to authenticated
 
 -- Daily at 08:00 UTC (3–4 AM ET), well before the 9 AM ET post slot.
 select cron.schedule(
-  'top-up-social-queue',
+  'seatback-top-up-social-queue',
   '0 8 * * *',
   $$ select seatback.top_up_social_queue(14); $$
 );
