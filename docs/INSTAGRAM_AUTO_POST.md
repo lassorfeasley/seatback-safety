@@ -73,6 +73,24 @@ SELECT vault.create_secret(
 
 See `supabase/cron/publish-instagram-due.example.sql` for the standalone SQL template.
 
+## Automatic queue fill
+
+Migration `029_auto_fill_social_queue.sql` keeps the next 14 days of the queue
+filled from banked crops (`social_crops`). A pg_cron job (`top-up-social-queue`,
+daily 08:00 UTC) calls `seatback.top_up_social_queue(14)`, which schedules a post
+at 9 AM ET on every empty day. Days that already have a draft, scheduled, or posted
+post are left alone. Unused crops go first. After that, crops rotate least-recently-used
+while avoiding the same crop, card, airline, or decade within 5 days.
+
+The admin **Fill Schedule** button calls the same function
+(`seatback.fill_social_queue(start, end, time)`) for custom ranges or times.
+
+Pure SQL, so no extra Edge Function or Vault secret is needed. To pause it:
+
+```sql
+select cron.unschedule('top-up-social-queue');
+```
+
 ## Automatic token refresh
 
 Meta long-lived tokens expire after ~60 days. The `refresh-meta-token` Edge Function

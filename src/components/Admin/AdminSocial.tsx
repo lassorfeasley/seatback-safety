@@ -33,53 +33,6 @@ import { supabase } from '@/lib/supabase';
 import { useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 
-// ─── Schedule Spreading ─────────────────────────────────────────
-// Shuffle crops, then greedily reorder so the same airline or decade
-// aren't placed back-to-back.
-
-function spreadCrops(pool: SocialCropWithCard[], count: number): SocialCropWithCard[] {
-  // Expand pool to cover the full count (wrapping), then shuffle
-  const expanded: SocialCropWithCard[] = [];
-  for (let i = 0; i < count; i++) expanded.push(pool[i % pool.length]);
-  for (let i = expanded.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [expanded[i], expanded[j]] = [expanded[j], expanded[i]];
-  }
-
-  const result: SocialCropWithCard[] = [];
-  const remaining = [...expanded];
-
-  while (remaining.length > 0) {
-    let bestIdx = 0;
-    let bestScore = -Infinity;
-
-    for (let i = 0; i < remaining.length; i++) {
-      const item = remaining[i];
-      const airline = item.airline_name?.toLowerCase() ?? '';
-      const decade = item.published_year ? Math.floor(item.published_year / 10) : null;
-
-      let score = 0;
-      const lookback = Math.min(5, result.length);
-      for (let back = 1; back <= lookback; back++) {
-        const prev = result[result.length - back];
-        const prevAirline = prev.airline_name?.toLowerCase() ?? '';
-        const prevDecade = prev.published_year ? Math.floor(prev.published_year / 10) : null;
-        if (airline && airline === prevAirline) score -= 6 - back;
-        if (decade !== null && decade === prevDecade) score -= (6 - back) * 0.5;
-      }
-
-      if (score > bestScore) {
-        bestScore = score;
-        bestIdx = i;
-      }
-    }
-
-    result.push(remaining.splice(bestIdx, 1)[0]);
-  }
-
-  return result;
-}
-
 // ─── Calendar Helpers ───────────────────────────────────────────
 
 function getDaysInMonth(year: number, month: number) {
@@ -611,68 +564,33 @@ export const AdminSocial: React.FC = () => {
 
   const handleFillSchedule = async () => {
     if (!fillStart || !fillEnd) return;
+    if (fillEnd < fillStart) {
+      setError('End date must be on or after start date.');
+      return;
+    }
     setFilling(true);
     setError(null);
 
-    const { crops: allCropsData } = await fetchAllCrops();
-    if (!allCropsData || allCropsData.length === 0) {
-      setError('No banked crops available. Save some crops from card detail pages first.');
-      setFilling(false);
-      return;
-    }
-
-    const usedCropIds = new Set(posts.filter((p) => p.social_crop_id).map((p) => p.social_crop_id));
-    const unused = allCropsData.filter((c) => !usedCropIds.has(c.id));
-    const pool = unused.length > 0 ? unused : allCropsData;
-
-    const start = new Date(fillStart + 'T00:00:00');
-    const end = new Date(fillEnd + 'T00:00:00');
-    const dayCount = Math.max(0, Math.ceil((end.getTime() - start.getTime()) / 86400000) + 1);
-
-    if (dayCount === 0) {
-      setError('End date must be on or after start date.');
-      setFilling(false);
-      return;
-    }
-
-    // Build the sequence: shuffle, then spread to avoid same airline/decade clustering
-    const sequence = spreadCrops(pool, dayCount);
-
-    const [h, m] = fillTime.split(':').map(Number);
-    let scheduled = 0;
-
-    for (let i = 0; i < dayCount; i++) {
-      const crop = sequence[i];
-      const day = new Date(start);
-      day.setDate(day.getDate() + i);
-      day.setHours(h, m, 0, 0);
-
-      const caption = buildCaption(crop.airline_name, crop.published_year, crop.aircraft_label);
-
-      const { error: insertErr } = await supabase
-        .from('social_posts')
-        .insert({
-          card_id: crop.card_id,
-          panel_id: crop.panel_id,
-          social_crop_id: crop.id,
-          crop_image_path: crop.crop_image_path,
-          crop_x_pct: 0,
-          crop_y_pct: 0,
-          crop_size_pct: 1,
-          caption,
-          status: 'scheduled',
-          scheduled_at: day.toISOString(),
-        });
-
-      if (!insertErr) scheduled++;
-    }
+    const { data: scheduled, error: fillErr } = await supabase.rpc('fill_social_queue', {
+      p_start: fillStart,
+      p_end: fillEnd,
+      p_post_time: fillTime,
+    });
 
     await loadPosts();
     setFilling(false);
+    if (fillErr) {
+      setError(fillErr.message);
+      return;
+    }
     setShowFillSchedule(false);
     setFillStart('');
     setFillEnd('');
-    alert(`Scheduled ${scheduled} posts from your banked crops.`);
+    alert(
+      scheduled
+        ? `Scheduled ${scheduled} post${scheduled !== 1 ? 's' : ''} from your banked crops.`
+        : 'Nothing to schedule — every day in that range already has a post, or there are no banked crops.',
+    );
   };
 
   const handleClearSchedule = async () => {
@@ -995,7 +913,10 @@ export const AdminSocial: React.FC = () => {
             </div>
             <div className="p-4 space-y-4">
               <p className="text-sm text-muted-foreground">
-                Schedule one post per day using your banked crops. Unused crops are prioritized; if you have fewer crops than days, they'll cycle.
+                Schedule one post per day using your banked crops. Days that already have a post are skipped. Unused crops are prioritized; if you have fewer crops than days, they'll cycle.
+              </p>
+              <p className="text-xs text-muted-foreground">
+                The next 14 days are also kept filled automatically (posting at 9 AM ET), so you only need this for longer ranges or a different time.
               </p>
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
@@ -1029,7 +950,7 @@ export const AdminSocial: React.FC = () => {
               </div>
               {fillStart && fillEnd && (
                 <p className="text-sm text-muted-foreground">
-                  {Math.max(0, Math.ceil((new Date(fillEnd).getTime() - new Date(fillStart).getTime()) / 86400000) + 1)} posts will be scheduled
+                  Up to {Math.max(0, Math.ceil((new Date(fillEnd).getTime() - new Date(fillStart).getTime()) / 86400000) + 1)} posts will be scheduled
                 </p>
               )}
             </div>
@@ -1063,6 +984,9 @@ export const AdminSocial: React.FC = () => {
             <div className="p-4 space-y-4">
               <p className="text-sm text-muted-foreground">
                 Delete all <strong>scheduled</strong> and <strong>draft</strong> posts in a date range. Already-posted items are preserved.
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Empty days in the next 14 are refilled automatically overnight. To skip a day, keep a draft on it instead.
               </p>
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
